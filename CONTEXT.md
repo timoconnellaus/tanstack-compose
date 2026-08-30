@@ -84,6 +84,12 @@ _Avoid_: config, settings, props
 A Standard Schema used to validate and default options before an instance starts.
 _Avoid_: schema (when meaning the runtime check), config class
 
+### Execution
+
+**Host**:
+The environment a plugin's code executes in. The in-process host is the default; a remote host runs a plugin in isolation and represents it to the client as an ordinary instance.
+_Avoid_: sandbox, runtime, isolate, executor, loader
+
 ### Tooling
 
 **Adapter**:
