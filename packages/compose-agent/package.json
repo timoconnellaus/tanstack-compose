@@ -1,0 +1,51 @@
+{
+  "name": "@tanstack/compose-agent",
+  "version": "0.1.0",
+  "description": "Agent vocabulary and seam plugins for the TanStack Compose runtime",
+  "author": "Tim O'Connell",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanStack/compose.git",
+    "directory": "packages/compose-agent"
+  },
+  "homepage": "https://github.com/TanStack/compose",
+  "keywords": [
+    "compose",
+    "plugin",
+    "runtime",
+    "agent",
+    "typescript"
+  ],
+  "scripts": {
+    "clean": "premove ./dist ./coverage",
+    "test:eslint": "eslint ./src ./tests",
+    "test:types": "tsc",
+    "test:lib": "vitest",
+    "test:lib:dev": "pnpm run test:lib --watch",
+    "test:build": "publint --strict",
+    "build": "tsdown --tsconfig tsconfig.build.json"
+  },
+  "type": "module",
+  "types": "./dist/index.d.cts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@tanstack/compose": "workspace:*"
+  }
+}

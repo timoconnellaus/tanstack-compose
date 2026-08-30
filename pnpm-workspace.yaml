@@ -1,0 +1,12 @@
+cleanupUnusedCatalogs: true
+linkWorkspacePackages: true
+preferWorkspacePackages: true
+
+packages:
+  - 'packages/**'
+  - 'examples/react/**'
+
+allowBuilds:
+  nx: true
+  esbuild: true
+  unrs-resolver: false
