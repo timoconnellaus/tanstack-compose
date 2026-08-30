@@ -1,11 +1,11 @@
 # `@tanstack/compose`
 
-The framework-agnostic kernel of TanStack Compose: the runtime object, the service
-registry, the event bus, reversible effects, plugin lifecycle, and mounting.
+The framework-agnostic kernel of TanStack Compose: the client, plugins, context and deps,
+cleanup, status, options, middleware and events, and plugin-list reconciliation.
 
 > **Status: scaffold.** Every export is a typed placeholder that throws. See
-> [`INTENT.md`](../../INTENT.md) for the invariants and [`ROADMAP.md`](../../ROADMAP.md)
-> for the build order.
+> [`docs/acceptance/kernel.md`](../../docs/acceptance/kernel.md) for what done means and
+> [`ROADMAP.md`](../../ROADMAP.md) for the build order.
 
 ## Installation
 

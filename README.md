@@ -4,36 +4,23 @@
 
 > **Status: scaffold.** The packages here export typed placeholders only. Nothing is implemented yet.
 
-A framework-agnostic **composable plugin runtime**: services, declarative injection,
-reversible effects, typed events, and a live composition tree — plus thin framework adapters.
+A framework-agnostic **composable plugin runtime**: an application is assembled from
+plugins that can be added, removed, replaced and reconfigured while it runs — with full
+type inference, `@tanstack/store`-backed state, and thin framework adapters.
 
 ## The idea, in short
 
-Long-running applications built from plugins fail in two recurring ways. **In time**,
-a removed plugin leaves its side effects behind — listeners, timers, registrations, open
-handles — so "reload just this piece" is never safe. **In space**, plugins depend on each
-other through import order and boot scripts, so nothing reacts when a dependency arrives
-late, disappears, or is swapped for another implementation.
+A **client** runs an ordered **plugin list**. Each **plugin** can provide typed values into
+shared **context**, declare the context keys it **depends** on, wrap other plugins'
+**actions** with **middleware**, listen to **events**, and hold resources that are cleaned
+up when it is removed. A plugin whose deps are missing waits as `pending` and starts the
+moment they appear; if a dep disappears the plugin is cleaned up and waits again. Editing
+the plugin list — from a UI, from code, or from a plugin editing its own client — is how
+the application changes shape at runtime.
 
-TanStack Compose's thesis is to make **every side effect reversible** and **every dependency
-declarative and reactive**, mediated by a single runtime object that every plugin talks to.
-The vocabulary:
-
-| Concept              | What it is                                                                                                                                                                                |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Runtime**          | The one scoped object a plugin receives. Reaching a capability, listening, emitting, registering cleanup and mounting children all go through it.                                         |
-| **Plugin**           | A unit of contribution. Given a runtime and validated config, it registers things. Composition happens outside it.                                                                        |
-| **Service**          | A named, typed capability published under a stable key. Consumers name the key and never import the provider — this is the swap point.                                                    |
-| **Requirements**     | A plugin declares the service keys it needs. It stays _pending_ until they exist, and is torn down (then re-run) if any go away. Load order comes from requirements, never list position. |
-| **Effect**           | Any registration or acquired resource paired with its undo. Unloading an instance runs the undos in reverse and waits for async cleanup to actually finish.                               |
-| **Event**            | A typed message on a flat bus, where the dispatch mode (broadcast / parallel / serial / waterfall) is part of the contract. Events are for interception; services are for direct calls.   |
-| **Composition tree** | A declarative list of entries — id, plugin, config, enabled — reconciled by id, so the live plugin graph stays in sync with the list as it changes.                                       |
-
-Because of this, **hot reload is just unload-then-load**, and swapping a provider ripples
-correctly through everything that depends on it with no extra machinery.
-
-The full design intent, invariants and acceptance scenarios live in [INTENT.md](./INTENT.md).
-The build order lives in [ROADMAP.md](./ROADMAP.md).
+The glossary is [CONTEXT.md](./CONTEXT.md); decisions are in [docs/adr](./docs/adr);
+what "done" means per slice is in [docs/acceptance](./docs/acceptance); the build order
+is [ROADMAP.md](./ROADMAP.md).
 
 ## Packages
 
