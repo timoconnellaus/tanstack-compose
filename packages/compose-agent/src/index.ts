@@ -1,7 +1,8 @@
 /**
  * `@tanstack/compose-agent` — the agent vocabulary, built entirely on the kernel.
  *
- * Scaffold only. This package exists to prove `INTENT.md` §4: that a whole agent
+ * Scaffold only. See `ROADMAP.md` (slice 4) for when it gets built and
+ * `CONTEXT.md` for the terms it has to use. This package exists to show that a whole agent
  * product is "just plugins", with no privileged core to patch. It will hold the
  * capability *seams* — a definition that owns the key and its vocabulary types,
  * shipped alongside a default provider, with every consumer naming only the key:

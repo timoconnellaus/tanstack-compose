@@ -8,5 +8,6 @@ packages:
 
 allowBuilds:
   nx: true
+  workerd: true
   esbuild: true
   unrs-resolver: false

@@ -1,31 +1,31 @@
 /**
  * `@tanstack/react-compose` — the React adapter.
  *
- * Scaffold only. Every export below is a typed placeholder; see `INTENT.md` at the
- * repository root for the invariants the real implementation has to satisfy.
+ * Scaffold only. Every export below is a typed placeholder; see `ROADMAP.md`
+ * (slice 2) for when it gets built and `CONTEXT.md` for the terms it has to use.
  */
 import type { ReactNode } from 'react'
-import type { Runtime, ServiceToken } from '@tanstack/compose'
+import type { Client, ContextKey } from '@tanstack/compose'
 
 export interface ComposeProviderProps {
-  runtime: Runtime
+  client: Client
   children?: ReactNode
 }
 
-/** Puts a runtime on React context so hooks below it resolve against that scope. */
+/** Puts a client on React context so hooks below it resolve against it. */
 export function ComposeProvider(_props: ComposeProviderProps): ReactNode {
-  // TODO: context provider; dispose the runtime when the provider unmounts.
+  // TODO: context provider; destroy the client when the provider unmounts.
   throw new Error(
     '@tanstack/react-compose: ComposeProvider is not implemented yet',
   )
 }
 
 /**
- * Read a service from the nearest runtime, re-rendering when its provider is
+ * Read a context key from the nearest client, re-rendering when its provider is
  * swapped or goes away.
  */
-export function useService<TValue>(_token: ServiceToken<TValue>): TValue {
-  // TODO: subscribe to the service registry store.
+export function useService<TValue>(_key: ContextKey<TValue>): TValue {
+  // TODO: subscribe to the client's context store.
   throw new Error('@tanstack/react-compose: useService is not implemented yet')
 }
 

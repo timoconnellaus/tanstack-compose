@@ -1,0 +1,928 @@
+import { Store, batch, shallow } from '@tanstack/store'
+import { createAction } from './definitions'
+import type {
+  ActionDefinition,
+  ActionHandler,
+  AnyAction,
+  AnyContextKey,
+  AnyEvent,
+  AnyPlugin,
+  Cleanup,
+  Client,
+  ClientErrorReport,
+  ContextKey,
+  ContextSnapshot,
+  EventDefinition,
+  Instance,
+  InstanceSnapshot,
+  Listener,
+  Middleware,
+  PluginEntry,
+  ResourceNode,
+  Status,
+} from './definitions'
+import type { StandardSchemaV1 } from './standard-schema'
+
+/**
+ * Reconciling the plugin list is itself an action, so tooling can observe,
+ * replace or veto a reconcile through middleware (ADR-0003). Its input is the
+ * plugin list about to be applied.
+ */
+export const reconcileAction: ActionDefinition<
+  Array<PluginEntry>,
+  void
+> = createAction<Array<PluginEntry>, void>('compose.reconcile')
+
+/**
+ * Updating an instance's options is an action, so tooling can observe, replace
+ * or veto the restart it causes (D3).
+ */
+export const optionsUpdateAction: ActionDefinition<
+  { id: string; options: unknown },
+  void
+> = createAction<{ id: string; options: unknown }, void>(
+  'compose.optionsUpdate',
+)
+
+interface Resource {
+  label: string
+  cleanup?: Cleanup
+  child?: InstanceRecord
+}
+
+interface InstanceRecord {
+  id: string
+  plugin: AnyPlugin
+  optionsInput: unknown
+  options: unknown
+  status: Status
+  phase: 'idle' | 'setup' | 'removing'
+  error?: unknown
+  resources: Array<Resource>
+  provisions: Array<AnyContextKey>
+  parent?: InstanceRecord
+  fromEntry: boolean
+  removal?: Promise<void>
+  childCount: number
+}
+
+interface MiddlewareRegistration {
+  fn: Middleware<any, any>
+  owner: InstanceRecord | undefined
+}
+
+interface ListenerRegistration {
+  fn: Listener<any>
+  owner: InstanceRecord | undefined
+}
+
+const pathToString = (
+  path: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined,
+): string => {
+  if (!path || path.length === 0) return 'options'
+  const segments = path.map((segment) =>
+    typeof segment === 'object' ? String(segment.key) : String(segment),
+  )
+  return `options.${segments.join('.')}`
+}
+
+const sameOptions = (a: unknown, b: unknown): boolean => {
+  if (Object.is(a, b)) return true
+  if (
+    typeof a !== 'object' ||
+    typeof b !== 'object' ||
+    a === null ||
+    b === null
+  ) {
+    return false
+  }
+  return shallow(a, b)
+}
+
+class ClientImpl implements Client {
+  readonly pluginList: Store<Array<PluginEntry>>
+  readonly instances: Store<Array<InstanceSnapshot>>
+  readonly context: Store<Array<ContextSnapshot>>
+  readonly errors: Store<Array<ClientErrorReport>>
+
+  #records = new Map<string, InstanceRecord>()
+  #published = new Map<AnyContextKey, unknown>()
+  #claims = new Map<AnyContextKey, InstanceRecord>()
+  #handlers = new Map<AnyAction, ActionHandler<any, any>>()
+  #middleware = new Map<AnyAction, Array<MiddlewareRegistration>>()
+  #listeners = new Map<AnyEvent, Array<ListenerRegistration>>()
+  #applied: Array<PluginEntry> = []
+  #queue: Promise<unknown> = Promise.resolve()
+  #outstanding = 0
+  #nextPass: Promise<void> | undefined
+  #onError: ((report: ClientErrorReport) => void) | undefined
+  #view: Client | undefined
+
+  constructor(options?: {
+    plugins?: Array<PluginEntry>
+    onError?: (report: ClientErrorReport) => void
+  }) {
+    this.#onError = options?.onError
+    this.pluginList = new Store<Array<PluginEntry>>(options?.plugins ?? [])
+    this.instances = new Store<Array<InstanceSnapshot>>([])
+    this.context = new Store<Array<ContextSnapshot>>([])
+    this.errors = new Store<Array<ClientErrorReport>>([])
+
+    this.#handlers.set(reconcileAction, (list: Array<PluginEntry>) =>
+      this.#applyList(list),
+    )
+    this.#handlers.set(
+      optionsUpdateAction,
+      ({ id, options: next }: { id: string; options: unknown }) => {
+        this.pluginList.setState((list) =>
+          list.map((entry) =>
+            entry.id === id ? { ...entry, options: next } : entry,
+          ),
+        )
+      },
+    )
+
+    this.pluginList.subscribe(() => {
+      if (this.pluginList.state !== this.#applied) {
+        // Nobody is waiting on this one; the edit helper's promise carries the
+        // failure, and a direct store write has no promise to carry it.
+        this.#schedule().catch(() => undefined)
+      }
+    })
+    if ((options?.plugins?.length ?? 0) > 0) {
+      this.#schedule().catch(() => undefined)
+    }
+  }
+
+  // ---------------------------------------------------------------- scheduling
+
+  /**
+   * Queue a pass. Edits made before the pass starts coalesce into it, so a
+   * burst of list edits is applied once, in order, and never interleaves with
+   * a pass already running (F4).
+   */
+  #schedule(): Promise<void> {
+    if (this.#nextPass) return this.#nextPass
+    this.#outstanding++
+    const run = this.#queue.then(() => {
+      this.#nextPass = undefined
+      return this.#pass()
+    })
+    this.#queue = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    this.#nextPass = run.finally(() => {
+      this.#outstanding--
+    })
+    return this.#nextPass
+  }
+
+  #editDone(): Promise<void> {
+    return this.#schedule()
+  }
+
+  async settled(): Promise<void> {
+    while (this.#outstanding > 0) await this.#queue
+  }
+
+  async #pass(): Promise<void> {
+    const next = this.pluginList.state
+    try {
+      if (next === this.#applied) {
+        await this.#settle()
+        return
+      }
+      const applied = { ran: false }
+      const previous = this.#applied
+      const handler = this.#handlers.get(reconcileAction)!
+      this.#handlers.set(reconcileAction, async (list: Array<PluginEntry>) => {
+        applied.ran = true
+        await this.#applyList(list)
+      })
+      try {
+        await this.#dispatch(reconcileAction, next)
+      } finally {
+        this.#handlers.set(reconcileAction, handler)
+      }
+      if (!applied.ran) this.#restore(previous, next)
+      else if (this.pluginList.state === next && this.#applied !== next) {
+        this.#restore(this.#applied, next)
+      }
+    } catch (error) {
+      this.#report({ scope: 'reconcile', error })
+      this.#restore(this.#applied, next)
+      throw error
+    } finally {
+      this.#publish()
+    }
+  }
+
+  /** Put the list store back to what is actually running, unless it moved on. */
+  #restore(list: Array<PluginEntry>, seen: Array<PluginEntry>): void {
+    this.#applied = list
+    if (this.pluginList.state === seen) this.pluginList.setState(() => list)
+  }
+
+  // ------------------------------------------------------------ reconciliation
+
+  async #applyList(next: Array<PluginEntry>): Promise<void> {
+    const seen = new Set<string>()
+    for (const entry of next) {
+      if (typeof entry.id !== 'string' || entry.id === '') {
+        throw new Error(
+          '@tanstack/compose: every plugin entry needs a string id',
+        )
+      }
+      if (seen.has(entry.id)) {
+        throw new Error(
+          `@tanstack/compose: duplicate plugin entry id "${entry.id}"`,
+        )
+      }
+      seen.add(entry.id)
+      const plugin = entry.plugin as { type?: unknown } | undefined
+      if (plugin?.type !== 'compose/plugin') {
+        throw new Error(
+          `@tanstack/compose: entry "${entry.id}" does not hold a plugin created by definePlugin`,
+        )
+      }
+    }
+
+    const desired = new Map(
+      next
+        .filter((entry) => entry.enabled !== false)
+        .map((entry) => [entry.id, entry]),
+    )
+
+    for (const record of [...this.#records.values()]) {
+      if (!record.fromEntry) continue
+      const entry = desired.get(record.id)
+      if (
+        !entry ||
+        entry.plugin !== record.plugin ||
+        !sameOptions(entry.options, record.optionsInput)
+      ) {
+        await this.#remove(record)
+      }
+    }
+
+    for (const entry of desired.values()) {
+      if (!this.#records.has(entry.id)) await this.#create(entry)
+    }
+
+    this.#applied = next
+    await this.#settle()
+  }
+
+  async #create(entry: PluginEntry): Promise<InstanceRecord> {
+    const record: InstanceRecord = {
+      id: entry.id,
+      plugin: entry.plugin,
+      optionsInput: entry.options,
+      options: undefined,
+      status: 'pending',
+      phase: 'idle',
+      resources: [],
+      provisions: [],
+      fromEntry: true,
+      childCount: 0,
+    }
+    this.#records.set(record.id, record)
+    await this.#validateOptions(record)
+    return record
+  }
+
+  async #validateOptions(record: InstanceRecord): Promise<void> {
+    const validator: StandardSchemaV1<any, any> | undefined =
+      record.plugin.validator
+    if (!validator) {
+      record.options = record.optionsInput
+      return
+    }
+    const result = await validator['~standard'].validate(record.optionsInput)
+    if (result.issues) {
+      const message = result.issues
+        .map((issue) => `${pathToString(issue.path)}: ${issue.message}`)
+        .join('; ')
+      record.status = 'error'
+      record.error = new Error(
+        `@tanstack/compose: invalid options for "${record.id}" — ${message}`,
+      )
+      return
+    }
+    record.options = result.value
+  }
+
+  // -------------------------------------------------------------- settle passes
+
+  #missing(record: InstanceRecord): Array<AnyContextKey> {
+    return record.plugin.deps.filter(
+      (key: AnyContextKey) => !this.#published.has(key),
+    )
+  }
+
+  async #settle(): Promise<void> {
+    for (let turn = 0; turn <= this.#records.size + 1; turn++) {
+      let changed = false
+      for (const record of [...this.#records.values()]) {
+        if (record.status === 'active' && this.#missing(record).length > 0) {
+          await this.#deactivate(record)
+          changed = true
+        }
+      }
+      for (const record of [...this.#records.values()]) {
+        if (
+          record.status === 'pending' &&
+          record.phase === 'idle' &&
+          this.#missing(record).length === 0
+        ) {
+          await this.#startRecord(record)
+          changed = true
+        }
+      }
+      if (!changed) break
+    }
+    this.#detectCycles()
+  }
+
+  /** Name any ring of instances that can only be unblocked by each other (B6). */
+  #detectCycles(): void {
+    const blocked = [...this.#records.values()].filter(
+      (record) => record.status === 'pending',
+    )
+    if (blocked.length === 0) return
+    const providers = new Map<AnyContextKey, Array<InstanceRecord>>()
+    for (const record of this.#records.values()) {
+      if (record.status === 'active') continue
+      for (const key of record.plugin
+        .provides as ReadonlyArray<AnyContextKey>) {
+        const list = providers.get(key)
+        if (list) list.push(record)
+        else providers.set(key, [record])
+      }
+    }
+    const stack: Array<InstanceRecord> = []
+    const done = new Set<InstanceRecord>()
+    const visit = (record: InstanceRecord): void => {
+      const at = stack.indexOf(record)
+      if (at !== -1) {
+        const ring = stack.slice(at)
+        const names = [...ring, record].map((member) => member.id).join(' → ')
+        const error = new Error(`@tanstack/compose: circular deps — ${names}`)
+        for (const member of ring) {
+          member.status = 'error'
+          member.error = error
+          done.add(member)
+        }
+        return
+      }
+      if (done.has(record)) return
+      stack.push(record)
+      for (const key of this.#missing(record)) {
+        for (const provider of providers.get(key) ?? []) visit(provider)
+      }
+      stack.pop()
+      done.add(record)
+    }
+    for (const record of blocked) visit(record)
+  }
+
+  async #startRecord(record: InstanceRecord): Promise<void> {
+    this.#setPhase(record, 'setup')
+    const values = new Map<AnyContextKey, unknown>()
+    try {
+      const result = await record.plugin.setup(
+        this.#makeInstance(record, values),
+        record.options,
+      )
+      if (typeof result === 'function') {
+        record.resources.push({
+          label: 'setup cleanup',
+          cleanup: result,
+        })
+      }
+      if (record.phase !== 'setup') return
+      for (const key of record.provisions)
+        this.#published.set(key, values.get(key))
+      record.status = 'active'
+      record.error = undefined
+      record.phase = 'idle'
+    } catch (error) {
+      await this.#release(record)
+      record.status = 'error'
+      record.error = error
+      record.phase = 'idle'
+      this.#report({ scope: 'setup', instanceId: record.id, error })
+    }
+  }
+
+  // ----------------------------------------------------------------- teardown
+
+  async #release(record: InstanceRecord): Promise<void> {
+    const resources = record.resources
+    record.resources = []
+    for (let index = resources.length - 1; index >= 0; index--) {
+      const resource = resources[index]!
+      try {
+        if (resource.child) await this.#remove(resource.child)
+        if (resource.cleanup) await resource.cleanup()
+      } catch (error) {
+        this.#report({ scope: 'cleanup', instanceId: record.id, error })
+      }
+    }
+    record.provisions = []
+  }
+
+  #setPhase(record: InstanceRecord, phase: InstanceRecord['phase']): void {
+    record.phase = phase
+  }
+
+  /** Full cleanup, keeping the record so it can start again later (B2). */
+  async #deactivate(record: InstanceRecord): Promise<void> {
+    this.#setPhase(record, 'removing')
+    await this.#release(record)
+    record.status = 'pending'
+    record.error = undefined
+    record.phase = 'idle'
+  }
+
+  #remove(record: InstanceRecord): Promise<void> {
+    record.removal ??= (async () => {
+      this.#setPhase(record, 'removing')
+      await this.#release(record)
+      record.status = 'removed'
+      record.phase = 'idle'
+      this.#records.delete(record.id)
+    })()
+    return record.removal
+  }
+
+  // -------------------------------------------------------- the instance handle
+
+  /**
+   * The view of the client a plugin gets. Its edits resolve as soon as they
+   * are recorded, because the caller is already inside the pass that would
+   * apply them: awaiting full settlement from in there would deadlock (F5).
+   */
+  #pluginView(): Client {
+    this.#view ??= {
+      pluginList: this.pluginList,
+      instances: this.instances,
+      context: this.context,
+      errors: this.errors,
+      setPluginList: (next: Array<PluginEntry>) => {
+        this.pluginList.setState(() => next)
+        return Promise.resolve()
+      },
+      addPlugin: <TPlugin extends AnyPlugin>(entry: PluginEntry<TPlugin>) => {
+        this.pluginList.setState((list) => [...list, entry as PluginEntry])
+        return Promise.resolve()
+      },
+      removePlugin: (id: string) => {
+        this.pluginList.setState((list) =>
+          list.filter((entry) => entry.id !== id),
+        )
+        return Promise.resolve()
+      },
+      setEnabled: (id: string, enabled: boolean) => {
+        this.pluginList.setState((list) =>
+          list.map((entry) =>
+            entry.id === id ? { ...entry, enabled } : entry,
+          ),
+        )
+        return Promise.resolve()
+      },
+      setOptions: async (id: string, options: unknown) => {
+        await this.#dispatch(optionsUpdateAction, { id, options })
+      },
+      settled: () => Promise.resolve(),
+      destroy: () => this.destroy(),
+      dispatch: (action, input) => this.#dispatch(action, input),
+      emit: ((event: AnyEvent, payload: unknown) =>
+        this.#emit(event, payload)) as Client['emit'],
+      on: ((event: AnyEvent, listener: Listener<any>) =>
+        this.#addListener(event, listener, undefined)) as Client['on'],
+      use: ((
+        action: AnyAction,
+        middleware: Middleware<any, any>,
+        options?: { first?: boolean },
+      ) =>
+        this.#addMiddleware(
+          action,
+          middleware,
+          options,
+          undefined,
+        )) as Client['use'],
+      inspect: () => this.inspect(),
+      resources: (instanceId: string) => this.resources(instanceId),
+      getContext: (key) => this.getContext(key),
+    }
+    return this.#view
+  }
+
+  #makeInstance(
+    record: InstanceRecord,
+    values: Map<AnyContextKey, unknown>,
+  ): Instance<any, any> {
+    const guard = () => {
+      if (record.phase === 'removing' || record.status === 'removed') {
+        throw new Error(
+          `@tanstack/compose: instance "${record.id}" is being removed; it cannot register anything (A5)`,
+        )
+      }
+    }
+    const own = (resource: Resource): Cleanup => {
+      guard()
+      record.resources.push(resource)
+      return () => {
+        const at = record.resources.indexOf(resource)
+        if (at !== -1) record.resources.splice(at, 1)
+        return resource.cleanup?.()
+      }
+    }
+
+    return {
+      id: record.id,
+      client: this.#pluginView(),
+      context: {
+        get: (key: AnyContextKey) => this.#published.get(key),
+        peek: (key: AnyContextKey) => this.#published.get(key),
+      },
+      provide: (key: AnyContextKey, value: unknown) => {
+        guard()
+        if (
+          !(record.plugin.provides as ReadonlyArray<AnyContextKey>).includes(
+            key,
+          )
+        ) {
+          throw new Error(
+            `@tanstack/compose: "${record.plugin.name}" did not declare "${key.name}" in provides`,
+          )
+        }
+        const claimed = this.#claims.get(key)
+        if (claimed && claimed !== record) {
+          throw new Error(
+            `@tanstack/compose: context key "${key.name}" is already provided by "${claimed.id}" (B5)`,
+          )
+        }
+        this.#claims.set(key, record)
+        values.set(key, value)
+        record.provisions.push(key)
+        record.resources.push({
+          label: `provide(${key.name})`,
+          cleanup: () => {
+            this.#claims.delete(key)
+            this.#published.delete(key)
+            values.delete(key)
+          },
+        })
+      },
+      cleanup: (fn: Cleanup, label?: string) => {
+        own({ label: label ?? 'cleanup', cleanup: fn })
+      },
+      on: (event: AnyEvent, listener: Listener<any>) => {
+        guard()
+        return this.#addListener(event, listener, record)
+      },
+      emit: ((event: AnyEvent, payload: unknown) =>
+        this.#emit(event, payload)) as Instance['emit'],
+      defineAction: (action: AnyAction, handler: ActionHandler<any, any>) => {
+        guard()
+        if (this.#handlers.has(action)) {
+          throw new Error(
+            `@tanstack/compose: action "${action.name}" already has an owner`,
+          )
+        }
+        this.#handlers.set(action, handler)
+        record.resources.push({
+          label: `action(${action.name})`,
+          cleanup: () => {
+            this.#handlers.delete(action)
+          },
+        })
+      },
+      use: (
+        action: AnyAction,
+        middleware: Middleware<any, any>,
+        options?: { first?: boolean },
+      ) => {
+        guard()
+        return this.#addMiddleware(action, middleware, options, record)
+      },
+      dispatch: (action: AnyAction, input: unknown) =>
+        this.#dispatch(action, input),
+      start: async (plugin: AnyPlugin, options?: unknown) => {
+        guard()
+        const child: InstanceRecord = {
+          id: `${record.id}/${plugin.name}#${record.childCount++}`,
+          plugin,
+          optionsInput: options,
+          options: undefined,
+          status: 'pending',
+          phase: 'idle',
+          resources: [],
+          provisions: [],
+          parent: record,
+          fromEntry: false,
+          childCount: 0,
+        }
+        this.#records.set(child.id, child)
+        record.resources.push({ label: `instance(${plugin.name})`, child })
+        await this.#validateOptions(child)
+        if (child.status === 'pending' && this.#missing(child).length === 0) {
+          await this.#startRecord(child)
+        }
+        return child.id
+      },
+    } as Instance<any, any>
+  }
+
+  // ------------------------------------------------------- actions and events
+
+  #addMiddleware(
+    action: AnyAction,
+    fn: Middleware<any, any>,
+    options: { first?: boolean } | undefined,
+    owner: InstanceRecord | undefined,
+  ): Cleanup {
+    const registration: MiddlewareRegistration = { fn, owner }
+    const list = this.#middleware.get(action) ?? []
+    if (options?.first) list.unshift(registration)
+    else list.push(registration)
+    this.#middleware.set(action, list)
+    const remove = () => {
+      const current = this.#middleware.get(action)
+      if (!current) return
+      const at = current.indexOf(registration)
+      if (at !== -1) current.splice(at, 1)
+    }
+    if (owner) {
+      owner.resources.push({
+        label: `middleware(${action.name})`,
+        cleanup: remove,
+      })
+    }
+    return remove
+  }
+
+  #addListener(
+    event: AnyEvent,
+    fn: Listener<any>,
+    owner: InstanceRecord | undefined,
+  ): Cleanup {
+    const registration: ListenerRegistration = { fn, owner }
+    const list = this.#listeners.get(event) ?? []
+    list.push(registration)
+    this.#listeners.set(event, list)
+    const remove = () => {
+      const current = this.#listeners.get(event)
+      if (!current) return
+      const at = current.indexOf(registration)
+      if (at !== -1) current.splice(at, 1)
+    }
+    if (owner) {
+      owner.resources.push({
+        label: `listener(${event.name})`,
+        cleanup: remove,
+      })
+    }
+    return remove
+  }
+
+  async #dispatch<TInput, TResult>(
+    action: ActionDefinition<TInput, TResult>,
+    input: TInput,
+  ): Promise<TResult> {
+    const chain = [...(this.#middleware.get(action) ?? [])]
+    const run = async (index: number, value: TInput): Promise<TResult> => {
+      const registration = chain[index]
+      if (registration) {
+        return (await registration.fn({
+          input: value,
+          next: (nextInput: TInput) => run(index + 1, nextInput),
+        })) as TResult
+      }
+      const handler = this.#handlers.get(action)
+      if (!handler) {
+        throw new Error(
+          `@tanstack/compose: no plugin owns the action "${action.name}"`,
+        )
+      }
+      return (await handler(value)) as TResult
+    }
+    return run(0, input)
+  }
+
+  #emit(event: AnyEvent, payload: unknown): void | Promise<void> {
+    const listeners = [...(this.#listeners.get(event) ?? [])]
+    if (!event.awaited) {
+      for (const listener of listeners) {
+        try {
+          const result = listener.fn(payload) as {
+            catch?: (onRejected: (error: unknown) => void) => void
+          } | null
+          if (result && typeof result.catch === 'function') {
+            result.catch((error: unknown) => {
+              this.#report({
+                scope: 'listener',
+                instanceId: listener.owner?.id,
+                error,
+              })
+            })
+          }
+        } catch (error) {
+          this.#report({
+            scope: 'listener',
+            instanceId: listener.owner?.id,
+            error,
+          })
+        }
+      }
+      return undefined
+    }
+    return Promise.allSettled(
+      listeners.map(async (listener) => {
+        try {
+          await listener.fn(payload)
+        } catch (error) {
+          this.#report({
+            scope: 'listener',
+            instanceId: listener.owner?.id,
+            error,
+          })
+        }
+      }),
+    ).then(() => undefined)
+  }
+
+  // ------------------------------------------------------------------- public
+
+  dispatch<TInput, TResult>(
+    action: ActionDefinition<TInput, TResult>,
+    input: TInput,
+  ): Promise<TResult> {
+    return this.#dispatch(action, input)
+  }
+
+  emit<TPayload, TAwaited extends boolean>(
+    event: EventDefinition<TPayload, TAwaited>,
+    payload: TPayload,
+  ): TAwaited extends true ? Promise<void> : void {
+    return this.#emit(event, payload) as TAwaited extends true
+      ? Promise<void>
+      : void
+  }
+
+  on<TPayload, TAwaited extends boolean>(
+    event: EventDefinition<TPayload, TAwaited>,
+    listener: Listener<TPayload>,
+  ): Cleanup {
+    return this.#addListener(event, listener, undefined)
+  }
+
+  use<TInput, TResult>(
+    action: ActionDefinition<TInput, TResult>,
+    middleware: Middleware<TInput, TResult>,
+    options?: { first?: boolean },
+  ): Cleanup {
+    return this.#addMiddleware(
+      action as AnyAction,
+      middleware,
+      options,
+      undefined,
+    )
+  }
+
+  setPluginList(next: Array<PluginEntry>): Promise<void> {
+    this.pluginList.setState(() => next)
+    return this.#editDone()
+  }
+
+  addPlugin<TPlugin extends AnyPlugin>(
+    entry: PluginEntry<TPlugin>,
+  ): Promise<void> {
+    this.pluginList.setState((list) => [...list, entry as PluginEntry])
+    return this.#editDone()
+  }
+
+  removePlugin(id: string): Promise<void> {
+    this.pluginList.setState((list) => list.filter((entry) => entry.id !== id))
+    return this.#editDone()
+  }
+
+  setEnabled(id: string, enabled: boolean): Promise<void> {
+    this.pluginList.setState((list) =>
+      list.map((entry) => (entry.id === id ? { ...entry, enabled } : entry)),
+    )
+    return this.#editDone()
+  }
+
+  async setOptions(id: string, options: unknown): Promise<void> {
+    await this.#dispatch(optionsUpdateAction, { id, options })
+    return this.#editDone()
+  }
+
+  async destroy(): Promise<void> {
+    this.pluginList.setState(() => [])
+    await this.settled()
+    for (const record of [...this.#records.values()]) await this.#remove(record)
+    this.#publish()
+  }
+
+  inspect(): Array<InstanceSnapshot> {
+    return this.instances.state
+  }
+
+  resources(instanceId: string): ResourceNode | undefined {
+    const record = this.#records.get(instanceId)
+    if (!record) return undefined
+    const node = (current: InstanceRecord): ResourceNode => ({
+      label: `${current.plugin.name} (${current.id})`,
+      children: current.resources.map((resource) =>
+        resource.child
+          ? node(resource.child)
+          : { label: resource.label, children: [] },
+      ),
+    })
+    return node(record)
+  }
+
+  getContext<TValue>(key: ContextKey<TValue>): TValue | undefined {
+    return this.#published.get(key) as TValue | undefined
+  }
+
+  // ------------------------------------------------------------------ reporting
+
+  #report(report: ClientErrorReport): void {
+    this.errors.setState((list) => [...list, report])
+    this.#onError?.(report)
+  }
+
+  /** Instances in plugin-list order, each followed by the instances it started. */
+  #orderedRecords(): Array<InstanceRecord> {
+    const ordered: Array<InstanceRecord> = []
+    const seen = new Set<InstanceRecord>()
+    const push = (record: InstanceRecord) => {
+      if (seen.has(record)) return
+      seen.add(record)
+      ordered.push(record)
+      for (const resource of record.resources) {
+        if (resource.child) push(resource.child)
+      }
+    }
+    for (const entry of this.#applied) {
+      const record = this.#records.get(entry.id)
+      if (record) push(record)
+    }
+    for (const record of this.#records.values()) push(record)
+    return ordered
+  }
+
+  /** One consistent write of every store, at the end of a pass (C2, G3). */
+  #publish(): void {
+    const instances: Array<InstanceSnapshot> = this.#orderedRecords().map(
+      (record) => ({
+        id: record.id,
+        plugin: record.plugin.name,
+        status: record.status,
+        missing:
+          record.status === 'pending'
+            ? this.#missing(record).map((key) => key.name)
+            : [],
+        ...(record.error === undefined ? {} : { error: record.error }),
+        ...(record.parent ? { parent: record.parent.id } : {}),
+      }),
+    )
+    const context: Array<ContextSnapshot> = [...this.#claims.entries()]
+      .filter(([key]) => this.#published.has(key))
+      .map(([key, owner]) => ({ key: key.name, providedBy: owner.id }))
+    batch(() => {
+      this.instances.setState(() => instances)
+      this.context.setState(() => context)
+    })
+  }
+}
+
+/**
+ * Create a client: the root object that owns a running application — its
+ * plugin list, its context, and the lifecycle of every instance.
+ *
+ * The returned client starts reconciling immediately; `await client.settled()`
+ * once before asserting on it.
+ *
+ * @example
+ * ```ts
+ * const client = createClient({
+ *   plugins: [{ id: 'logger', plugin: loggerPlugin }],
+ * })
+ * await client.settled()
+ * ```
+ */
+export function createClient(options?: {
+  /** The initial plugin list. */
+  plugins?: Array<PluginEntry>
+  /** Called for every failure the client contained rather than propagated. */
+  onError?: (report: ClientErrorReport) => void
+}): Client {
+  return new ClientImpl(options)
+}

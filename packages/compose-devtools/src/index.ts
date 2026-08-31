@@ -1,7 +1,8 @@
 /**
- * `@tanstack/compose-devtools` — observability for a live runtime.
+ * `@tanstack/compose-devtools` — observability for a live client.
  *
- * Scaffold only. The panels this package will expose, per `INTENT.md` §3.11:
+ * Scaffold only. See `ROADMAP.md` (slice 3) for when it gets built and
+ * `CONTEXT.md` for the terms it has to use. The panels it will expose:
  *
  * - **Instances** — every mounted plugin with its lifecycle state and display name.
  * - **Pending** — instances that have not started, and precisely which requirements
@@ -12,10 +13,10 @@
  * - **Event trace** — dispatches, their mode, the listeners reached, and any veto.
  * - **Composition** — the reconciled entry list, with the patch layers that produced it.
  */
-import type { Runtime } from '@tanstack/compose'
+import type { Client } from '@tanstack/compose'
 
 export interface DevtoolsOptions {
-  runtime: Runtime
+  client: Client
 }
 
 export interface Devtools {
@@ -23,7 +24,7 @@ export interface Devtools {
   close: () => void
 }
 
-/** Attach devtools to a runtime. */
+/** Attach devtools to a client. */
 export function createDevtools(_options: DevtoolsOptions): Devtools {
   // TODO: subscribe to the kernel's instance/effect/event stores.
   throw new Error(

@@ -1,4 +1,4 @@
-import { defineEvent, defineService } from '@tanstack/compose'
+import { createAction, createContextKey } from '@tanstack/compose'
 import { useComposition } from '@tanstack/react-compose'
 import type { ReactNode } from 'react'
 
@@ -7,19 +7,19 @@ import type { ReactNode } from 'react'
  * composition — model adapter, tools, prompt sections, panels — is a list the
  * running UI can edit, with every change reconciled by id.
  *
- * Nothing here runs yet; the kernel is a scaffold. This module exists so the
- * example is wired to the workspace packages and type-checks against them.
+ * The kernel is built (roadmap slice 1); the React adapter this example renders
+ * through is slice 2, so nothing runs yet. This module exists so the example is
+ * wired to the workspace packages and type-checks against them.
  */
 
-/** The seam an agent panel would read to render its tools. */
-export const ToolsService = defineService<{
+/** The context key an agent panel would read to render its tools. */
+export const toolsKey = createContextKey<{
   list: () => ReadonlyArray<string>
 }>('tools')
 
-/** The waterfall a policy plugin would intercept to approve or veto a tool call. */
-export const ToolCallEvent = defineEvent<[toolName: string], boolean>(
-  'tool/call',
-  { mode: 'waterfall' },
+/** The action a policy plugin would wrap with middleware to veto a tool call. */
+export const callToolAction = createAction<{ name: string }, string>(
+  'tools.call',
 )
 
 function Composition(): ReactNode {
