@@ -784,6 +784,8 @@ class ClientImpl implements Client {
       inspect: () => this.inspect(),
       resources: (instanceId: string) => this.resources(instanceId),
       getContext: (key) => this.getContext(key),
+      callSource: (id: string, name: string, input?: unknown) =>
+        this.callSource(id, name, input),
     }
     return record.view
   }
@@ -1121,6 +1123,10 @@ class ClientImpl implements Client {
 
   getContext<TValue>(key: ContextKey<TValue>): TValue | undefined {
     return this.#published.get(key) as TValue | undefined
+  }
+
+  callSource(id: string, name: string, input?: unknown): Promise<unknown> {
+    return this.#callHosted(id, name, input)
   }
 
   // ------------------------------------------------------------------ reporting

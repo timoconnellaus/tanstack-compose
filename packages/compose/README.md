@@ -243,6 +243,11 @@ client.use(stubCallAction, ({ input, next }) => {
 })
 ```
 
+`client.callSource(id, name, input)` calls a source entry's named exports from
+the client side, through its host — the same door `call` opens for a stub
+handler, for when one plugin has to reach another entry's handlers. It gives
+hosted code no new authority: source still reaches only what a grant hands it.
+
 Removing the entry revokes its stubs, stops its code, and resolves only once the
 host has released it. Source that fails to parse, fails to load, throws in setup
 or throws on the first call leaves the entry in `error`; `sourceErrorOf(error)`
@@ -254,7 +259,9 @@ entry's grants — so it is a type checker and a compiler in one seam. Without i
 source is started as written. A checker that compiles more than the grant text —
 a base declaration file, a synthesized `stubs` type — publishes what it compiles
 as `declarations(grants)`, so whoever shows an author the declarations shows the
-ones the check uses.
+ones the check uses. A checker may also implement `exports({ source, grants })`,
+which reports a module's named exports with the type of each: that is how one
+written module is described to another that calls it.
 
 > The in-process host runs plugin source in your own process: it is the
 > reference other hosts are measured against, not an isolation boundary. In

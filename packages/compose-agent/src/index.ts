@@ -36,6 +36,21 @@ export { promptPlugin, promptSectionPlugin } from './prompt'
 export { modelsPlugin } from './models'
 export { composerPlugin } from './composer'
 export { agentStubs, promptStub, toolsStub } from './stubs'
+export {
+  agentStub,
+  createServerStub,
+  createSlotsStub,
+  grantView,
+  pluginIdOf,
+  serverStub,
+  sessionStub,
+  slotRegistryKey,
+  slotsStub,
+  viewIdOf,
+  viewRendererKey,
+  viewStubs,
+  viewSuffix,
+} from './views'
 export { jsonSchemaValidator } from './json-schema'
 export { loopPlugin } from './loop'
 export { scriptedModelPlugin } from './scripted'
@@ -46,6 +61,17 @@ export type {
   ComposerResult,
 } from './composer'
 export type { WrittenSection, WrittenTool } from './stubs'
+export type {
+  Slot,
+  SlotRegistry,
+  ViewFill,
+  ViewGrantConfig,
+  ViewNode,
+  ViewRenderer,
+  ViewServerCall,
+  ViewSessionEntry,
+  ViewTone,
+} from './views'
 export type { JsonSchema, JsonSchemaType } from './json-schema'
 
 export type {

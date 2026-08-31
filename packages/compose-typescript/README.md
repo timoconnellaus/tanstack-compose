@@ -134,6 +134,12 @@ function pluginDeclarations(
 const baseDeclarations: string
 ```
 
+`createTypeScriptChecker()` also implements the seam's optional
+`exports({ source, grants })`, which returns a module's named exports with the
+type of each where it can be recovered. That is how a **view** is checked
+against the named exports of the plugin it belongs to: the caller turns the
+result into declarations, so nothing here knows what a view is.
+
 ## Where it runs, and what it costs
 
 The suite runs under Node and again under jsdom in CI; the checker was also

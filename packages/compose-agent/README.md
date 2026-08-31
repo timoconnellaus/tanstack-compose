@@ -342,6 +342,59 @@ log: the phase (`check`, `parse`, `load`, `setup`, `call`), the message, the
 line and column where they are known, and the checker's diagnostics. One shape
 for all five, so the model corrects and rewrites in the same turn.
 
+### Views: the half that runs in the browser
+
+A plugin the agent writes may have a **view**: a second module, of the same
+shape, that runs in the browser client and puts something on the page. Grant
+`viewStubs` and name the **slots** a view may fill, and `write_plugin` takes a
+`view` argument:
+
+```ts
+{
+  id: 'composer',
+  plugin: composerPlugin,
+  options: {
+    stubs: agentStubs,
+    viewStubs,
+    viewSlots: ['chat.input.actions'],
+  },
+}
+```
+
+```ts
+// the view the model writes
+let api
+export default async function ({ stubs }) {
+  api = stubs
+  await api.slots({
+    slot: 'chat.input.actions',
+    order: 10,
+    view: { type: 'button', label: 'Summarise', onPress: 'press' },
+  })
+}
+
+export async function press() {
+  return api.server({ handler: 'summarise', input: { text: 'the turn' } })
+}
+```
+
+What a view puts in a slot is plain data — `text`, `button`, `input`, `row`,
+`stack` — because a renderer cannot cross a host boundary. Where a callback
+would be there is the name of one of the view's own exports, and `stubs.server`
+calls the plugin's named exports on the other side, so the work stays in the
+plugin and the view only shows it.
+
+The view is its own plugin entry, `${id}.view`, so it has its own status, its
+own cleanup and its own place in the plugin list. Rewriting the plugin replaces
+its fills; removing the plugin removes them. A view that fails to start is one
+entry in `error` while its plugin keeps running.
+
+Two things are the operator's, not the model's: which slots a view may fill —
+it is part of the grant, in the declarations and in the handler both — and what
+turns a view's tree into something the page renders. That last one is the
+`viewRendererKey` seam, which is why this package holds no framework dependency;
+provide it, and `slotRegistryKey`, from the page.
+
 ### Type checking is optional, and is a plugin
 
 Provide `sourceCheckerKey` and source is type-checked against the declarations

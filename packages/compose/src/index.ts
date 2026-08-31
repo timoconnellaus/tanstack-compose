@@ -61,6 +61,7 @@ export type {
   SourceChecker,
   SourceDiagnostic,
   SourceError,
+  SourceExport,
   StubCall,
   StubGrant,
   StubHandler,

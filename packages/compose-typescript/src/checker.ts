@@ -5,6 +5,7 @@ import type {
   SourceCheckResult,
   SourceChecker,
   SourceDiagnostic,
+  SourceExport,
 } from '@tanstack/compose'
 
 /** The source as written, byte for byte, so its lines are the author's lines. */
@@ -94,10 +95,73 @@ export function createTypeScriptChecker(): SourceChecker {
       if (diagnostics.length > 0) return { diagnostics }
       return { code: transpile(request.source) }
     },
+    exports(request): Array<SourceExport> {
+      const session = sessionFor(sessions, pluginDeclarations(request.grants))
+      return exportedTypes(session, request.source)
+    },
     // The same producer `check` compiles against, so a composer that shows this
     // shows the model exactly what its source is checked against (D8).
     declarations: pluginDeclarations,
   }
+}
+
+/**
+ * The named exports of one module of plugin source, with the type of each one
+ * as TypeScript prints it. This is how a **view** is checked against the named
+ * exports of its plugin's server half (ui.md D2): whoever asked turns these
+ * into declarations, and this package never learns what a view is.
+ *
+ * A type that names something declared inside the source itself is dropped
+ * rather than printed: the name means nothing in the file the other module is
+ * compiled against, and a dangling name would read as a mistake in the view.
+ */
+function exportedTypes(session: Session, source: string): Array<SourceExport> {
+  write(session, pluginFile, source)
+  write(session, shapeFile, '')
+  const program = session.service.getProgram()!
+  const file = program.getSourceFile(pluginFile)
+  if (!file) return []
+  const checker = program.getTypeChecker()
+  const module = checker.getSymbolAtLocation(file)
+  if (!module) return []
+  const local = localTypeNames(file)
+
+  const found: Array<SourceExport> = []
+  for (const symbol of checker.getExportsOfModule(module)) {
+    if (symbol.name === 'default') continue
+    const declaration = symbol.valueDeclaration ?? symbol.declarations?.[0]
+    if (!declaration) {
+      found.push({ name: symbol.name })
+      continue
+    }
+    const printed = checker.typeToString(
+      checker.getTypeOfSymbolAtLocation(symbol, declaration),
+      declaration,
+      ts.TypeFormatFlags.NoTruncation,
+    )
+    const dangling = local.some((name) =>
+      new RegExp(`\\b${name}\\b`).test(printed),
+    )
+    found.push({ name: symbol.name, ...(dangling ? {} : { type: printed }) })
+  }
+  return found
+}
+
+/** The type names the module declares itself, which only mean anything in it. */
+function localTypeNames(file: ts.SourceFile): Array<string> {
+  const names: Array<string> = []
+  for (const statement of file.statements) {
+    if (
+      (ts.isInterfaceDeclaration(statement) ||
+        ts.isTypeAliasDeclaration(statement) ||
+        ts.isEnumDeclaration(statement) ||
+        ts.isClassDeclaration(statement)) &&
+      statement.name
+    ) {
+      names.push(statement.name.text)
+    }
+  }
+  return names
 }
 
 /** Strip the types. One file, no program: the program already had its say. */

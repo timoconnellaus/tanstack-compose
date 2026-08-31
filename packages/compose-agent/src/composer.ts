@@ -7,6 +7,7 @@ import {
 import { jsonSchemaValidator } from './json-schema'
 import { modelKey, toolsKey } from './keys'
 import { createTool } from './tools'
+import { grantView, pluginIdOf, viewIdOf } from './views'
 import type {
   AnyPlugin,
   AnyStubGrant,
@@ -42,6 +43,11 @@ export interface ComposerEntry {
   sourceError?: SourceError
   /** Whether the agent may read this entry's source back. */
   readable?: boolean
+  /**
+   * Set on the **view** of another entry: the part of that plugin that runs in
+   * the browser client. It is written, read and removed with its plugin.
+   */
+  view?: boolean
 }
 
 /**
@@ -64,8 +70,12 @@ export interface ComposerResult {
   catalog?: Array<string>
   /** The entry's plugin source. */
   source?: string
+  /** The source of the entry's view, when it has one. */
+  view?: string
   /** The declarations plugin source is checked against and written against. */
   declarations?: string
+  /** The declarations a view is checked against and written against. */
+  viewDeclarations?: string
   /** Everything the source checker said, when the check is what failed. */
   diagnostics?: Array<SourceDiagnostic>
   /** The registered model providers. */
@@ -84,6 +94,16 @@ export interface ComposerOptionsInput {
   protected?: ReadonlyArray<string>
   /** The stubs every plugin the agent writes is granted. */
   stubs?: ReadonlyArray<AnyStubGrant>
+  /**
+   * The stubs every **view** the agent writes is granted. Leave it out and the
+   * agent cannot write a view at all.
+   */
+  viewStubs?: ReadonlyArray<AnyStubGrant>
+  /**
+   * The **slot** names a written view may fill; part of the grant, so a view
+   * cannot fill a slot it was not given. Omit it to allow any slot the page has.
+   */
+  viewSlots?: ReadonlyArray<string>
   /** The host plugins the agent writes run in. Defaults to the in-process host. */
   host?: string
 }
@@ -92,6 +112,8 @@ interface ComposerOptions {
   catalog: Record<string, AnyPlugin>
   protected: Array<string>
   stubs: Array<AnyStubGrant>
+  viewStubs: Array<AnyStubGrant> | undefined
+  viewSlots: Array<string> | undefined
   host: string | undefined
 }
 
@@ -168,6 +190,42 @@ const composerOptions: StandardSchemaV1<
         }
       })
 
+      if (input.viewStubs !== undefined && !Array.isArray(input.viewStubs)) {
+        issues.push({
+          message: 'expected an array of stub grants',
+          path: ['viewStubs'],
+        })
+      }
+      const viewStubs = Array.isArray(input.viewStubs)
+        ? [...input.viewStubs]
+        : undefined
+      viewStubs?.forEach((grant, index) => {
+        if ((grant as { type?: unknown } | null)?.type !== 'compose/stub') {
+          issues.push({
+            message: 'expected a stub grant created by createStub',
+            path: ['viewStubs', index],
+          })
+        }
+      })
+
+      if (input.viewSlots !== undefined && !Array.isArray(input.viewSlots)) {
+        issues.push({
+          message: 'expected an array of slot names',
+          path: ['viewSlots'],
+        })
+      }
+      const viewSlots = Array.isArray(input.viewSlots)
+        ? [...input.viewSlots]
+        : undefined
+      viewSlots?.forEach((slot, index) => {
+        if (typeof slot !== 'string' || slot === '') {
+          issues.push({
+            message: 'expected a non-empty slot name',
+            path: ['viewSlots', index],
+          })
+        }
+      })
+
       if (input.host !== undefined && typeof input.host !== 'string') {
         issues.push({ message: 'expected a host name', path: ['host'] })
       }
@@ -178,6 +236,8 @@ const composerOptions: StandardSchemaV1<
           catalog,
           protected: guarded,
           stubs,
+          viewStubs,
+          viewSlots,
           host: input.host,
         },
       }
@@ -264,8 +324,10 @@ export const composerPlugin = createPlugin({
     const written = new Set<string>()
     /** Entries the agent added from the catalog; only these can be removed. */
     const added = new Set<string>()
-    /** The source the agent last read back, per entry: the read gate's memory. */
-    const observed = new Map<string, string>()
+    /** View entries, by their own id: they belong to the entry they came with. */
+    const views = new Set<string>()
+    /** What the agent last read back, per entry: the read gate's memory. */
+    const observed = new Map<string, { source: string; view?: string }>()
 
     const list = (): Array<PluginEntry> => client.pluginList.state
     const entryOf = (id: string): PluginEntry | undefined =>
@@ -290,6 +352,66 @@ export const composerPlugin = createPlugin({
           declarations: grant.declarations,
         })),
       ) ?? stubDeclarations(grants)
+
+    /** The grants of every written plugin, as the check request wants them. */
+    const grantsOf = (grants: ReadonlyArray<AnyStubGrant>) =>
+      grants.map((grant) => ({
+        name: grant.name,
+        declarations: grant.declarations,
+      }))
+
+    /**
+     * The grants one written **view** receives: the **stubs** the operator
+     * granted views, narrowed to this plugin — to the **slot** names the
+     * operator allowed, and to the named exports of the plugin's own server
+     * half, which the source checker recovers when it can. The narrowed grants
+     * travel on the entry, so the client checks the view against the same text
+     * whenever it restarts it (D2).
+     */
+    const viewGrantsFor = (source: string): Array<AnyStubGrant> => {
+      const exported = instance.context.peek(sourceCheckerKey)?.exports?.({
+        source,
+        grants: grantsOf(options.stubs),
+      })
+      return grantView(options.viewStubs ?? [], {
+        ...(options.viewSlots === undefined
+          ? {}
+          : { slots: options.viewSlots }),
+        ...(exported === undefined ? {} : { exports: exported }),
+      })
+    }
+
+    /**
+     * Check one module of plugin source before the plugin list is touched, so
+     * source that does not check leaves the entry exactly as it was (D7).
+     */
+    const check = async (
+      id: string,
+      source: string,
+      grants: ReadonlyArray<AnyStubGrant>,
+    ): Promise<Array<SourceDiagnostic> | undefined> => {
+      const checker = instance.context.peek(sourceCheckerKey)
+      if (!checker) return undefined
+      const checked = await checker.check({
+        instanceId: id,
+        source,
+        declarations: stubDeclarations(grants),
+        grants: grantsOf(grants),
+      })
+      return typeof checked.code === 'string'
+        ? undefined
+        : (checked.diagnostics ?? [])
+    }
+
+    /** Diagnostics as one sentence, in the shape every failure here takes. */
+    const said = (diagnostics: Array<SourceDiagnostic>): string =>
+      diagnostics
+        .map((one) =>
+          one.line === undefined
+            ? one.message
+            : `${one.line}:${one.column ?? 0} ${one.message}`,
+        )
+        .join('; ') || 'the source checker rejected this source'
 
     // -------------------------------------------------------------- reporting
 
@@ -324,6 +446,7 @@ export const composerPlugin = createPlugin({
         const detail = sourceErrorOf(snapshot?.error)
         if (detail) row.sourceError = detail
       }
+      if (views.has(id)) row.view = true
       if (kind === 'source') row.readable = written.has(id)
       return row
     }
@@ -396,7 +519,7 @@ export const composerPlugin = createPlugin({
     const listTool = createTool({
       name: 'list_plugins',
       description:
-        'List the plugin list of this agent: every entry with its status, the deps it is still missing when pending, whether it is protected, the names the plugin catalog offers, and the declarations a plugin written with write_plugin is checked against.',
+        'List the plugin list of this agent: every entry with its status, the deps it is still missing when pending, whether it is protected, the names the plugin catalog offers, and the declarations a plugin written with write_plugin is checked against — and, when this agent may write views, the declarations a view is checked against as well.',
       ...args<Record<string, never>>({ type: 'object', properties: {} }),
       concurrency: 'exclusive',
       execute: (): ComposerResult => ({
@@ -406,8 +529,22 @@ export const composerPlugin = createPlugin({
         catalog: Object.keys(options.catalog),
         // The declarations a plugin written here is checked against. They are
         // on the listing because a first write has no entry to read back, and
-        // the model has to be able to see them before it writes (D8).
+        // the model has to be able to see them before it writes (D8). A view's
+        // are the same thing for the other half; the `server` stub is narrowed
+        // to the plugin's own exports only once there is source to read them
+        // from, so what is listed here is the shape, not one plugin's.
         declarations: declarationsFor(options.stubs),
+        ...(options.viewStubs === undefined
+          ? {}
+          : {
+              viewDeclarations: declarationsFor(
+                grantView(options.viewStubs, {
+                  ...(options.viewSlots === undefined
+                    ? {}
+                    : { slots: options.viewSlots }),
+                }),
+              ),
+            }),
       }),
     })
 
@@ -581,19 +718,41 @@ export const composerPlugin = createPlugin({
     const writeTool = createTool({
       name: 'write_plugin',
       description:
-        "Write a plugin as TypeScript source and start it, either as a new entry or as a rewrite of one this agent wrote. The source is an ES module whose default export is the setup function and whose other exports are the handlers it registers; read_plugin shows the declarations it is checked against. A rewrite is refused unless read_plugin was called for that entry and its source has not changed since. A rewrite runs the previous code's cleanups first, so nothing it registered survives. Takes effect from the next turn.",
-      ...args<{ id: string; source: string }>({
+        'Write a plugin as TypeScript source and start it, either as a new entry or as a rewrite of one this agent wrote. The source is an ES module whose default export is the setup function and whose other exports are the handlers it registers; read_plugin shows the declarations it is checked against. Pass "view" as well to give the plugin a view: a second module, of the same shape, that runs in the browser client and puts something on the page. A view fills a slot with stubs.slots, and calls this plugin\'s own named exports with stubs.server, so the work stays in the plugin and the view only shows it; it is checked against those exports, so a view that calls a handler this source does not export is a type error here rather than a failure on the page. Rewriting without "view" removes the view. A rewrite is refused unless read_plugin was called for that entry and neither module has changed since, and it runs the previous code\'s cleanups first, so nothing it registered — including its fills — survives. Takes effect from the next turn.',
+      ...args<{ id: string; source: string; view?: string }>({
         type: 'object',
         properties: {
           id: { type: 'string', description: 'The entry id to write.' },
           source: { type: 'string', description: 'The whole module source.' },
+          view: {
+            type: 'string',
+            description:
+              "The whole source of the plugin's view, if it has one. Omit it for a plugin with nothing on the page.",
+          },
         },
         required: ['id', 'source'],
       }),
       concurrency: 'exclusive',
-      execute: async ({ id, source }): Promise<ComposerResult> => {
+      execute: async ({ id, source, view }): Promise<ComposerResult> => {
         const declarations = declarationsFor(options.stubs)
+        const viewId = viewIdOf(id)
+        const wanted = view === undefined || view === '' ? undefined : view
+
+        if (pluginIdOf(id) !== undefined || views.has(id)) {
+          return failure(
+            `"${id}" is the id of a view; write a view with the "view" argument of write_plugin on the plugin it belongs to`,
+            [id],
+          )
+        }
+        if (wanted !== undefined && options.viewStubs === undefined) {
+          return failure(
+            'this agent was not granted views, so a plugin it writes cannot have one',
+            [id],
+          )
+        }
+
         const existing = entryOf(id)
+        const existingView = entryOf(viewId)
         if (existing) {
           if (isProtected(id)) {
             return failure(
@@ -614,14 +773,17 @@ export const composerPlugin = createPlugin({
               [id],
             )
           }
-          if (seen !== existing.source) {
+          if (
+            seen.source !== existing.source ||
+            seen.view !== existingView?.source
+          ) {
             observed.delete(id)
             return failure(
               `the source of "${id}" has changed since you read it; read it again and try again`,
               [id],
             )
           }
-        } else if (isProtected(id)) {
+        } else if (isProtected(id) || isProtected(viewId)) {
           return failure(
             `the entry id "${id}" is protected and cannot be used`,
             [id],
@@ -629,31 +791,27 @@ export const composerPlugin = createPlugin({
         }
 
         // Check before the list is touched, so source that does not check
-        // leaves the entry exactly as it was (D7).
-        const checker = instance.context.peek(sourceCheckerKey)
-        if (checker) {
-          const checked = await checker.check({
-            instanceId: id,
-            source,
+        // leaves the entry exactly as it was (D7). Both modules are checked
+        // before either is written, so a bad view never starts a good plugin.
+        const wrong = await check(id, source, options.stubs)
+        if (wrong) {
+          return failure(said(wrong), [id], {
+            diagnostics: wrong,
             declarations,
-            grants: options.stubs.map((grant) => ({
-              name: grant.name,
-              declarations: grant.declarations,
-            })),
           })
-          if (typeof checked.code !== 'string') {
-            const diagnostics = checked.diagnostics ?? []
-            return failure(
-              diagnostics
-                .map((one) =>
-                  one.line === undefined
-                    ? one.message
-                    : `${one.line}:${one.column ?? 0} ${one.message}`,
-                )
-                .join('; ') || 'the source checker rejected this source',
-              [id],
-              { diagnostics, declarations },
-            )
+        }
+        const viewGrants =
+          wanted === undefined ? undefined : viewGrantsFor(source)
+        const viewDeclarations =
+          viewGrants === undefined ? undefined : declarationsFor(viewGrants)
+        if (wanted !== undefined && viewGrants !== undefined) {
+          const wrongView = await check(viewId, wanted, viewGrants)
+          if (wrongView) {
+            return failure(said(wrongView), [id], {
+              diagnostics: wrongView,
+              declarations,
+              viewDeclarations,
+            })
           }
         }
 
@@ -666,36 +824,52 @@ export const composerPlugin = createPlugin({
             ? {}
             : { options: existing.options }),
         }
+        // The view is its own entry, so the kernel sees it as an ordinary
+        // instance: its own status, its own cleanup, its own host. It sits
+        // right after its plugin, and the two are written and removed together.
+        const viewEntry: PluginEntry | undefined =
+          wanted === undefined || viewGrants === undefined
+            ? undefined
+            : { id: viewId, source: wanted, stubs: viewGrants }
+        const rest = list().filter((one) => one.id !== id && one.id !== viewId)
+        const both = [entry, ...(viewEntry ? [viewEntry] : [])]
         const failed = await apply(
           existing
-            ? list().map((one) => (one.id === id ? entry : one))
-            : [...list(), entry],
+            ? list().flatMap((one) =>
+                one.id === id ? both : one.id === viewId ? [] : [one],
+              )
+            : [...rest, ...both],
         )
         // The entry is the agent's either way: a rewrite that failed to start
         // still replaced what was there, and the agent has to fix it.
         written.add(id)
+        if (viewEntry) views.add(viewId)
+        else views.delete(viewId)
         // Whatever the entry now holds, the agent has not read it back.
         observed.delete(id)
-        if (failed) return failure(failed, [id], { declarations })
-        const row = report(id)
-        if (row.status === 'error') {
+        const touched = viewEntry ? [id, viewId] : [id]
+        if (failed) return failure(failed, touched, { declarations })
+        const rows = touched.map(report)
+        const broken = rows.find((row) => row.status === 'error')
+        if (broken) {
           return {
             ok: false,
-            message: `the source of "${id}" did not start`,
-            error: row.error ?? 'the source did not start',
-            entries: rowsFor([id]),
+            message: `the source of "${broken.id}" did not start`,
+            error: broken.error ?? 'the source did not start',
+            entries: rowsFor(touched),
             declarations,
-            ...(row.sourceError?.diagnostics
-              ? { diagnostics: row.sourceError.diagnostics }
+            ...(viewDeclarations === undefined ? {} : { viewDeclarations }),
+            ...(broken.sourceError?.diagnostics
+              ? { diagnostics: broken.sourceError.diagnostics }
               : {}),
           }
         }
         return {
           ok: true,
           message: existing
-            ? `rewrote the entry "${id}"`
-            : `wrote the entry "${id}"`,
-          entries: rowsFor([id]),
+            ? `rewrote the entry "${id}"${viewEntry ? ' and its view' : ''}`
+            : `wrote the entry "${id}"${viewEntry ? ' and its view' : ''}`,
+          entries: rowsFor(touched),
           effect: nextTurn,
         }
       },
@@ -704,7 +878,7 @@ export const composerPlugin = createPlugin({
     const readTool = createTool({
       name: 'read_plugin',
       description:
-        'Read back the source of an entry this agent wrote, with the declarations it is checked against and its current status and error. Reading is what unlocks rewriting it with write_plugin.',
+        "Read back the source of an entry this agent wrote, with its view's source when it has one, the declarations each is checked against, and its current status and error. Reading is what unlocks rewriting it with write_plugin.",
       ...args<{ id: string }>({
         type: 'object',
         properties: { id: idSchema },
@@ -712,6 +886,13 @@ export const composerPlugin = createPlugin({
       }),
       concurrency: 'exclusive',
       execute: ({ id }): ComposerResult => {
+        const owner = pluginIdOf(id)
+        if (owner !== undefined && views.has(id)) {
+          return failure(
+            `the entry "${id}" is the view of "${owner}"; read "${owner}" and its view comes with it`,
+            [id],
+          )
+        }
         const entry = entryOf(id)
         if (!entry) return failure(`there is no plugin entry "${id}"`, [id])
         if (entry.source === undefined) {
@@ -726,13 +907,25 @@ export const composerPlugin = createPlugin({
             [id],
           )
         }
-        observed.set(id, entry.source)
+        const viewEntry = entryOf(viewIdOf(id))
+        observed.set(id, {
+          source: entry.source,
+          ...(viewEntry?.source === undefined
+            ? {}
+            : { view: viewEntry.source }),
+        })
         return {
           ok: true,
           message: `the source of "${id}", as it runs now`,
-          entries: rowsFor([id]),
+          entries: rowsFor(viewEntry ? [id, viewEntry.id] : [id]),
           source: entry.source,
           declarations: declarationsFor(entry.stubs),
+          ...(viewEntry?.source === undefined
+            ? {}
+            : {
+                view: viewEntry.source,
+                viewDeclarations: declarationsFor(viewEntry.stubs),
+              }),
         }
       },
     })
@@ -740,7 +933,7 @@ export const composerPlugin = createPlugin({
     const removeTool = createTool({
       name: 'remove_plugin',
       description:
-        "Remove an entry this agent added or wrote. Everything it registered or held is released before the removal reports done. Protected entries and entries from the operator's assembly are refused. Takes effect from the next turn.",
+        "Remove an entry this agent added or wrote, and its view with it. Everything it registered or held is released before the removal reports done, so its fills are gone from the page. Protected entries and entries from the operator's assembly are refused. Takes effect from the next turn.",
       ...args<{ id: string }>({
         type: 'object',
         properties: { id: idSchema },
@@ -748,6 +941,13 @@ export const composerPlugin = createPlugin({
       }),
       concurrency: 'exclusive',
       execute: async ({ id }): Promise<ComposerResult> => {
+        const owner = pluginIdOf(id)
+        if (owner !== undefined && views.has(id)) {
+          return failure(
+            `the entry "${id}" is the view of "${owner}"; remove "${owner}" and its view goes with it, or rewrite "${owner}" without a view`,
+            [id],
+          )
+        }
         const entry = entryOf(id)
         if (!entry) return failure(`there is no plugin entry "${id}"`, [id])
         if (isProtected(id)) {
@@ -762,15 +962,25 @@ export const composerPlugin = createPlugin({
             [id],
           )
         }
-        const failed = await apply(list().filter((one) => one.id !== id))
-        if (failed) return failure(failed, [id])
+        const viewId = viewIdOf(id)
+        const hadView = views.has(viewId)
+        const failed = await apply(
+          list().filter((one) => one.id !== id && one.id !== viewId),
+        )
+        if (failed) return failure(failed, hadView ? [id, viewId] : [id])
+        // Reported before the bookkeeping forgets them, so the rows still say
+        // which of the two was the view.
+        const gone = hadView ? [report(id), report(viewId)] : [report(id)]
         added.delete(id)
         written.delete(id)
+        views.delete(viewId)
         observed.delete(id)
         return {
           ok: true,
-          message: `removed the entry "${id}"`,
-          entries: [report(id), ...rowsFor([])],
+          message: hadView
+            ? `removed the entry "${id}" and its view`
+            : `removed the entry "${id}"`,
+          entries: [...gone, ...rowsFor([])],
           effect: nextTurn,
         }
       },
