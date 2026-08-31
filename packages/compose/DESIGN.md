@@ -258,49 +258,375 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
 - `errors` collects `{ scope, instanceId?, error }` for cleanup failures, listener
   failures and reconcile failures.
 
+## Hosts and plugin source
+
+How the kernel meets [`docs/acceptance/hosts.md` §A](../../docs/acceptance/hosts.md)
+and the seam [`self-modification.md` §D](../../docs/acceptance/self-modification.md)
+plugs into. Fixed by [ADR-0004](../../docs/adr/0004-host-contract-in-core.md): the
+contract and the in-process host live here, every isolation library lives in its
+own package, and core stays dependency-free.
+
+A **host** is the environment a plugin's code executes in. A plugin entry that
+carries **plugin source** — a string — instead of a `plugin` reference is started
+through a host: the in-process one by default, or the one the entry names.
+
+```ts
+{ id: 'greeter', source: '…', host: 'worker', stubs: [toolsStub, logStub] }
+```
+
+### The contract
+
+Three types, and nothing a host may assume beyond them.
+
+```ts
+interface Host {
+  readonly name: string
+  start: (request: HostStartRequest) => Promise<HostInstance>
+}
+
+interface HostStartRequest {
+  instanceId: string // rides on every stub call this instance makes
+  code: string // what the checker produced, or the source as written
+  options: unknown // validated, and structured-clone-safe
+  stubs: Record<string, (input: unknown) => Promise<unknown>>
+}
+
+interface HostInstance {
+  call: (name: string, input: unknown) => Promise<unknown>
+  stop: () => Promise<void>
+}
+```
+
+`start` is the whole of "load this and hand it its authority". `call` is the
+whole of "the client reaches into the plugin": one named export, one
+structured-clone-safe argument, one structured-clone-safe result. `stop` is the
+whole of teardown, and does not resolve until the host has released the
+instance. Everything else a host might want to do — caching by content hash,
+wall-clock limits, tails — is the host package's business and invisible here.
+
+The contract deliberately does **not** carry a `restart`, an `abort` or a
+`status`. Restarting is the kernel's job: it stops the instance and starts a new
+one. A host that terminates code abruptly expresses that as a `stop` whose
+`call`s afterwards reject, which is what the in-process host does too.
+
+### The written plugin shape
+
+Plugin source is an **ES module**. Its default export is the setup function; its
+other named exports are the handlers the client can `call`.
+
+```ts
+export default async function setup({ id, options, stubs }) {
+  await stubs.tools.register({ name: 'add', handler: 'add' })
+  return () => {
+    /* release anything this module itself holds */
+  }
+}
+
+export async function add({ a, b }) {
+  return a + b
+}
+```
+
+Why this shape:
+
+- **A module, not a function body.** Every remote host we intend to build loads
+  ES modules (a Dynamic Worker takes `{ mainModule, modules }`; a Compartment
+  takes a module source). A module is also what a model writes when asked for
+  "a TypeScript file", and it is what a `.d.ts` describes.
+- **Default export is setup**, so there is one obvious entry point and no name to
+  remember. It receives one object, so adding to it later is not a breaking
+  change, and returns a cleanup exactly the way `createPlugin`'s `setup` does —
+  a written plugin and a written-in-TypeScript plugin have the same lifecycle.
+- **Handlers are named exports, called by name.** A function cannot cross a host
+  boundary (A5), so a written plugin cannot hand the client a callback. Naming
+  the export is the smallest thing that works, it is how RPC into an isolate
+  works anyway, and it keeps the registration payload plain data:
+  `{ name: 'add', handler: 'add' }` is structured-clone-safe.
+- **`stubs` is the only capability object.** There is no `client`, no `instance`,
+  no `context` and no `require`. If a written plugin can do it, a stub was
+  granted for it.
+
+### Stubs and caller identity
+
+A **stub grant** is created by whoever owns the capability, once, and handed to
+entries by the operator:
+
+```ts
+const toolsStub = createStub({
+  name: 'tools',
+  declarations: `declare const tools: { register(t: { name: string; handler: string }): Promise<void> }`,
+  deps: [toolsKey],
+  handler: async ({ input, instance, call }) => {
+    const remove = instance.context.peek(toolsKey)!.add({
+      name: input.name,
+      run: (args) => call(input.handler, args),
+    })
+    instance.cleanup(remove, `tool(${input.name})`)
+  },
+})
+```
+
+- The **operator decides the grant set per entry** (A4). A written plugin's
+  `stubs` object has exactly the granted names on it and nothing else; there is
+  no registry to look one up in and no ambient object to reach through.
+- A grant may declare `deps` and `provides`. The entry's synthesized plugin
+  declares the union of its grants' — so a hosted entry sits in the dependency
+  graph like any other instance, stays `pending` until its grants' deps are
+  provided, and can `provide` through `instance.provide` inside a handler.
+- **The handler is client-side, trusted code**, so it is given the real
+  `Instance` handle. That is why registrations a stub makes are owned by the
+  hosted instance and are undone by ordinary kernel cleanup (A2), with no new
+  ownership concept.
+- `call` calls back into the written plugin's named exports through its host, so
+  a capability can be genuinely two-way without a function ever crossing.
+
+**Caller identity (A6).** Every stub call is a dispatch of `stubCallAction`:
+
+```ts
+stubCallAction: ActionDefinition<
+  { stub: string; instanceId: string; input: unknown },
+  unknown
+>
+```
+
+The callable the plugin holds is `(input) => dispatch(stubCallAction, { stub, instanceId, input })`
+— a closure the client built per instance before the host ever saw it. The
+plugin is handed the closure, not the id: there is no argument it can pass, no
+property it can read and no field it can overwrite that changes the
+`instanceId` the client sees. Because it is an action, client-side middleware
+approves, logs or refuses per instance exactly as it does for any other action
+(ADR-0003), and it sees the id before the handler does.
+
+### Termination
+
+`HostInstance.stop()` is the only teardown verb, and it is what a remote host's
+"terminate the isolate" looks like from here. On removal the hosted entry's
+instance runs two cleanups, in this order:
+
+1. **revoke** — the client forgets the instance's host record. Every later
+   `stubCallAction` dispatch for that id throws, wherever it came from,
+   including from code already running inside the host.
+2. **stop** — `host.stop()`; the in-process host marks itself stopped (so `call`
+   and its own stub wrappers reject), runs the cleanup the module's setup
+   returned, and drops the module namespace.
+
+Revoke-before-stop is deliberate and is what makes the in-process host an
+honest oracle: a remote host that aborts an isolate never gets to run the
+module's cleanup either, so a written plugin's cleanup must not be able to do
+anything observable outside itself. It releases what the module holds; anything
+the module registered through a stub is released by the kernel cleanup the
+handler registered.
+
+Because `stop` is between two calls by construction — the kernel awaits it
+during removal, and every call in or out is asynchronous — the in-process host
+reproduces the remote "terminated between two calls" case exactly (A7): after
+it, `call` rejects, stub calls reject, and every cleanup has run before removal
+reports done.
+
+### The evaluator, and workerd
+
+Evaluating a string in-process needs an evaluator. The in-process host uses
+`import()` of a `data:text/javascript` URL, reached through
+`new Function('u', 'return import(u)')` so no bundler rewrites it. Node, Bun and
+browsers have this; **workerd forbids runtime code generation**, so the
+`new Function` throws there and the host reports it:
+
+> `@tanstack/compose: the in-process host cannot evaluate plugin source in this runtime, which forbids code generation from strings; run source in a host package instead`
+
+The entry lands in `error` with that message and the client keeps working. The
+workerd smoke test asserts exactly that string rather than skipping — a runtime
+where source cannot run must say so, not appear to work.
+
+Every value crossing the in-process boundary is passed through
+`structuredClone`: options in, stub input out and result in, `call` input and
+result. This is not defensive copying for its own sake — it is what makes the
+in-process host the oracle A5 demands. Source that smuggles a function or a
+class instance through a stub fails in-process for the same reason it would fail
+over a wire, instead of passing here and failing in a Dynamic Worker.
+
+### Error mapping
+
+Five failures, one shape. Each attaches a `SourceError` to the error the client
+reports, readable with `sourceErrorOf(error)`:
+
+| Failure                             | `phase` | Where it is caught                                                   | Line?           |
+| ----------------------------------- | ------- | -------------------------------------------------------------------- | --------------- |
+| checker rejected the source         | `check` | before the host is asked to start anything                           | from diagnostic |
+| source does not parse               | `parse` | the dynamic `import` throws a `SyntaxError`                          | from the stack  |
+| module throws while evaluating      | `load`  | the dynamic `import` throws anything else                            | from the stack  |
+| default export throws               | `setup` | `host.start`                                                         | from the stack  |
+| first `call` into the plugin throws | `call`  | the first `HostInstance.call`, before the instance has answered once | from the stack  |
+
+`line` and `column` come from the first stack frame naming the data URL. All
+five reach the entry through the kernel's existing machinery: the synthesized
+plugin's `setup` throws, so the instance ends `error` with the error attached
+(kernel A6), the `errors` store gets a `{ scope: 'setup' }` report, siblings are
+untouched, and the client never crashes. Nothing new was added for hosted
+plugins.
+
+The `call` phase is the odd one, because a remote host can defer a load failure
+to the first invocation. Only the **first** call promotes a rejection to the
+instance's status; after the plugin has answered once, a throwing handler is an
+ordinary rejected call and the instance stays `active`. Anything else would let
+one bad tool argument remove a working plugin.
+
+### The type-check seam
+
+Type checking is not core's job (self-modification D9), but the place it plugs
+in is. A context key holds it:
+
+```ts
+const sourceCheckerKey: ContextKey<SourceChecker>
+
+interface SourceChecker {
+  check: (request: {
+    instanceId: string
+    source: string
+    declarations: string
+  }) => SourceCheckResult | Promise<SourceCheckResult>
+}
+
+interface SourceCheckResult {
+  code?: string // what to start; absent means "do not start"
+  diagnostics?: Array<SourceDiagnostic> // { message, line?, column? }
+}
+```
+
+When the key is provided, every source entry is checked before its host is asked
+to start anything, and the host is given `result.code` — so the same seam is a
+transpiler: TypeScript in, JavaScript out. When it is absent, the source is
+started as written. The checker runs client-side, once, so an entry gets the
+same diagnostics whichever host it names.
+
+**Declarations are derived from the grants, not from the plugin.** Each
+`createStub` carries the `.d.ts` text for its own capability — written once by
+whoever provides it — and an entry's declarations are the concatenation for its
+grants, in grant order, via `stubDeclarations(entry.stubs)`. A written plugin
+therefore cannot even _name_ a capability it was not granted, which makes the
+type environment a statement of the entry's authority rather than a separate
+thing to keep in sync. The same string is what a composer shows the model
+(D8), so what type-checks is what runs.
+
+Core ships no checker and no `typescript` dependency. The tests use a
+ten-line reference checker to prove the seam.
+
+### The hosted entry as an ordinary instance
+
+A source entry is not a special kind of record. During reconciliation the client
+synthesizes a plugin for it — name `hosted`, `deps`/`provides` from the grants,
+a `setup` that resolves the host, runs the checker, binds the stubs and calls
+`host.start` — and from there every kernel rule applies unchanged: options are
+validated and restart the instance, deps hold it `pending`, `inspect()` lists
+it, `resources()` shows what its stub handlers registered, removal runs its
+cleanups in reverse (A2).
+
+Two consequences worth stating:
+
+- **`plugin` and `source` are both optional on `PluginEntry`, and exactly one
+  must be present.** A discriminated union would say this in the type system,
+  but it makes the common `{ ...entry, plugin: other }` edit ill-typed and turns
+  `Array<PluginEntry>` into something callers must narrow. The check is a
+  reconcile-time error alongside the existing "id is missing" and "duplicate id"
+  ones, which already fail a reconcile without touching a running instance
+  (kernel F3).
+- **Restart comparison is by value, not identity.** A synthesized plugin is a
+  fresh object every pass, so `entry.plugin !== record.plugin` cannot be the
+  test. A hosted record restarts when its `source`, `host`, grant list or
+  options change, and otherwise is left alone. Changing `host` is therefore an
+  options-style change: the instance is stopped in the old host and started in
+  the new one (A3).
+
+### Reusing the kernel suite
+
+hosts.md B5 asks for the kernel's criteria to hold for a hosted plugin, and A2
+asks the same in core. Duplicating `tests/A-lifecycle.test.ts` against source
+would double the maintenance and halve the meaning: two suites drift, and the
+second one becomes the place a weakened assertion hides.
+
+Instead, `tests/helpers/instance-contract.ts` holds one parameterised suite —
+the parts of the kernel's criteria that are observable of any single instance
+(A1–A5, A7 cleanup and removal; B1–B2 deps; D2 options; F1–F2 reconcile and
+`enabled`; G1–G2 inspection) — expressed against a factory that, given a
+behaviour, returns a plugin entry realising it. `tests/hosts/instance-parity.test.ts`
+runs that suite twice: once with a factory that builds an ordinary plugin, and
+once with a factory that builds a source entry on the in-process host. The
+control arm is the point: it proves the shared contract still says something
+about the kernel, so a hosted-plugin bug cannot be hidden by weakening the
+contract. A host package adds a third arm with one line and no new assertions,
+which is B5.
+
+The criterion-by-criterion kernel files stay as they are. They are the record of
+what the kernel promises, written per criterion; the parameterised contract is a
+parity oracle, and the two have different jobs.
+
 ## Criterion → test
 
-| Id  | Test file                           | `it()` title                                                                                  |
-| --- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
-| A1  | `tests/A-lifecycle.test.ts`         | `adding a plugin starts it and removing it leaves no trace`                                   |
-| A2  | `tests/A-lifecycle.test.ts`         | `removal reports complete only once every async cleanup has finished`                         |
-| A3  | `tests/A-lifecycle.test.ts`         | `removing an instance removes every instance it started, recursively`                         |
-| A4  | `tests/A-lifecycle.test.ts`         | `cleanups of one instance run in reverse order of registration`                               |
-| A5  | `tests/A-lifecycle.test.ts`         | `registering on an instance being removed or already removed throws`                          |
-| A6  | `tests/A-lifecycle.test.ts`         | `a plugin that throws during start ends in error with nothing left behind`                    |
-| A7  | `tests/A-lifecycle.test.ts`         | `a cleanup that throws is reported and the remaining cleanups still run`                      |
-| B1  | `tests/B-deps.test.ts`              | `an instance stays pending until the last dep is provided, whatever the order`                |
-| B2  | `tests/B-deps.test.ts`              | `losing a dep cleans the dependent up and returns it to pending`                              |
-| B3  | `tests/B-deps.test.ts`              | `only a value provided by an active instance satisfies a dep`                                 |
-| B4  | `tests/B-deps.test.ts`              | `a plugin can read a key it did not declare and keeps running either way`                     |
-| B5  | `tests/B-deps.test.ts`              | `providing a key that is already provided throws for the second provider`                     |
-| B6  | `tests/B-deps.test.ts`              | `circular deps are detected and reported with the cycle named`                                |
-| C1  | `tests/C-replacement.test.ts`       | `every dependent runs against the new provider after a swap`                                  |
-| C2  | `tests/C-replacement.test.ts`       | `there is no window in which a dependent is active against a removed provider`                |
-| D1  | `tests/D-options.test.ts`           | `options are validated and defaulted before the instance starts`                              |
-| D2  | `tests/D-options.test.ts`           | `an options update restarts only that instance`                                               |
-| D3  | `tests/D-options.test.ts`           | `an options update is an action tooling can observe, veto or replace`                         |
-| E1  | `tests/E-middleware-events.test.ts` | `middleware can rewrite the input, rewrite the result, or stop the action`                    |
-| E2  | `tests/E-middleware-events.test.ts` | `middleware runs in registration order, first goes to the front, and removal is clean`        |
-| E3  | `tests/E-middleware-events.test.ts` | `a listener observes an event and a throwing listener is contained`                           |
-| E4  | `tests/E-middleware-events.test.ts` | `dispatch is fire-and-forget or awaited according to the event definition`                    |
-| F1  | `tests/F-plugin-list.test.ts`       | `the plugin list is a store and reconciling only touches entries that changed`                |
-| F2  | `tests/F-plugin-list.test.ts`       | `enabled false is equivalent to removal and enabling restores the instance`                   |
-| F3  | `tests/F-plugin-list.test.ts`       | `a reconcile that fails leaves the client in the previous consistent state`                   |
-| F4  | `tests/F-plugin-list.test.ts`       | `overlapping list edits are serialised and apply in order`                                    |
-| F5  | `tests/F-plugin-list.test.ts`       | `a plugin can edit the plugin list it belongs to, including disabling itself`                 |
-| G1  | `tests/G-inspection.test.ts`        | `every instance is listed with id, plugin, status, missing deps and error`                    |
-| G2  | `tests/G-inspection.test.ts`        | `the resource tree of an instance is labelled and includes nested registrations`              |
-| G3  | `tests/G-inspection.test.ts`        | `status changes are observable through a store, with no polling`                              |
-| H1  | `tests/H-types.test-d.ts`           | `reading context is typed from the declared deps`                                             |
-| H2  | `tests/H-types.test-d.ts`           | `payloads, action input and result, and options are inferred from the builders`               |
-| H3  | `tests/H-types.test-d.ts`           | `a plugin authored in another package keeps full types with value imports only`               |
-| I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`                      |
-| I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd`                                  |
-| I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                       |
-| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 6 kB min+gzip size budget` |
-| I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                            |
-| J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                         |
+| Id  | Test file                           | `it()` title                                                                                                                                       |
+| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | `tests/A-lifecycle.test.ts`         | `adding a plugin starts it and removing it leaves no trace`                                                                                        |
+| A2  | `tests/A-lifecycle.test.ts`         | `removal reports complete only once every async cleanup has finished`                                                                              |
+| A3  | `tests/A-lifecycle.test.ts`         | `removing an instance removes every instance it started, recursively`                                                                              |
+| A4  | `tests/A-lifecycle.test.ts`         | `cleanups of one instance run in reverse order of registration`                                                                                    |
+| A5  | `tests/A-lifecycle.test.ts`         | `registering on an instance being removed or already removed throws`                                                                               |
+| A6  | `tests/A-lifecycle.test.ts`         | `a plugin that throws during start ends in error with nothing left behind`                                                                         |
+| A7  | `tests/A-lifecycle.test.ts`         | `a cleanup that throws is reported and the remaining cleanups still run`                                                                           |
+| B1  | `tests/B-deps.test.ts`              | `an instance stays pending until the last dep is provided, whatever the order`                                                                     |
+| B2  | `tests/B-deps.test.ts`              | `losing a dep cleans the dependent up and returns it to pending`                                                                                   |
+| B3  | `tests/B-deps.test.ts`              | `only a value provided by an active instance satisfies a dep`                                                                                      |
+| B4  | `tests/B-deps.test.ts`              | `a plugin can read a key it did not declare and keeps running either way`                                                                          |
+| B5  | `tests/B-deps.test.ts`              | `providing a key that is already provided throws for the second provider`                                                                          |
+| B6  | `tests/B-deps.test.ts`              | `circular deps are detected and reported with the cycle named`                                                                                     |
+| C1  | `tests/C-replacement.test.ts`       | `every dependent runs against the new provider after a swap`                                                                                       |
+| C2  | `tests/C-replacement.test.ts`       | `there is no window in which a dependent is active against a removed provider`                                                                     |
+| D1  | `tests/D-options.test.ts`           | `options are validated and defaulted before the instance starts`                                                                                   |
+| D2  | `tests/D-options.test.ts`           | `an options update restarts only that instance`                                                                                                    |
+| D3  | `tests/D-options.test.ts`           | `an options update is an action tooling can observe, veto or replace`                                                                              |
+| E1  | `tests/E-middleware-events.test.ts` | `middleware can rewrite the input, rewrite the result, or stop the action`                                                                         |
+| E2  | `tests/E-middleware-events.test.ts` | `middleware runs in registration order, first goes to the front, and removal is clean`                                                             |
+| E3  | `tests/E-middleware-events.test.ts` | `a listener observes an event and a throwing listener is contained`                                                                                |
+| E4  | `tests/E-middleware-events.test.ts` | `dispatch is fire-and-forget or awaited according to the event definition`                                                                         |
+| F1  | `tests/F-plugin-list.test.ts`       | `the plugin list is a store and reconciling only touches entries that changed`                                                                     |
+| F2  | `tests/F-plugin-list.test.ts`       | `enabled false is equivalent to removal and enabling restores the instance`                                                                        |
+| F3  | `tests/F-plugin-list.test.ts`       | `a reconcile that fails leaves the client in the previous consistent state`                                                                        |
+| F4  | `tests/F-plugin-list.test.ts`       | `overlapping list edits are serialised and apply in order`                                                                                         |
+| F5  | `tests/F-plugin-list.test.ts`       | `a plugin can edit the plugin list it belongs to, including disabling itself`                                                                      |
+| G1  | `tests/G-inspection.test.ts`        | `every instance is listed with id, plugin, status, missing deps and error`                                                                         |
+| G2  | `tests/G-inspection.test.ts`        | `the resource tree of an instance is labelled and includes nested registrations`                                                                   |
+| G3  | `tests/G-inspection.test.ts`        | `status changes are observable through a store, with no polling`                                                                                   |
+| H1  | `tests/H-types.test-d.ts`           | `reading context is typed from the declared deps`                                                                                                  |
+| H2  | `tests/H-types.test-d.ts`           | `payloads, action input and result, and options are inferred from the builders`                                                                    |
+| H3  | `tests/H-types.test-d.ts`           | `a plugin authored in another package keeps full types with value imports only`                                                                    |
+| I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`                                                                           |
+| I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd` / `reports a clear error for a source entry, because workerd forbids evaluating code` |
+| I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                                                                            |
+| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 6 kB min+gzip size budget`                                                      |
+| I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                                                                                 |
+| J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                                                                              |
+
+### `docs/acceptance/hosts.md` §A
+
+| Id  | Test file                             | `it()` title                                                                                                                                                                                                                    |
+| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | `tests/hosts/contract.test.ts`        | `starts an entry with no host in-process and one that names a host there`                                                                                                                                                       |
+| A2  | `tests/hosts/instance-parity.test.ts` | every title under `plugin source in-process`, from `tests/helpers/instance-contract.ts`                                                                                                                                         |
+| A3  | `tests/hosts/contract.test.ts`        | `restarts the instance in the new host when an entry changes host` / `leaves an entry naming a host the client does not have in error`                                                                                          |
+| A4  | `tests/hosts/contract.test.ts`        | `hands a hosted plugin exactly the stubs its entry was granted` / `takes deps and provides for a hosted entry from the stubs it was granted`                                                                                    |
+| A5  | `tests/hosts/contract.test.ts`        | `carries only structured-clone-safe values across the boundary, in both directions`                                                                                                                                             |
+| A6  | `tests/hosts/contract.test.ts`        | `attaches the calling instance id to every stub call, where middleware sees it` / `cannot be told a different caller by the plugin it hosts`                                                                                    |
+| A7  | `tests/hosts/termination.test.ts`     | `stops between two calls, so calls after it fail and the code is released` / `revokes the stubs of a removed instance before the client reports done` / `does not report removal done until the host has released the instance` |
+
+### `docs/acceptance/self-modification.md` §D — the parts core owns
+
+| Id  | Test file                             | `it()` title                                                                                                                                                                                                                                                   |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | `tests/hosts/instance-parity.test.ts` | every title under `plugin source in-process`                                                                                                                                                                                                                   |
+| D2  | `tests/hosts/contract.test.ts`        | `hands a hosted plugin exactly the stubs its entry was granted`                                                                                                                                                                                                |
+| D4  | `tests/hosts/errors.test.ts`          | the four `leaves the entry in error …` titles, plus `reports every failure in one shape, so one recovery loop covers them all`                                                                                                                                 |
+| D9  | `tests/hosts/errors.test.ts`          | `starts source as written when no checker is provided` / `starts what the checker returns, not what was written` / `does not ask the host to start source the checker rejected` / `checks against the declarations of exactly the stubs the entry was granted` |
+
+The checker itself, and the tools that write and rewrite source, belong to the
+self-modification slice; core ships the seam and, in the tests, a reference
+checker that proves it.
 
 ### Notes on coverage
 
@@ -311,4 +637,5 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
   `cloudflareTest` plugin). No criterion is only partially met.
 - **I3 — size** is a test in `tests/I-runtime.test.ts`: a rolldown bundle of
   `src/index.ts`, minified and gzipped, with `@tanstack/store` external. The
-  kernel is currently 3.2 kB min+gzip against the 6 kB budget.
+  kernel, with the host contract and the in-process host in it, is currently
+  5.1 kB min+gzip against the unchanged 6 kB budget.

@@ -1,4 +1,5 @@
 import type { Store } from '@tanstack/store'
+import type { AnyStubGrant } from './host'
 import type {
   InferInput,
   InferOutput,
@@ -296,11 +297,24 @@ export function createPlugin<
   }
 }
 
-/** One row of the plugin list. */
+/**
+ * One row of the plugin list. Exactly one of `plugin` and `source` must be
+ * present: a row either names a plugin or carries plugin source for a host to
+ * start.
+ */
 export interface PluginEntry<TPlugin extends AnyPlugin = AnyPlugin> {
   /** Stable identity of this row; reconciliation matches on it. */
   id: string
-  plugin: TPlugin
+  plugin?: TPlugin
+  /**
+   * Plugin source: an ES module whose default export is the setup function and
+   * whose other named exports are the handlers the client may call.
+   */
+  source?: string
+  /** The host to start `source` in. Omitted means the in-process host. */
+  host?: string
+  /** The stubs this entry is granted; the only authority its source receives. */
+  stubs?: ReadonlyArray<AnyStubGrant>
   /** Options for the instance, validated by the plugin's validator. */
   options?: OptionsInputOf<TPlugin>
   /** `false` is equivalent to the row not being there (F2). Defaults to `true`. */

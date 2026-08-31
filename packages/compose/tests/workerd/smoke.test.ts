@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { createClient, createContextKey, createPlugin } from '../../src/index'
+import {
+  createClient,
+  createContextKey,
+  createPlugin,
+  sourceErrorOf,
+} from '../../src/index'
 
 const greetingKey = createContextKey<string>('greeting')
 
@@ -43,5 +48,21 @@ describe('I. Runtime and packaging — workerd', () => {
     await client.destroy()
     expect(cleaned).toEqual(['saw:hello from workerd', 'provider'])
     expect(client.inspect()).toEqual([])
+  })
+
+  it('reports a clear error for a source entry, because workerd forbids evaluating code', async () => {
+    const client = createClient({
+      plugins: [{ id: 'written', source: 'export default function () {}' }],
+    })
+    await client.settled()
+
+    const [snapshot] = client.inspect()
+    expect(snapshot?.status).toBe('error')
+    expect(String((snapshot?.error as Error).message)).toContain(
+      'cannot evaluate plugin source in this runtime',
+    )
+    expect(sourceErrorOf(snapshot?.error)?.phase).toBe('load')
+
+    await client.destroy()
   })
 })

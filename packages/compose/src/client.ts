@@ -1,5 +1,13 @@
 import { Store, batch, shallow } from '@tanstack/store'
 import { createAction } from './definitions'
+import {
+  inProcessHost,
+  sourceCheckerKey,
+  sourceError,
+  stubCallAction,
+  stubDeclarations,
+} from './host'
+import type { AnyStubGrant, Host, HostInstance, SourceChecker } from './host'
 import type {
   ActionDefinition,
   ActionHandler,
@@ -50,9 +58,21 @@ interface Resource {
   child?: InstanceRecord
 }
 
+/** What the client keeps for one hosted instance while it is running. */
+interface HostedRecord {
+  instance: Instance
+  grants: ReadonlyArray<AnyStubGrant>
+  hosted?: HostInstance
+  called: boolean
+}
+
 interface InstanceRecord {
   id: string
   plugin: AnyPlugin
+  /** Set for an entry started from plugin source, with what it was started from. */
+  source?: string
+  hostName?: string
+  grants?: ReadonlyArray<AnyStubGrant>
   optionsInput: unknown
   options: unknown
   status: Status
@@ -86,6 +106,19 @@ const pathToString = (
   return `options.${segments.join('.')}`
 }
 
+/** Grants are compared by identity and order; the operator owns the list. */
+const sameGrants = (
+  a: ReadonlyArray<AnyStubGrant> | undefined,
+  b: ReadonlyArray<AnyStubGrant> | undefined,
+): boolean => {
+  const left = a ?? []
+  const right = b ?? []
+  return (
+    left.length === right.length &&
+    left.every((grant, index) => grant === right[index])
+  )
+}
+
 const sameOptions = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) return true
   if (
@@ -111,6 +144,8 @@ class ClientImpl implements Client {
   #handlers = new Map<AnyAction, ActionHandler<any, any>>()
   #middleware = new Map<AnyAction, Array<MiddlewareRegistration>>()
   #listeners = new Map<AnyEvent, Array<ListenerRegistration>>()
+  #hosts = new Map<string, Host>([[inProcessHost.name, inProcessHost]])
+  #hosted = new Map<string, HostedRecord>()
   #applied: Array<PluginEntry> = []
   #queue: Promise<unknown> = Promise.resolve()
   #outstanding = 0
@@ -120,9 +155,13 @@ class ClientImpl implements Client {
 
   constructor(options?: {
     plugins?: Array<PluginEntry>
+    hosts?: Record<string, Host>
     onError?: (report: ClientErrorReport) => void
   }) {
     this.#onError = options?.onError
+    for (const [name, host] of Object.entries(options?.hosts ?? {})) {
+      this.#hosts.set(name, host)
+    }
     this.pluginList = new Store<Array<PluginEntry>>(options?.plugins ?? [])
     this.instances = new Store<Array<InstanceSnapshot>>([])
     this.context = new Store<Array<ContextSnapshot>>([])
@@ -139,6 +178,39 @@ class ClientImpl implements Client {
             entry.id === id ? { ...entry, options: next } : entry,
           ),
         )
+      },
+    )
+
+    this.#handlers.set(
+      stubCallAction,
+      ({
+        stub,
+        instanceId,
+        input,
+      }: {
+        stub: string
+        instanceId: string
+        input: unknown
+      }) => {
+        const hosted = this.#hosted.get(instanceId)
+        if (!hosted) {
+          throw new Error(
+            `@tanstack/compose: the stubs of instance "${instanceId}" have been revoked`,
+          )
+        }
+        const grant = hosted.grants.find((one) => one.name === stub)
+        if (!grant) {
+          throw new Error(
+            `@tanstack/compose: instance "${instanceId}" was not granted a stub named "${stub}"`,
+          )
+        }
+        return grant.handler({
+          instanceId,
+          input,
+          instance: hosted.instance,
+          call: (name: string, callInput?: unknown) =>
+            this.#callHosted(instanceId, name, callInput),
+        })
       },
     )
 
@@ -240,11 +312,29 @@ class ClientImpl implements Client {
         )
       }
       seen.add(entry.id)
-      const plugin = entry.plugin as { type?: unknown } | undefined
-      if (plugin?.type !== 'compose/plugin') {
+      if ((entry.plugin === undefined) === (entry.source === undefined)) {
         throw new Error(
-          `@tanstack/compose: entry "${entry.id}" does not hold a plugin created by createPlugin`,
+          `@tanstack/compose: entry "${entry.id}" must carry exactly one of a plugin and plugin source`,
         )
+      }
+      if (entry.source === undefined) {
+        const plugin = entry.plugin as { type?: unknown } | undefined
+        if (plugin?.type !== 'compose/plugin') {
+          throw new Error(
+            `@tanstack/compose: entry "${entry.id}" does not hold a plugin created by createPlugin`,
+          )
+        }
+      } else if (typeof entry.source !== 'string') {
+        throw new Error(
+          `@tanstack/compose: entry "${entry.id}" holds plugin source that is not a string`,
+        )
+      }
+      for (const grant of entry.stubs ?? []) {
+        if ((grant as { type?: unknown }).type !== 'compose/stub') {
+          throw new Error(
+            `@tanstack/compose: entry "${entry.id}" was granted something that is not a stub created by createStub`,
+          )
+        }
       }
     }
 
@@ -259,7 +349,7 @@ class ClientImpl implements Client {
       const entry = desired.get(record.id)
       if (
         !entry ||
-        entry.plugin !== record.plugin ||
+        !this.#sameShape(entry, record) ||
         !sameOptions(entry.options, record.optionsInput)
       ) {
         await this.#remove(record)
@@ -274,10 +364,30 @@ class ClientImpl implements Client {
     await this.#settle()
   }
 
+  /** Whether a running record was started from this entry as it now reads. */
+  #sameShape(entry: PluginEntry, record: InstanceRecord): boolean {
+    if (record.source === undefined) {
+      return entry.source === undefined && entry.plugin === record.plugin
+    }
+    return (
+      entry.source === record.source &&
+      (entry.host ?? inProcessHost.name) === record.hostName &&
+      sameGrants(entry.stubs, record.grants)
+    )
+  }
+
   async #create(entry: PluginEntry): Promise<InstanceRecord> {
+    const hosted = entry.source !== undefined
     const record: InstanceRecord = {
       id: entry.id,
-      plugin: entry.plugin,
+      plugin: hosted ? this.#hostedPlugin(entry) : entry.plugin!,
+      ...(hosted
+        ? {
+            source: entry.source,
+            hostName: entry.host ?? inProcessHost.name,
+            grants: entry.stubs ?? [],
+          }
+        : {}),
       optionsInput: entry.options,
       options: undefined,
       status: 'pending',
@@ -311,6 +421,150 @@ class ClientImpl implements Client {
       return
     }
     record.options = result.value
+  }
+
+  // ---------------------------------------------------------- hosted plugins
+
+  /**
+   * The plugin a source entry runs as. Its deps and provides are the union of
+   * its grants', so a hosted entry sits in the dependency graph like any other
+   * instance and every kernel rule applies to it unchanged.
+   */
+  #hostedPlugin(entry: PluginEntry): AnyPlugin {
+    const deps: Array<AnyContextKey> = []
+    const provides: Array<AnyContextKey> = []
+    for (const grant of entry.stubs ?? []) {
+      for (const key of grant.deps) if (!deps.includes(key)) deps.push(key)
+      for (const key of grant.provides) {
+        if (!provides.includes(key)) provides.push(key)
+      }
+    }
+    return {
+      type: 'compose/plugin',
+      name: 'hosted',
+      deps,
+      provides,
+      setup: (instance: Instance, options: unknown) =>
+        this.#startHosted(entry, instance, options),
+    } as AnyPlugin
+  }
+
+  /** Check the source if a checker is provided, then start it in its host. */
+  async #startHosted(
+    entry: PluginEntry,
+    instance: Instance,
+    options: unknown,
+  ): Promise<void> {
+    const hostName = entry.host ?? inProcessHost.name
+    const host = this.#hosts.get(hostName)
+    if (!host) {
+      throw new Error(
+        `@tanstack/compose: entry "${entry.id}" names a host "${hostName}" this client does not have`,
+      )
+    }
+    const grants = entry.stubs ?? []
+
+    let code = entry.source!
+    const checker = this.#published.get(sourceCheckerKey) as
+      SourceChecker | undefined
+    if (checker) {
+      const checked = await checker.check({
+        instanceId: instance.id,
+        source: code,
+        declarations: stubDeclarations(grants),
+      })
+      if (typeof checked.code !== 'string') {
+        const diagnostics = checked.diagnostics ?? []
+        const message =
+          diagnostics
+            .map((one) =>
+              one.line === undefined
+                ? one.message
+                : `${one.line}:${one.column ?? 0} ${one.message}`,
+            )
+            .join('; ') || 'the source checker rejected this source'
+        throw sourceError('check', new Error(message), {
+          ...(diagnostics[0]?.line === undefined
+            ? {}
+            : { line: diagnostics[0].line }),
+          ...(diagnostics[0]?.column === undefined
+            ? {}
+            : { column: diagnostics[0].column }),
+          diagnostics,
+        })
+      }
+      code = checked.code
+    }
+
+    const hosted: HostedRecord = { instance, grants, called: false }
+    this.#hosted.set(instance.id, hosted)
+    // Reverse order, so removal revokes the stubs before it stops the code:
+    // a host that aborts an isolate never lets its cleanup call out either.
+    instance.cleanup(async () => {
+      await hosted.hosted?.stop()
+    }, `host(${hostName})`)
+    instance.cleanup(() => {
+      this.#hosted.delete(instance.id)
+    }, 'stubs')
+
+    const stubs: Record<string, (input: unknown) => Promise<unknown>> = {}
+    for (const grant of grants) {
+      // The instance id is in the closure, not in an argument: the plugin holds
+      // the callable and can neither read nor forge who it is calling as.
+      stubs[grant.name] = (input: unknown) =>
+        this.#dispatch(stubCallAction, {
+          stub: grant.name,
+          instanceId: instance.id,
+          input,
+        })
+    }
+
+    hosted.hosted = await host.start({
+      instanceId: instance.id,
+      code,
+      options,
+      stubs,
+    })
+  }
+
+  /**
+   * Call a named export of a hosted plugin. A rejection from the very first
+   * call is a failure to start deferred by the host, so it puts the instance in
+   * `error`; once the plugin has answered once, a rejection is just a rejection.
+   */
+  async #callHosted(
+    instanceId: string,
+    name: string,
+    input: unknown,
+  ): Promise<unknown> {
+    const hosted = this.#hosted.get(instanceId)
+    if (!hosted?.hosted) {
+      throw new Error(
+        `@tanstack/compose: instance "${instanceId}" is not running`,
+      )
+    }
+    const first = !hosted.called
+    hosted.called = true
+    try {
+      return await hosted.hosted.call(name, input)
+    } catch (error) {
+      const record = this.#records.get(instanceId)
+      if (first && record && record.status === 'active') {
+        await this.#fail(record, error)
+      }
+      throw error
+    }
+  }
+
+  /** Tear an active instance down and leave it in `error`. */
+  async #fail(record: InstanceRecord, error: unknown): Promise<void> {
+    this.#setPhase(record, 'removing')
+    await this.#release(record)
+    record.status = 'error'
+    record.error = error
+    record.phase = 'idle'
+    this.#report({ scope: 'setup', instanceId: record.id, error })
+    this.#publish()
   }
 
   // -------------------------------------------------------------- settle passes
@@ -921,6 +1175,11 @@ class ClientImpl implements Client {
 export function createClient(options?: {
   /** The initial plugin list. */
   plugins?: Array<PluginEntry>
+  /**
+   * Hosts an entry may name, by name. The in-process host is always present as
+   * `in-process` and is what an entry with no `host` runs in.
+   */
+  hosts?: Record<string, Host>
   /** Called for every failure the client contained rather than propagated. */
   onError?: (report: ClientErrorReport) => void
 }): Client {

@@ -1,10 +1,11 @@
 /**
  * `@tanstack/compose` — the framework-agnostic kernel: the client, plugins,
- * context and deps, cleanup, status, options, middleware and events, and
- * plugin-list reconciliation.
+ * context and deps, cleanup, status, options, middleware and events,
+ * plugin-list reconciliation, and the host contract with the in-process host.
  *
  * Terms are the ones in `CONTEXT.md`; the design is in `DESIGN.md` next to this
- * file, and the contract it meets is `docs/acceptance/kernel.md`.
+ * file, and the contracts it meets are `docs/acceptance/kernel.md` and
+ * `docs/acceptance/hosts.md` §A.
  */
 
 export { createClient, optionsUpdateAction, reconcileAction } from './client'
@@ -14,6 +15,14 @@ export {
   createEvent,
   createPlugin,
 } from './definitions'
+export {
+  createStub,
+  inProcessHost,
+  sourceCheckerKey,
+  sourceErrorOf,
+  stubCallAction,
+  stubDeclarations,
+} from './host'
 
 export type {
   ActionDefinition,
@@ -42,6 +51,20 @@ export type {
   Status,
   ValueOf,
 } from './definitions'
+
+export type {
+  AnyStubGrant,
+  Host,
+  HostInstance,
+  HostStartRequest,
+  SourceCheckResult,
+  SourceChecker,
+  SourceDiagnostic,
+  SourceError,
+  StubCall,
+  StubGrant,
+  StubHandler,
+} from './host'
 
 export type {
   InferInput,

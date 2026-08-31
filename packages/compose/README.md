@@ -2,7 +2,8 @@
 
 The framework-agnostic kernel of TanStack Compose: the **client**, **plugins**,
 **context** and **deps**, **cleanup**, **status**, **options**, **middleware**
-and **events**, and **plugin list** reconciliation.
+and **events**, **plugin list** reconciliation, and the **host** contract with
+the in-process host.
 
 An application is a plugin list. Editing that list while the application runs —
 adding, removing, replacing or reconfiguring an entry — is how the application
@@ -172,6 +173,91 @@ instance.emit(toolCalled, { name: 'echo' }) // void
 await instance.emit(drained, undefined) // Promise<void>
 ```
 
+## Plugins from source
+
+A plugin entry can carry **plugin source** — a string — instead of a plugin
+reference. The client starts it through a **host**: the in-process one that
+ships here by default, or the one the entry names. A hosted plugin is an
+ordinary instance, with an id, a status, options, cleanup and everything else on
+this page.
+
+Source is an ES module. Its default export is the setup function; its other
+named exports are handlers the client can call. The only thing it can reach is
+the **stubs** it was granted — async in both directions, carrying plain data
+only, so the same source runs unchanged in-process and in an isolate.
+
+```js
+export default async function setup({ id, options, stubs }) {
+  await stubs.log(`starting ${options.label}`)
+  await stubs.tools.register({ name: 'add', handler: 'add' })
+  return () => {
+    /* release anything this module holds */
+  }
+}
+
+export async function add({ a, b }) {
+  return a + b
+}
+```
+
+The operator decides which stubs an entry gets. A stub is authored once by
+whoever owns the capability, together with the `.d.ts` text a written plugin is
+checked against and shown:
+
+```ts
+import { createStub } from '@tanstack/compose'
+
+const toolsStub = createStub({
+  name: 'tools',
+  declarations: `declare const tools: {
+    register(tool: { name: string; handler: string }): Promise<void>
+  }`,
+  deps: [toolsKey],
+  handler: ({ input, instance, call }) => {
+    const remove = instance.context.get(toolsKey).add({
+      name: input.name,
+      // Call back into the plugin's named export, through its host.
+      run: (args) => call(input.handler, args),
+    })
+    instance.cleanup(remove, `tool(${input.name})`)
+  },
+})
+
+await client.addPlugin({
+  id: 'greeter',
+  source,
+  stubs: [logStub, toolsStub],
+  options: { label: 'greeter' },
+  // host: 'worker',  ← omit for in-process
+})
+```
+
+Every stub call is a dispatch of `stubCallAction` carrying the calling
+instance's id, attached where the plugin's code cannot read or forge it, so
+middleware approves, logs or refuses per instance:
+
+```ts
+client.use(stubCallAction, ({ input, next }) => {
+  if (!allowed(input.instanceId, input.stub)) throw new Error('refused')
+  return next(input)
+})
+```
+
+Removing the entry revokes its stubs, stops its code, and resolves only once the
+host has released it. Source that fails to parse, fails to load, throws in setup
+or throws on the first call leaves the entry in `error`; `sourceErrorOf(error)`
+gives the phase, the message and, where available, the line.
+
+Provide a `SourceChecker` under `sourceCheckerKey` and it is consulted before a
+host is asked to start anything, against the declarations of exactly that
+entry's grants — so it is a type checker and a compiler in one seam. Without it,
+source is started as written.
+
+> The in-process host runs plugin source in your own process: it is the
+> reference other hosts are measured against, not an isolation boundary. In
+> workerd, where a module cannot be built from a string, a source entry lands in
+> `error` saying so.
+
 ## Inspection
 
 Everything the client knows is readable, and observable through
@@ -197,3 +283,4 @@ through `instance.client`, which is how an application changes its own shape.
 - [`DESIGN.md`](./DESIGN.md) — the kernel's lifecycle, reconciliation and inspection model
 - [`CONTEXT.md`](../../CONTEXT.md) — the glossary these terms come from
 - [`docs/acceptance/kernel.md`](../../docs/acceptance/kernel.md) — the contract, criterion by criterion
+- [`docs/acceptance/hosts.md`](../../docs/acceptance/hosts.md) — what a host must do
