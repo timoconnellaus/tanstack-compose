@@ -297,3 +297,128 @@ when the bundled runtime does.
 Coverage is not collected for this package: the pool runs the suite inside
 workerd, where the coverage provider the rest of the workspace uses does not
 instrument.
+
+## Workers AI
+
+The **host** above is one half of what this package is for. The other is a
+**model provider**: a Worker that already holds an `AI` binding can run an agent
+against a real model with no **credential** anywhere — not in the plugin list,
+not in an environment variable, not in the page. A binding is authority the
+platform hands the Worker, and E5's rule is about secrets, so there is nothing
+here for a provider to name and nothing for `inspect()` to leak.
+
+Two things ship, because a browser cannot hold a binding:
+
+| Export                  | Who uses it                                        |
+| ----------------------- | -------------------------------------------------- |
+| `workersAiModelPlugin`  | a client running in the Worker                     |
+| `handleChatCompletions` | a route that client's browser counterpart talks to |
+
+### Input
+
+One step becomes one `binding.run(model, inputs, { signal })`. `inputs` is
+`{ messages, tools, stream: true }` plus whatever the plugin's `options` and the
+loop's `modelOptions` carry, the request's own winning.
+
+Messages are the ones the **session** derived (B2), in the shape a
+text-generation model reads: the assembled **prompt sections** as one `system`
+message, then user, assistant and tool messages in order. An assistant message
+that made calls carries `tool_calls`; a tool result carries `tool_call_id`, which
+is what makes the next step a reply to the call rather than a fresh question.
+Tools go over in the `{ type: 'function', function: { … } }` form — Workers AI
+documents both that and a flat `{ name, description, parameters }`, and the one
+that matches the tool registry's own shape is the one with less to go wrong.
+
+**The default model is `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.** The loop
+needs two things of a model — streaming, so E1 has chunks to append, and function
+calling, so a **tool** can be called at all — and this is a current model with
+both, on the free allocation
+([model card](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/)).
+Its `max_tokens` defaults to 256, which is short for an agent; pass more through
+`options`. It has no `tool_choice`, so a tool cannot be forced on it; the
+frontier models that support one take it through the same path, since request
+options are passed through untouched.
+
+### Output, and assembling a tool call
+
+The answer is a `ReadableStream` of server-sent events, `[DONE]` last. What is
+inside a `data:` line is **not specified by the platform** — the published schema
+for a streamed body says only `text/event-stream` — and two shapes are live: the
+native `{ "response": "…", "tool_calls": [{ "name", "arguments" }] }` that
+llama-3.x answers with, and the chat-completions
+`{ "choices": [{ "delta": … }] }` that the newer models answer with.
+`src/frames.ts` reads both, and both are covered by tests, because which one a
+model uses is the model's business and not the agent's. (Cloudflare's own
+provider handles the same pair, which is the best evidence there is:
+[`workers-ai-provider/src/streaming.ts`](https://github.com/cloudflare/ai/blob/main/packages/workers-ai-provider/src/streaming.ts).)
+
+Text is yielded as it arrives, so the session records it chunk by chunk (E1).
+**Tool calls are yielded after the stream ends**, because a chat-completions
+delta splits one call across frames: the id and name arrive in one, then the
+arguments in as many pieces as the model felt like. So calls are keyed by their
+delta `index` in a map, the argument text is concatenated, and the whole thing is
+parsed once at the end — a call is either issued complete or not at all, and the
+tool's validator never sees half a JSON object. A native frame carries a whole
+call already and is folded into the same map past whatever indexes the deltas
+took, which keeps one ordering for both shapes.
+
+A model that ignores `stream: true` and answers with an object instead is read as
+a single frame rather than treated as a failure. The turn is worse — one long
+chunk instead of many — and it works.
+
+### Failure and cancellation
+
+A `data:` frame carrying an `error` throws, which the loop turns into an error
+entry and a closed step (E1, D5). That is the only channel available once
+streaming has begun: the status line went out with the first byte.
+
+Cancellation is the reader's. The generator holds the body's reader, listens for
+the turn's `AbortSignal`, and cancels the body — so a cancelled turn stops
+Workers AI generating, rather than just stopping listening to it. The `finally`
+runs on every exit, including the loop breaking out of its `for await` when it
+sees the signal, so there is no path that leaves a body open. The suite asserts
+the count of cancelled bodies, which is the only way to tell the two apart.
+
+### Why a route exists
+
+The browser POC has a client in the page, and a page cannot be given a binding
+without being given the account. So the page runs
+`@tanstack/compose-agent-openai` — the provider that already exists — pointed at
+its own origin with no key, and `handleChatCompletions` answers out of the
+binding on the server side. Nothing about the agent in the page knows Workers AI
+exists.
+
+It is deliberately the smallest thing that is honestly the protocol: it takes the
+body that provider sends, forwards the messages and tools to the binding
+unchanged, and re-frames the answer into chunks that provider parses, ending with
+`finish_reason` and `[DONE]`. A mid-stream failure is re-framed as an `error`
+event for the same reason the provider throws on one. A request that did not ask
+to stream is answered with a single completion object, assembled the same way.
+
+**This is the seed of the served server.** The route is where a browser client's
+requests will arrive when the agent is served rather than embedded, and the shape
+it has now — one handler, a binding, no state — is the shape that grows a session
+and a plugin list under it.
+
+CORS is off unless `cors: true` asks for it. Same-origin is the ordinary case and
+needs none, and a route that hands itself to every origin is a route anyone can
+spend the account's inference through.
+
+### Local development and the suite
+
+There is no local simulation of Workers AI: inference always runs on Cloudflare
+([local development](https://developers.cloudflare.com/workers/local-development/)).
+So `wrangler dev` needs a logged-in account for `/ask` and
+`/ai/chat/completions`, and those requests spend the account's allocation —
+$0.011 per 1,000 neurons, with 10,000 neurons a day free
+([pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/)).
+
+That has one consequence for the suite. An `ai` binding is _always_ a remote
+binding, so the vitest pool would open a remote proxy session for it and every
+test in this package would need an account. `vitest.config.ts` therefore passes
+`remoteBindings: false` on an ordinary run: `env.AI` is declared but inert, and
+every test drives a **fake binding** — a `run` that answers with a scripted
+stream — instead. `COMPOSE_WORKERS_AI_SMOKE=1` turns remote bindings back on and
+un-skips `tests/workers-ai-smoke.test.ts`, which is the one test that runs a real
+model. The pool prints a warning per test file about AI bindings being remote;
+silencing it means marking the binding remote, which is the thing being avoided.
