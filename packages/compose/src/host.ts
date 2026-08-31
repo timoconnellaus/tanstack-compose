@@ -167,6 +167,12 @@ export interface SourceChecker {
     source: string
     /** The declarations derived from the entry's granted stubs. */
     declarations: string
+    /**
+     * The same declarations, still attributed to the grant each came from, in
+     * grant order. A checker that has to name the stubs — to give the plugin's
+     * `stubs` object a type, say — needs the names as well as the text.
+     */
+    grants: ReadonlyArray<{ name: string; declarations: string }>
   }) => SourceCheckResult | Promise<SourceCheckResult>
 }
 

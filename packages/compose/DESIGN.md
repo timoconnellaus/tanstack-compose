@@ -483,6 +483,7 @@ interface SourceChecker {
     instanceId: string
     source: string
     declarations: string
+    grants: ReadonlyArray<{ name: string; declarations: string }>
   }) => SourceCheckResult | Promise<SourceCheckResult>
 }
 
@@ -506,6 +507,14 @@ therefore cannot even _name_ a capability it was not granted, which makes the
 type environment a statement of the entry's authority rather than a separate
 thing to keep in sync. The same string is what a composer shows the model
 (D8), so what type-checks is what runs.
+
+`grants` carries the same text with each grant's `name` still attached, in the
+same order. `declarations` alone is enough for a checker that only compiles the
+text; a checker that has to give the plugin's `stubs` object a type has to know
+which name each declaration belongs to, and recovering that by parsing the
+concatenation would be guesswork. It carries the grant's `name` and
+`declarations` only — never the grant itself, whose `handler` is client-side
+authority a checker has no business holding.
 
 Core ships no checker and no `typescript` dependency. The tests use a
 ten-line reference checker to prove the seam.

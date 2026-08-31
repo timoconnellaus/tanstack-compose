@@ -237,6 +237,7 @@ describe('the source checker seam', () => {
 
   it('checks against the declarations of exactly the stubs the entry was granted', async () => {
     const seen: Array<string> = []
+    const named: Array<Array<{ name: string; declarations: string }>> = []
     const client = createClient({
       plugins: [
         { id: 'registry', plugin: registry },
@@ -247,8 +248,9 @@ describe('the source checker seam', () => {
             provides: [sourceCheckerKey],
             setup(instance) {
               instance.provide(sourceCheckerKey, {
-                check({ declarations, source }) {
+                check({ declarations, grants, source }) {
                   seen.push(declarations)
+                  named.push(grants.map((grant) => ({ ...grant })))
                   return { code: source }
                 },
               })
@@ -266,5 +268,11 @@ describe('the source checker seam', () => {
     await client.settled()
 
     expect(seen).toEqual([exposeStub.declarations, ''])
+    // The same text, still attributed to the grant it came from, so a checker
+    // can give the plugin's `stubs` object a type without parsing it back out.
+    expect(named).toEqual([
+      [{ name: 'expose', declarations: exposeStub.declarations }],
+      [],
+    ])
   })
 })

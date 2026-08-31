@@ -472,6 +472,10 @@ class ClientImpl implements Client {
         instanceId: instance.id,
         source: code,
         declarations: stubDeclarations(grants),
+        grants: grants.map((grant) => ({
+          name: grant.name,
+          declarations: grant.declarations,
+        })),
       })
       if (typeof checked.code !== 'string') {
         const diagnostics = checked.diagnostics ?? []
