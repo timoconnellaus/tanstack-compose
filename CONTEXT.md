@@ -122,11 +122,27 @@ _Avoid_: system message fragment, instruction block, persona
 The action that sends one step's messages and tools to the model; middleware around it can rewrite or veto what the model sees.
 _Avoid_: completion, call, inference
 
+**Plugin catalog**:
+The set of plugins an agent is allowed to add to its own client, offered by name; an agent cannot add a plugin that is not in the catalog.
+_Avoid_: registry, marketplace, library, palette
+
+**Protected entry**:
+A plugin entry the agent cannot disable, remove or reconfigure; the plugins that give the agent its self-editing tools, and any policy the operator relies on, are protected.
+_Avoid_: locked, pinned, system plugin, core plugin
+
 ### Execution
 
 **Host**:
 The environment a plugin's code executes in. The in-process host is the default; a remote host runs a plugin in isolation and represents it to the client as an ordinary instance.
 _Avoid_: sandbox, runtime, isolate, executor, loader
+
+**Hosted plugin**:
+A plugin whose code runs in a host other than the in-process one; the client sees an ordinary instance backed by a proxy.
+_Avoid_: remote plugin, sandboxed plugin, isolate plugin
+
+**Stub**:
+The async callable handle through which a hosted plugin reaches something on the client side (a tool registry, a context value); the only way authority crosses a host boundary.
+_Avoid_: capability, endowment, proxy object, bridge
 
 ### Tooling
 
