@@ -5,12 +5,15 @@
  * server; nothing else in an agent changes, because the plugin only registers
  * itself into the agent layer's model registry.
  *
+ * It holds no secret: it names a **credential** and reads the value through the
+ * `credentials` context key when it starts (E5).
+ *
  * Terms are the ones in `CONTEXT.md`; the contract it meets is E4 of
  * `docs/acceptance/agent.md`.
  */
 
 import { createPlugin } from '@tanstack/compose'
-import { modelKey } from '@tanstack/compose-agent'
+import { credentialsKey, modelKey } from '@tanstack/compose-agent'
 import type { StandardSchemaV1 } from '@tanstack/compose'
 import type {
   Message,
@@ -26,10 +29,14 @@ export interface OpenAiOptions {
   model: string
   /** The API root. Defaults to `https://api.openai.com/v1`. */
   baseUrl?: string
-  /** The key. When absent it is read from the environment; a local server needs none. */
-  apiKey?: string
-  /** Which environment variable holds the key. Defaults to `OPENAI_API_KEY`. */
-  apiKeyEnvVar?: string
+  /**
+   * The **credential** to send: the _name_ of one, never a value. Defaults to
+   * `OPENAI_API_KEY`, and the value is read through the `credentials` key when
+   * the plugin starts. `null` means send no `authorization` header at all,
+   * which is what an OpenAI-compatible server running locally without auth
+   * wants; it has to be said, so a missing credential is never mistaken for it.
+   */
+  credential?: string | null
   /** Extra request headers, merged over the ones the provider sets. */
   headers?: Record<string, string>
   /** The provider's name, as it appears in inspection. Defaults to the model. */
@@ -39,18 +46,15 @@ export interface OpenAiOptions {
 interface ResolvedOptions {
   model: string
   baseUrl: string
-  apiKey: string | undefined
+  credential: string | null
   headers: Record<string, string>
   name: string
 }
 
-/** Read an environment variable without importing anything runtime-specific. */
-const readEnv = (name: string): string | undefined =>
-  (
-    globalThis as {
-      process?: { env?: Record<string, string | undefined> }
-    }
-  ).process?.env?.[name]
+/** The endpoint one request goes to, with the credential value it carries. */
+interface Endpoint extends ResolvedOptions {
+  apiKey: string | undefined
+}
 
 const openaiOptions: StandardSchemaV1<OpenAiOptions, ResolvedOptions> = {
   '~standard': {
@@ -70,8 +74,10 @@ const openaiOptions: StandardSchemaV1<OpenAiOptions, ResolvedOptions> = {
             /\/$/,
             '',
           ),
-          apiKey:
-            options.apiKey ?? readEnv(options.apiKeyEnvVar ?? 'OPENAI_API_KEY'),
+          credential:
+            options.credential === null
+              ? null
+              : (options.credential ?? 'OPENAI_API_KEY'),
           headers: { ...options.headers },
           name: options.name ?? options.model,
         },
@@ -120,7 +126,7 @@ const toWireMessages = (
 
 /** The request body for one step. */
 const toWireBody = (
-  options: ResolvedOptions,
+  options: Endpoint,
   request: ModelRequest,
 ): Record<string, unknown> => ({
   model: options.model,
@@ -180,7 +186,7 @@ async function* sseEvents(
 
 /** Stream one chat completion, yielding text as it arrives and calls at the end. */
 async function* streamCompletion(
-  options: ResolvedOptions,
+  options: Endpoint,
   request: ModelRequest,
   signal: AbortSignal,
 ): AsyncGenerator<ModelChunk> {
@@ -263,26 +269,42 @@ async function* streamCompletion(
  * A **model provider** for any OpenAI-compatible chat-completions endpoint. It
  * registers into the agent layer's model registry and unregisters through its
  * cleanup, so adding it, removing it or selecting another provider takes effect
- * at the next turn with nothing else restarting (E2, E4).
+ * at the next turn with nothing else restarting (E2, E4). It names a
+ * **credential** and reads the value through `credentialsKey` when it starts; a
+ * credential with no value leaves the entry in `error` naming the credential and
+ * never a value (E5).
  *
  * @example
  * ```ts
  * await client.addPlugin({
  *   id: 'model',
  *   plugin: openaiModelPlugin,
- *   options: { model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', apiKeyEnvVar: 'DEEPSEEK_API_KEY' },
+ *   options: { model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', credential: 'DEEPSEEK_API_KEY' },
  * })
  * ```
  */
 export const openaiModelPlugin = createPlugin({
   name: 'openai-model',
-  deps: [modelKey],
+  deps: [modelKey, credentialsKey],
   validator: openaiOptions,
   setup(instance, options) {
+    // The credential is read once, by name, and held in this closure. It is
+    // never in the entry's options, so it is in no store and no tool result.
+    const apiKey =
+      options.credential === null
+        ? undefined
+        : instance.context.get(credentialsKey).get(options.credential)
+    if (options.credential !== null && apiKey === undefined) {
+      throw new Error(
+        `@tanstack/compose-agent-openai: the credential "${options.credential}" has no value; provide it through the credentials plugin, name another one, or set credential: null for an endpoint that needs none`,
+      )
+    }
+
+    const endpoint: Endpoint = { ...options, apiKey }
     const provider: ModelProvider = {
       name: options.name,
       stream: (request: ModelRequest, signal: AbortSignal) =>
-        streamCompletion(options, request, signal),
+        streamCompletion(endpoint, request, signal),
     }
     instance.cleanup(
       instance.context.get(modelKey).register(provider),
