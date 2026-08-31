@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>worker-host spike — browser</title>
+    <style>
+      body {
+        font:
+          13px/1.5 ui-monospace,
+          Menlo,
+          monospace;
+        padding: 1rem;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      .pass {
+        color: #0a7;
+      }
+      .fail {
+        color: #c33;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 id="status">running…</h1>
+    <pre id="out"></pre>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

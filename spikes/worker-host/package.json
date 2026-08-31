@@ -1,0 +1,18 @@
+{
+  "name": "worker-host-spike",
+  "private": true,
+  "type": "module",
+  "description": "Time-boxed spike: a portable plugin Host built from a Worker + Hardened JavaScript (ses).",
+  "scripts": {
+    "spike:node": "node scenarios/run-all.ts",
+    "spike:bun": "bun scenarios/run-all.ts",
+    "spike:browser": "vite dev --port 5199"
+  },
+  "dependencies": {
+    "ses": "^1.14.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
