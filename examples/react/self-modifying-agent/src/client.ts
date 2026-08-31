@@ -10,8 +10,10 @@ import {
   toolsPlugin,
   credentialsPlugin,
   staticCredentials,
+  viewStubs,
 } from '@tanstack/compose-agent'
 import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
+import { typescriptCheckerPlugin } from '@tanstack/compose-typescript'
 import { slotsPlugin } from '@tanstack/react-compose'
 import { actionLogPlugin } from './plugins/action-log'
 import { inputBoxPlugin } from './plugins/input-box'
@@ -20,7 +22,8 @@ import { modelPickerPlugin } from './plugins/model-picker'
 import { pageFramePlugin } from './plugins/page-frame'
 import { pluginPanelPlugin } from './plugins/plugin-panel'
 import { stopButtonPlugin } from './plugins/stop-button'
-import { uiToolCallsPlugin } from './plugins/ui-tool-calls'
+import { viewsPlugin } from './plugins/views'
+import { summariserSource, summariserView } from './written'
 import type { Client, PluginEntry } from '@tanstack/compose'
 import type { ScriptedResponse } from '@tanstack/compose-agent'
 
@@ -51,6 +54,31 @@ export const cannedConversation: Array<ScriptedResponse> = [
     toolCalls: [{ name: 'add_plugin', args: { name: 'stop-button' } }],
   },
   { chunks: ['It is back beside Send, and nothing else re-rendered.'] },
+  {
+    chunks: [
+      'Now something the page could not do before. ',
+      'I will write myself a plugin: a tool that summarises a piece of text, ',
+      'and a view that puts a button beside Stop to call it.',
+    ],
+    toolCalls: [
+      {
+        name: 'write_plugin',
+        args: {
+          id: 'summariser',
+          source: summariserSource,
+          view: summariserView,
+        },
+      },
+    ],
+  },
+  {
+    chunks: [
+      'There is a Summarise button beside Stop now. ',
+      'Press it: the view reads the end of the session and calls my handler ',
+      'through its server stub. Remove "summariser" in the panel and both ',
+      'halves go, and the button with them.',
+    ],
+  },
   {
     chunks: ['I have reached the end of my canned conversation. '],
   },
@@ -119,6 +147,10 @@ export function createAppClient(options: AppClientOptions = {}): Client {
         },
       },
       { id: 'models', plugin: modelsPlugin },
+      // The **source checker**: every plugin the agent writes, and every view,
+      // is type-checked against the declarations of exactly the stubs its entry
+      // was granted, before anything starts.
+      { id: 'checker', plugin: typescriptCheckerPlugin },
       // Providers read credentials by name; the page holds none, so the
       // source is empty and a provider that needs one ends in `error`.
       {
@@ -147,17 +179,23 @@ export function createAppClient(options: AppClientOptions = {}): Client {
             'credentials',
             'model',
             'loop',
+            'checker',
             'slots',
-            'ui-tools',
+            'views',
           ],
           stubs: agentStubs,
+          // The stubs a written **view** is granted, and the **slots** it may
+          // fill. `root` is not among them: the page frame is the operator's,
+          // and a view that could replace it could replace the whole page.
+          viewStubs,
+          viewSlots: ['chat.input.actions', 'chat.side', 'chat.main'],
         },
       },
 
-      // The **shell**: the slot registry, the one path a person's edit takes to
-      // the agent's tools, and the page itself.
+      // The **shell**: the slot registry, the glue that publishes it and the
+      // React renderer to written **views**, and the page itself.
       { id: 'slots', plugin: slotsPlugin },
-      { id: 'ui-tools', plugin: uiToolCallsPlugin },
+      { id: 'views', plugin: viewsPlugin },
       { id: 'page-frame', plugin: pageFramePlugin },
       { id: 'message-list', plugin: messageListPlugin },
       { id: 'input-box', plugin: inputBoxPlugin },
@@ -165,11 +203,6 @@ export function createAppClient(options: AppClientOptions = {}): Client {
       { id: 'plugin-panel', plugin: pluginPanelPlugin },
       { id: 'model-picker', plugin: modelPickerPlugin },
       { id: 'action-log', plugin: actionLogPlugin },
-
-      // Slice 5a part 2 lands here: `typescriptCheckerPlugin` from
-      // `@tanstack/compose-typescript` provides `sourceCheckerKey`, and the view
-      // stubs go into the composer's `stubs` above, so a plugin the agent writes
-      // is type-checked and can fill these slots itself.
     ],
   })
 }

@@ -198,6 +198,13 @@ export type SessionEntry =
       name: string
       outcome: ToolOutcome
     } & SessionEntryFields)
+  | ({ kind: 'human-tool-call'; call: ToolCall } & SessionEntryFields)
+  | ({
+      kind: 'human-tool-result'
+      callId: string
+      name: string
+      outcome: ToolOutcome
+    } & SessionEntryFields)
   | ({
       kind: 'error'
       step?: number
@@ -239,16 +246,33 @@ export interface Agent {
   send: (text: string) => void
   /** Stop the turn, its request and its tool calls; resolves once idle (C5). */
   cancel: () => Promise<void>
+  /**
+   * The **human step**: run one **tool** as a person rather than as the model,
+   * through {@link ToolCallInput}'s own action, so every middleware wrapping a
+   * tool call sees a click exactly as it sees the model's call. The call and
+   * its outcome are appended to the **session**, and the model is told what
+   * happened in its next request.
+   */
+  invoke: (name: string, args?: unknown) => Promise<ToolOutcome>
   /** Resolves the next time the agent is idle, or at once if it already is. */
   idle: () => Promise<void>
 }
 
 // ------------------------------------------------------------------ actions
 
-/** The input of {@link toolCallAction}: the call the model issued (D2). */
+/** Who issued a tool call: the model taking a step, or a person on the page. */
+export type ToolCallOrigin = 'model' | 'human'
+
+/** The input of {@link toolCallAction}: the call that was issued (D2). */
 export interface ToolCallInput {
-  /** The call, with the model's raw arguments. Middleware may rewrite them. */
+  /** The call, with its raw arguments. Middleware may rewrite them. */
   call: ToolCall
   turn: number
   step: number
+  /**
+   * Where the call came from. Absent means `model`, which is what the loop
+   * issues; `human` is a **human step** — `agent.invoke`, outside any turn,
+   * against the tools registered right now rather than the turn's world.
+   */
+  origin?: ToolCallOrigin
 }

@@ -163,3 +163,43 @@ button:disabled {
   font-size: 0.78rem;
   opacity: 0.8;
 }
+
+/*
+ * What a written **view** renders as. The vocabulary is small on purpose — a
+ * tree of text, buttons, inputs, rows and stacks — and the page decides what
+ * each element and each tone looks like.
+ */
+.view-row,
+.view-stack {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.view-row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.view-stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.view-input {
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  border: 1px solid rgb(128 128 128 / 45%);
+  border-radius: 6px;
+}
+
+.view-tone-muted {
+  opacity: 0.6;
+}
+
+.view-tone-primary {
+  font-weight: 600;
+}
+
+.view-tone-danger {
+  color: #b3261e;
+}

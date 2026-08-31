@@ -87,7 +87,7 @@ describe('disabling one element of the page', () => {
           .snapshot()
           .some(
             (entry) =>
-              entry.kind === 'tool-result' &&
+              entry.kind === 'human-tool-result' &&
               entry.name === 'disable_plugin' &&
               entry.outcome.ok &&
               (entry.outcome.value as { ok: boolean; error?: string }).error ===

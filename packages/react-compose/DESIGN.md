@@ -115,9 +115,8 @@ provided; the overloads make the return type `TValue` in that case and
 A plugin that declares a key in its `deps` does not need this hook at all: it
 reads the value in `setup` and closes over it, and the client guarantees the
 instance is not `active` without it. The hook is for a component that wants to
-survive the key going away — the plugin panel in the example reads the UI tool
-key this way so that it stays on the page with inert buttons rather than
-vanishing.
+survive the key going away — the plugin panel in the example reads the agent
+this way so that it stays on the page with inert buttons rather than vanishing.
 
 ### `Slot`
 
@@ -137,11 +136,62 @@ store, and `useStore` is re-exported from `@tanstack/react-store` for the stores
 plugins publish themselves — an agent's status, a session log. The adapter adds
 nothing to it.
 
+## The view renderer
+
+A **view** — the part of a plugin that runs in the browser — cannot hand the
+page a renderer, because a function does not cross a **host** boundary. It
+describes what it puts in a **slot** as plain data instead, and something in the
+page turns that data into a component. `createViewRenderer()` is that something
+for React:
+
+```ts
+type ViewRenderer = (
+  view: ViewNode,
+  callbacks: Readonly<Record<string, ViewCallback>>,
+) => unknown
+
+const renderer = createViewRenderer()
+const Fill = renderer(tree, callbacks) as ComponentType
+```
+
+| Node            | Renders as                                                         |
+| --------------- | ------------------------------------------------------------------ |
+| `text`          | `<span>` with `view-text` and a tone class                         |
+| `button`        | `<button>` calling the handler `onPress` names                     |
+| `input`         | a controlled input; `onChange` as it is typed, `onSubmit` on Enter |
+| `row` / `stack` | a flex container the page's stylesheet lays out                    |
+| anything else   | nothing, and no error                                              |
+
+Three decisions worth stating:
+
+- **The vocabulary is a structural copy, not an import.** The one producer of
+  `ViewNode` is `@tanstack/compose-agent`, which puts it in the **plugin
+  declarations** a written view is checked against. This package cannot import
+  it without knowing about agents (B1), so it declares the same shape and lets
+  structural typing do the rest; a value of either type satisfies the other, and
+  a test in the example app renders a tree the agent layer produced.
+- **An unknown element renders nothing rather than throwing.** A view written
+  against a vocabulary the page does not have yet degrades in place; the rest of
+  the tree, and the rest of the page, keep rendering (D1a).
+- **Enter submits an input, rather than a `<form>` doing it.** A fill lands
+  wherever the slot is, and the slot may already be inside a form — the example
+  app's input actions are — where a nested `<form>` is invalid markup.
+
 ## What the adapter does not know
 
 There is nothing about agents, chat, sessions or tools in this package (B1). The
-example application's every element is a plugin built on these five exports, and
-none of the vocabulary of that application appears here.
+example application's every element is a plugin built on these exports, and none
+of the vocabulary of that application appears here.
+
+That is also why the twenty lines that publish this page's **slot registry** and
+this renderer under the agent layer's two **context keys** are not in this
+package. They name both sides, and neither side may name the other:
+`@tanstack/react-compose` knows nothing about agents, and
+`@tanstack/compose-agent` imports no framework. The glue is one plugin the
+operator writes — `src/plugins/views.ts` in the example — and it is where it
+belongs, since which slots exist and who may fill them is the operator's
+decision anyway. A shared `@tanstack/react-compose-agent` would be the place for
+it if a second page ever wants the same fifteen lines.
 
 ## UI events are actions
 

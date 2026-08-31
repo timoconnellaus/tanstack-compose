@@ -61,6 +61,19 @@ during a turn is taken up at the next **step** boundary. `agent.status` is a
 `running`, and `agent.cancel()` stops the in-flight request and any running tool
 calls, records the cancellation, and leaves the agent idle and reusable.
 
+`agent.invoke(name, args)` is the **human step**: a person runs one of the
+agent's own **tools**, outside any turn. It goes through the same
+`toolCallAction` the loop dispatches, so every middleware wrapping tool calls
+sees a click exactly as it sees the model's call, and it appends a
+`human-tool-call` and a `human-tool-result` to the **session** — which the model
+reads at its next request as a note saying what the operator did.
+
+```ts
+await agent.invoke('disable_plugin', { id: 'action-log' })
+// the model's next request contains:
+//   The operator ran the tool "disable_plugin" with {"id":"action-log"} — result: …
+```
+
 The five keys — `session`, `tools`, `prompt`, `model` and `agent` — are stable:
 each is provided by one plugin for the life of the client, and everything else
 registers into them. Swap the scripted provider for a real one

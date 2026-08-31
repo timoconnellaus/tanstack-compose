@@ -7,12 +7,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:types": "tsc",
-    "test:lib": "vitest"
+    "test:lib": "vitest",
+    "dev:ai": "trap 'kill 0' EXIT; pnpm --filter @tanstack/compose-cloudflare exec wrangler dev --port 8787 & vite --port=3060"
   },
   "dependencies": {
     "@tanstack/compose": "^0.1.0",
     "@tanstack/compose-agent": "^0.1.0",
     "@tanstack/compose-agent-openai": "^0.1.0",
+    "@tanstack/compose-typescript": "^0.1.0",
     "@tanstack/react-compose": "^0.1.0",
     "@tanstack/store": "^0.11.1",
     "react": "^19.2.5",

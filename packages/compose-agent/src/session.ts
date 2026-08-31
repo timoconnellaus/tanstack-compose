@@ -7,6 +7,7 @@ import type {
   SessionEntry,
   SessionEntryInput,
   SessionLog,
+  ToolCall,
   ToolOutcome,
 } from './types'
 
@@ -19,19 +20,58 @@ const outcomeContent = (outcome: ToolOutcome): string => {
 }
 
 /**
+ * How a **human step** reads to the model: a note in the person's own voice,
+ * because a person's tool call has no assistant message asking for it. A tool
+ * result quoting a call the model never made is not something a provider will
+ * accept, so the fold turns the pair into one `user` message instead.
+ */
+const humanNote = (
+  name: string,
+  call: ToolCall | undefined,
+  outcome: ToolOutcome,
+): string => {
+  const args =
+    call === undefined || call.args === undefined
+      ? ''
+      : ` with ${JSON.stringify(call.args)}`
+  const result = outcome.ok
+    ? outcomeContent(outcome)
+    : `error: ${outcome.error}`
+  return `The operator ran the tool "${name}"${args} — result: ${result}`
+}
+
+/**
  * Fold a session log into the messages one request sees. Pure and total, so
  * deriving twice from the same log gives the same messages, and a log replayed
  * into a fresh client derives the same messages (B2, B3).
  *
  * `chunk` entries are the streaming trace of the `assistant` entry that follows
  * them and are deliberately not derived; the `assistant` entry carries the
- * complete text.
+ * complete text. A `human-tool-call` is likewise the trace of the
+ * `human-tool-result` that follows it, which carries the whole note.
  */
 export function deriveMessages(
   entries: ReadonlyArray<SessionEntry>,
 ): Array<Message> {
   const messages: Array<Message> = []
+  /** The human calls seen so far, so a result can quote what was asked for. */
+  const humanCalls = new Map<string, ToolCall>()
   for (const entry of entries) {
+    if (entry.kind === 'human-tool-call') {
+      humanCalls.set(entry.call.id, entry.call)
+      continue
+    }
+    if (entry.kind === 'human-tool-result') {
+      messages.push({
+        role: 'user',
+        content: humanNote(
+          entry.name,
+          humanCalls.get(entry.callId),
+          entry.outcome,
+        ),
+      })
+      continue
+    }
     if (entry.kind === 'input') {
       messages.push({ role: 'user', content: entry.text })
     } else if (entry.kind === 'assistant') {

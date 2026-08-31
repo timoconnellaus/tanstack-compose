@@ -48,6 +48,28 @@ const defaults: Record<string, (props: { entry: SessionEntry }) => ReactNode> =
           </code>
         </p>
       ) : null,
+    // A **human step**: a person ran one of the agent's own tools. It reads the
+    // same way a model's call does, because it is the same action.
+    'human-tool-call': ({ entry }) =>
+      entry.kind === 'human-tool-call' ? (
+        <p className="message message-tool">
+          <span className="who">you call</span>
+          {entry.call.name}
+          <code>{JSON.stringify(entry.call.args)}</code>
+        </p>
+      ) : null,
+    'human-tool-result': ({ entry }) =>
+      entry.kind === 'human-tool-result' ? (
+        <p className="message message-tool">
+          <span className="who">{entry.outcome.ok ? 'result' : 'failed'}</span>
+          {entry.name}
+          <code>
+            {entry.outcome.ok
+              ? JSON.stringify(entry.outcome.value)
+              : entry.outcome.error}
+          </code>
+        </p>
+      ) : null,
     error: ({ entry }) =>
       entry.kind === 'error' ? (
         <p className="message message-error">

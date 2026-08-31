@@ -137,6 +137,35 @@ const tools = useContextKey(uiToolsKey)
 return <button disabled={!tools} onClick={() => tools?.call('stop', {})} />
 ```
 
+## Rendering a view
+
+A **view** describes what it puts in a slot as plain data, because a function
+cannot cross a **host** boundary. `createViewRenderer()` turns that data into a
+component, so a plugin written as source can fill a slot on the page:
+
+```ts
+const renderer = createViewRenderer()
+
+const Fill = renderer(
+  {
+    type: 'row',
+    children: [
+      { type: 'button', label: 'Summarise', onPress: 'press' },
+      { type: 'text', text: '12 words', tone: 'muted' },
+    ],
+  },
+  { press: async () => summarise() },
+) as ComponentType
+
+slots.fill(toolbar, { render: Fill })
+```
+
+`text` is a span with a tone class, `button` calls the handler its `onPress`
+names, `input` is controlled and calls `onChange` as it is typed and `onSubmit`
+on Enter, and `row` and `stack` are flex containers your stylesheet lays out.
+An element of a type the vocabulary does not name renders nothing and is not an
+error.
+
 ## Learn more
 
 - [`DESIGN.md`](./DESIGN.md) — the slot model, cardinality, and where the registry lives
