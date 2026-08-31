@@ -624,6 +624,10 @@ export const composerPlugin = createPlugin({
             instanceId: id,
             source,
             declarations,
+            grants: options.stubs.map((grant) => ({
+              name: grant.name,
+              declarations: grant.declarations,
+            })),
           })
           if (typeof checked.code !== 'string') {
             const diagnostics = checked.diagnostics ?? []
