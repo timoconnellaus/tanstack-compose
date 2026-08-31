@@ -139,6 +139,9 @@ _Avoid_: sandbox, runtime, isolate, executor, loader
 **Plugin source**:
 A plugin as code in a string, started by a host rather than imported; a plugin the agent writes exists only as source.
 
+**Plugin declarations**:
+The types a written plugin is checked against and its author is shown; derived from the stubs the entry was granted, so what type-checks is what runs.
+
 **Hosted plugin**:
 A plugin whose code runs in a host other than the in-process one; the client sees an ordinary instance backed by a proxy.
 _Avoid_: remote plugin, sandboxed plugin, isolate plugin
