@@ -207,6 +207,68 @@ const other = createClient({
 })
 ```
 
+## Credentials
+
+A plugin that needs a secret at runtime names a **credential** and reads the
+value by name through the `credentials` key. It never holds the value in its
+options, so no secret is in the plugin list, `inspect()`, the session, a tool
+result or devtools.
+
+One entry supplies the secrets of the runtime you are in:
+
+```ts
+import { credentialsPlugin } from '@tanstack/compose-agent'
+
+// The process environment. The default, so the options can be left off.
+{ id: 'credentials', plugin: credentialsPlugin }
+```
+
+```ts
+import { credentialsPlugin, staticCredentials } from '@tanstack/compose-agent'
+
+// A key someone typed into a page. In memory only: nothing writes it anywhere,
+// and a reload asks again.
+{
+  id: 'credentials',
+  plugin: credentialsPlugin,
+  options: { source: staticCredentials({ OPENAI_API_KEY: typed }) },
+}
+```
+
+```ts
+import { bindingCredentials } from '@tanstack/compose-cloudflare'
+
+// A Worker's vars and secrets. A Worker has no process environment.
+{
+  id: 'credentials',
+  plugin: credentialsPlugin,
+  options: { source: bindingCredentials(env) },
+}
+```
+
+A plugin that needs one declares the key and asks for the name it was given:
+
+```ts
+const myProvider = createPlugin({
+  name: 'my-provider',
+  deps: [modelKey, credentialsKey],
+  validator: myOptions, // `{ credential: string }` — a name, never a value
+  setup(instance, options) {
+    const key = instance.context.get(credentialsKey).get(options.credential)
+    if (key === undefined) {
+      // Naming the credential, never a value. The entry ends in `error`.
+      throw new Error(`the credential "${options.credential}" has no value`)
+    }
+    // `key` lives in this closure and goes no further than the request.
+  },
+})
+```
+
+`credentials.get(name)` and `credentials.has(name)` are the whole surface: there
+is no way to list what is there. A plugin can ask about the credential the
+operator told it to use, and learn nothing else — which matters most when the
+agent is writing plugins of its own.
+
 ## Letting the agent edit itself
 
 Add the **composer** and the agent gets tools for editing its own **plugin
@@ -222,6 +284,7 @@ import { createClient, inProcessHost } from '@tanstack/compose'
 import {
   agentStubs,
   composerPlugin,
+  credentialsPlugin,
   loopPlugin,
   modelsPlugin,
   promptPlugin,
@@ -235,8 +298,14 @@ const client = createClient({
     { id: 'session', plugin: sessionPlugin },
     { id: 'tools', plugin: toolsPlugin },
     { id: 'prompt', plugin: promptPlugin },
+    { id: 'credentials', plugin: credentialsPlugin },
     { id: 'models', plugin: modelsPlugin },
-    { id: 'model', plugin: openaiModelPlugin, options: { model: 'gpt-4o' } },
+    {
+      id: 'model',
+      plugin: openaiModelPlugin,
+      // A credential name, never a value.
+      options: { model: 'gpt-4o', credential: 'OPENAI_API_KEY' },
+    },
     { id: 'loop', plugin: loopPlugin },
     {
       id: 'composer',
@@ -245,7 +314,17 @@ const client = createClient({
         // What it may add, by name. It cannot add anything else.
         catalog: { clock: clockPlugin, notes: notesPlugin },
         // What it may not touch. Its own entry is always protected.
-        protected: ['session', 'tools', 'prompt', 'models', 'loop'],
+        // `model` is here because reconfiguring a provider's endpoint would
+        // send its credential somewhere the operator did not choose.
+        protected: [
+          'session',
+          'tools',
+          'prompt',
+          'credentials',
+          'models',
+          'model',
+          'loop',
+        ],
         // What a plugin it writes is handed, and where that plugin runs.
         stubs: agentStubs,
         host: 'in-process',
@@ -296,6 +375,12 @@ sees one world_ above). Each tool says so in its description and in its result.
   change nothing at all.
 - **The agent removes only what it added or wrote**, and reads back only source
   it wrote.
+- **The model provider entry is protected.** Its options hold no secret — only
+  the name of a **credential** — but they do hold the endpoint, so
+  `set_plugin_options` on it would restart the provider with the same credential
+  aimed somewhere the operator did not choose. The refusal names the entry as
+  protected and the endpoint does not move. `select_model` still switches between
+  the providers the operator registered.
 
 ### Plugins it writes
 
@@ -435,6 +520,7 @@ swapped between steps and nothing downstream is restarted.
 
 - [`DESIGN.md`](./DESIGN.md) — the keys, the session log, the turn/step machine, cancellation
 - [`@tanstack/compose-agent-openai`](../compose-agent-openai) — the OpenAI-compatible provider
+- [`@tanstack/compose-cloudflare`](../compose-cloudflare) — the Worker host, and credentials from a Worker's bindings
 - [`CONTEXT.md`](../../CONTEXT.md) — the glossary these terms come from
 - [`docs/acceptance/agent.md`](../../docs/acceptance/agent.md) — the contract, criterion by criterion
 - [`docs/acceptance/self-modification.md`](../../docs/acceptance/self-modification.md) — what the composer is held to

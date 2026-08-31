@@ -1,4 +1,6 @@
 export { createCloudflareHost } from './host'
 export type { CloudflareHostOptions, CloudflareLimits } from './host'
+export { bindingCredentials } from './credentials'
+export type { CredentialSource } from './credentials'
 export { ComposeStubLoopback } from './loopback'
 export type { StubAnswer, StubProps } from './loopback'

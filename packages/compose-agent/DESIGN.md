@@ -19,6 +19,8 @@ travels with the key and a consumer imports the key and never a provider (A2).
 All five are **stable**: each is provided by exactly one plugin for the life of
 the client, and everything else — providers, tools, sections — registers into
 them. Nothing downstream ever loses a dep because a contribution came or went.
+A sixth, `credentialsKey`, is stable in the same way but is the operator's to
+provide — see [§Credentials](#credentials-e5).
 
 ```ts
 /** The model registry: the current provider. Providers register into it. */
@@ -434,6 +436,85 @@ no vendor SDK, so it works against OpenAI, DeepSeek or a local server through
 value only (F3). Adding it, removing it or selecting another provider is one
 plugin-list edit that restarts nothing and takes effect at the next turn.
 
+## Credentials (E5)
+
+A **credential** is a secret a plugin needs at runtime. The plugin names it; it
+never holds it.
+
+```ts
+interface CredentialSource {
+  get: (name: string) => string | undefined
+}
+
+interface Credentials {
+  get: (name: string) => string | undefined
+  has: (name: string) => boolean
+}
+
+export const credentialsKey: ContextKey<Credentials> =
+  createContextKey('agent.credentials')
+```
+
+**Why a key and not options.** Options are data on a **plugin entry**. The
+plugin list is a `@tanstack/store` store (ADR-0002); the composer reads it, the
+model is shown it through `list_plugins`, devtools render it, and a session that
+is persisted or forked carries whatever an entry holds. A secret in an entry's
+options is therefore a secret in every one of those places, and the entry is
+also the thing the agent can edit. Reading through a key inverts that: the value
+lives in one instance's closure, the entry holds a name, and the name is the
+only thing that is ever observable. `credentialsKey` is a sixth **stable** key —
+one operator plugin provides it for the life of the client — so a provider
+declares it in `deps` and is `pending` until the operator supplies one, rather
+than silently starting with no way to authenticate.
+
+**Why no enumeration.** `Credentials` answers by name and nothing more. There is
+no `list()`, no `keys()`, no iterator, and `has(name)` answers without handing
+back a value. The reason is the agent: it can add plugins from the catalog and
+write plugins as source, and anything it can reach through the tool registry or
+a stub it can put in a tool result, which lands in the session. A registry that
+could be walked would turn "this plugin may read one named secret" into "any
+plugin that reaches the key may read all of them". Asking by name means a plugin
+learns exactly what the operator already told it to use.
+
+**One source per runtime.** The value comes from a **credential source**, which
+is one function. The plugin holds it in a closure and publishes only the two
+functions above.
+
+| Source                      | Where it lives                 | Reads                                         |
+| --------------------------- | ------------------------------ | --------------------------------------------- |
+| `environmentCredentials()`  | this package (the default)     | `globalThis.process?.env`                     |
+| `staticCredentials(record)` | this package                   | a record captured in memory only              |
+| `bindingCredentials(env)`   | `@tanstack/compose-cloudflare` | a Worker's string vars and secrets from `env` |
+
+`environmentCredentials` is the default because a command-line agent and a
+server process both want it. `staticCredentials` is what a test uses and what a
+page that asks a person to type a key uses — the record is in memory only,
+nothing writes it anywhere, and a reload asks again. `bindingCredentials` lives
+in the Cloudflare package because a Worker has no process environment; it is a
+`CredentialSource` structurally, so the host package takes no dependency on this
+one.
+
+**What a provider does with it.** A provider names a credential in its options,
+declares `deps: [modelKey, credentialsKey]`, reads the value once in `setup`,
+and holds it in the closure the request is built from. `@tanstack/compose-agent-openai`
+takes `{ model, baseUrl?, credential? }`: `credential` defaults to
+`'OPENAI_API_KEY'`, and a credential with no value throws in `setup`, so the
+entry is left in `error` with a message naming the credential — never the value —
+and nothing is registered into the model registry, so no request can go out
+unauthenticated. `credential: null` is the one way to send no `authorization`
+header, for an OpenAI-compatible server running locally without auth. It has to
+be said out loud: a missing environment variable must never quietly become a
+keyless request.
+
+**A provider entry is protected (self-modification B5).** The recommended
+assembly puts the provider entry in the composer's `protected` list, alongside
+the five registry entries. The reason is this key: the credential value is not
+in the entry, but `baseUrl` is, and `set_plugin_options` on a provider entry
+would restart it with the same credential pointed at an endpoint of the model's
+choosing — the value the agent cannot read would be sent to whoever it liked.
+Protecting the entry closes that path; `select_model` remains, so switching
+between providers the operator registered still works and restarts nothing.
+
 ## The composer: the agent edits itself
 
 How the package meets [`docs/acceptance/self-modification.md`](../../docs/acceptance/self-modification.md),
@@ -564,7 +645,8 @@ on any of those five ends the turn the model was in the middle of.
 
 That is honest behaviour, not a bug, and it is why **the recommended assembly
 protects all five**. The composer's own entry is protected by construction (B2),
-so a recommended assembly protects six entries in total. `select_model` exists
+and the reference assembly protects the model provider entry too, for the reason
+in [§Credentials](#credentials-e5) — so it protects seven entries in total. `select_model` exists
 precisely so the common case — "use the other model" — has a path that restarts
 nothing.
 
@@ -938,40 +1020,48 @@ until the model has written one.
 
 Informational: test titles describe behaviour and carry no criterion ids.
 
-| Id  | Test file                                      | `it()` title                                                                                   |
-| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| A1  | `tests/plugins.test.ts`                        | `every part of the agent is a plugin that can be removed and replaced mid-conversation`        |
-| A2  | `tests/plugins.test.ts`                        | `a consumer declares the keys it needs and never imports a provider`                           |
-| A3  | `tests/plugins.test.ts`                        | `a conversation runs on the package's plugins and a scripted model, with no network`           |
-| B1  | `tests/session.test.ts`                        | `every model-visible fact is appended to the log as it happens`                                |
-| B2  | `tests/session.test.ts`                        | `messages are derived from the log and deriving twice gives the same messages`                 |
-| B3  | `tests/session.test.ts`                        | `a log replayed into a fresh client derives the same messages, and forks at a step boundary`   |
-| B4  | `tests/session.test.ts`                        | `appends are observable as events and through the entries store`                               |
-| C1  | `tests/loop.test.ts`                           | `input while idle starts a turn and input during a turn is taken up at the next step`          |
-| C2  | `tests/loop.test.ts`                           | `a step is a request and its tool calls, and the turn closes when nothing is owed`             |
-| C3  | `tests/loop.test.ts`                           | `a turn takes the prompt, the tools and the provider once and holds them for every step`       |
-| C4  | `tests/loop.test.ts`                           | `the tools of a turn are those registered when it opened, and one removed mid-turn is refused` |
-| C5  | `tests/loop.test.ts`                           | `cancelling stops the request and the tool calls and leaves the agent idle and reusable`       |
-| C6  | `tests/loop.test.ts`                           | `removing the loop mid-turn cancels it and nothing writes to the session afterwards`           |
-| C7  | `tests/loop.test.ts`                           | `the agent status is a store and becoming idle can be awaited`                                 |
-| D1  | `tests/actions.test.ts`                        | `middleware can rewrite what the model sees or veto the step`                                  |
-| D2  | `tests/actions.test.ts`                        | `middleware can rewrite the arguments, replace the result, or refuse the call`                 |
-| D3  | `tests/actions.test.ts`                        | `invalid arguments produce an error result rather than a thrown exception`                     |
-| D4  | `tests/actions.test.ts`                        | `tool calls run with their declared concurrency and results keep the model's order`            |
-| D5  | `tests/actions.test.ts`                        | `a throwing tool keeps the turn going and a failing model closes it`                           |
-| E1  | `tests/providers.test.ts`                      | `chunks are appended as they stream and the assistant message is appended when it ends`        |
-| E2  | `tests/providers.test.ts`                      | `the registry chooses the provider at turn open, and one removed mid-turn ends the step`       |
-| E3  | `tests/providers.test.ts`                      | `the scripted provider replays responses, tool calls and mid-stream failures`                  |
-| E4  | `../compose-agent-openai/tests/openai.test.ts` | the keyless suite: streaming, event framing, the wire shape, failures, and a whole turn        |
-| E4  | `../compose-agent-openai/tests/openai.test.ts` | `registers into the model registry and unregisters with its plugin`                            |
-| E4  | `../compose-agent-openai/tests/smoke.test.ts`  | `answers one turn of a conversation` — skips itself when no key is present                     |
-| F1  | `tests/types.test-d.ts`                        | `a tool's arguments and result are typed from its definition`                                  |
-| F2  | `tests/types.test-d.ts`                        | `session entries narrow on their kind`                                                         |
-| F3  | `tests/types.test-d.ts`                        | `a plugin authored in another package keeps full types with value imports only`                |
-| G1  | `tests/end-to-end.test.ts`                     | `runs a three-turn conversation with tools, middleware, a mid-turn addition and a swap`        |
-| —   | `tests/loop.test.ts`                           | `a turn that never stops calling tools is stopped by its step limit`                           |
-| —   | `tests/packaging.test.ts`                      | zero runtime deps beyond the kernel and the store; no runtime-specific imports                 |
-| —   | `tests/workerd/smoke.test.ts`                  | `an agent runs a turn under workerd`                                                           |
+| Id  | Test file                                         | `it()` title                                                                                        |
+| --- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| A1  | `tests/plugins.test.ts`                           | `every part of the agent is a plugin that can be removed and replaced mid-conversation`             |
+| A2  | `tests/plugins.test.ts`                           | `a consumer declares the keys it needs and never imports a provider`                                |
+| A3  | `tests/plugins.test.ts`                           | `a conversation runs on the package's plugins and a scripted model, with no network`                |
+| B1  | `tests/session.test.ts`                           | `every model-visible fact is appended to the log as it happens`                                     |
+| B2  | `tests/session.test.ts`                           | `messages are derived from the log and deriving twice gives the same messages`                      |
+| B3  | `tests/session.test.ts`                           | `a log replayed into a fresh client derives the same messages, and forks at a step boundary`        |
+| B4  | `tests/session.test.ts`                           | `appends are observable as events and through the entries store`                                    |
+| C1  | `tests/loop.test.ts`                              | `input while idle starts a turn and input during a turn is taken up at the next step`               |
+| C2  | `tests/loop.test.ts`                              | `a step is a request and its tool calls, and the turn closes when nothing is owed`                  |
+| C3  | `tests/loop.test.ts`                              | `a turn takes the prompt, the tools and the provider once and holds them for every step`            |
+| C4  | `tests/loop.test.ts`                              | `the tools of a turn are those registered when it opened, and one removed mid-turn is refused`      |
+| C5  | `tests/loop.test.ts`                              | `cancelling stops the request and the tool calls and leaves the agent idle and reusable`            |
+| C6  | `tests/loop.test.ts`                              | `removing the loop mid-turn cancels it and nothing writes to the session afterwards`                |
+| C7  | `tests/loop.test.ts`                              | `the agent status is a store and becoming idle can be awaited`                                      |
+| D1  | `tests/actions.test.ts`                           | `middleware can rewrite what the model sees or veto the step`                                       |
+| D2  | `tests/actions.test.ts`                           | `middleware can rewrite the arguments, replace the result, or refuse the call`                      |
+| D3  | `tests/actions.test.ts`                           | `invalid arguments produce an error result rather than a thrown exception`                          |
+| D4  | `tests/actions.test.ts`                           | `tool calls run with their declared concurrency and results keep the model's order`                 |
+| D5  | `tests/actions.test.ts`                           | `a throwing tool keeps the turn going and a failing model closes it`                                |
+| E1  | `tests/providers.test.ts`                         | `chunks are appended as they stream and the assistant message is appended when it ends`             |
+| E2  | `tests/providers.test.ts`                         | `the registry chooses the provider at turn open, and one removed mid-turn ends the step`            |
+| E3  | `tests/providers.test.ts`                         | `the scripted provider replays responses, tool calls and mid-stream failures`                       |
+| E4  | `../compose-agent-openai/tests/openai.test.ts`    | the keyless suite: streaming, event framing, the wire shape, failures, and a whole turn             |
+| E4  | `../compose-agent-openai/tests/openai.test.ts`    | `registers into the model registry and unregisters with its plugin`                                 |
+| E4  | `../compose-agent-openai/tests/smoke.test.ts`     | `answers one turn of a conversation` — skips itself when no key is present                          |
+| E5  | `tests/credentials.test.ts`                       | `answers for the name it was given and offers nothing to enumerate`                                 |
+| E5  | `tests/credentials.test.ts`                       | `reads the process environment when the operator names no source`                                   |
+| E5  | `tests/credentials.test.ts`                       | `leaves a provider whose credential has no value in error, naming the credential`                   |
+| E5  | `tests/credentials.test.ts`                       | `keeps the value out of the plugin list, the stores, inspection, the session and every tool result` |
+| E5  | `../compose-agent-openai/tests/openai.test.ts`    | `reads the credential it names, so another endpoint names another one`                              |
+| E5  | `../compose-agent-openai/tests/openai.test.ts`    | `sends no authorization header when the operator says the endpoint needs none`                      |
+| E5  | `../compose-agent-openai/tests/openai.test.ts`    | `ends in error naming the credential when there is no value for it`                                 |
+| E5  | `../compose-cloudflare/tests/credentials.test.ts` | `reads a string binding by name and answers undefined for anything else` and the two beside it      |
+| F1  | `tests/types.test-d.ts`                           | `a tool's arguments and result are typed from its definition`                                       |
+| F2  | `tests/types.test-d.ts`                           | `session entries narrow on their kind`                                                              |
+| F3  | `tests/types.test-d.ts`                           | `a plugin authored in another package keeps full types with value imports only`                     |
+| G1  | `tests/end-to-end.test.ts`                        | `runs a three-turn conversation with tools, middleware, a mid-turn addition and a swap`             |
+| —   | `tests/loop.test.ts`                              | `a turn that never stops calling tools is stopped by its step limit`                                |
+| —   | `tests/packaging.test.ts`                         | zero runtime deps beyond the kernel and the store; no runtime-specific imports                      |
+| —   | `tests/workerd/smoke.test.ts`                     | `an agent runs a turn under workerd`                                                                |
 
 ### `docs/acceptance/self-modification.md`
 
@@ -988,6 +1078,7 @@ about carrying its diagnostics and its absence.
 | B2  | `tests/limits.test.ts`       | `protects its own entry, whatever the operator listed`                                                                                                                                                                               |
 | B3  | `tests/limits.test.ts`       | `adds only what the catalog offers, and only with options that validate` / `refuses options that the entry's own validator rejects`                                                                                                  |
 | B4  | `tests/limits.test.ts`       | `offers the model no tool that changes the catalog, the protection, the stubs or the host` / `leaves the composer in error when the operator's own options are wrong`                                                                |
+| B5  | `tests/credentials.test.ts`  | `refuses to point a protected provider entry at another endpoint`                                                                                                                                                                    |
 | C1  | `tests/consequences.test.ts` | `leaves dependents pending with their missing deps named, and restores them in the same turn`                                                                                                                                        |
 | C2  | `tests/consequences.test.ts` | `is in the session as a tool call and its result, so a replay shows what changed`                                                                                                                                                    |
 | C3  | `tests/consequences.test.ts` | `leaves the client as it was when a reconcile fails, and the turn carries on`                                                                                                                                                        |

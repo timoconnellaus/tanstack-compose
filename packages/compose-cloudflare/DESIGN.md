@@ -260,6 +260,26 @@ What it does not reach:
 - **Type inference.** `tests/H-types.test-d.ts` is about what a builder infers,
   which is a client-side question a host has no part in.
 
+## Credentials from bindings
+
+A Worker has no process environment: its vars and its secrets arrive as
+properties of the `env` object handed to `fetch`. `bindingCredentials(env)` is
+the **credential source** for that — one function, `get(name)`, answering from
+the bindings and from nothing else. A binding that is not a string is not a
+credential and reads as `undefined`, so a Worker Loader or a KV namespace can
+never be mistaken for one.
+
+`env` is captured in the closure the source returns. Nothing enumerates it,
+nothing publishes it, and the agent layer's credentials plugin puts only
+`get(name)` and `has(name)` into context — so a secret bound to the Worker
+reaches the plugin that named it and no store, session entry or tool result.
+
+The `CredentialSource` interface is declared here rather than imported. It is one
+method, the agent layer's plugin takes it structurally, and a **host** package
+has no business depending on the agent layer to hand a Worker's own bindings to
+whatever is running in it. `tests/credentials.test.ts` reads a var declared in
+`wrangler.jsonc`, which is how a bound secret reaches a Worker in production too.
+
 ## Local and CI
 
 One vitest project, `@cloudflare/vitest-pool-workers` over `wrangler.jsonc`,

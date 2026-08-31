@@ -4,4 +4,7 @@
   "main": "./dev/worker.ts",
   "compatibility_date": "2026-05-01",
   "worker_loaders": [{ "binding": "LOADER" }],
+  // A var the credentials suite reads by name, standing in for a secret. A
+  // real deployment binds a secret, which reaches `env` the same way.
+  "vars": { "MODEL_CREDENTIAL": "binding-value" },
 }

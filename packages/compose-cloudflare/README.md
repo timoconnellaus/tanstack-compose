@@ -100,6 +100,48 @@ export async function add({ a, b }) {
 
 Outbound network is off unconditionally and is not an option.
 
+## Credentials from bindings
+
+A Worker has no process environment. Its vars and secrets arrive on `env`, so
+this package also ships the **credential source** that reads them:
+
+```ts
+import { createClient } from '@tanstack/compose'
+import { credentialsPlugin } from '@tanstack/compose-agent'
+import { bindingCredentials } from '@tanstack/compose-cloudflare'
+import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const client = createClient({
+      plugins: [
+        {
+          id: 'credentials',
+          plugin: credentialsPlugin,
+          options: { source: bindingCredentials(env) },
+        },
+        // Names the credential; never holds it.
+        {
+          id: 'model',
+          plugin: openaiModelPlugin,
+          options: { model: 'gpt-4o-mini', credential: 'OPENAI_API_KEY' },
+        },
+        // …the rest of the agent
+      ],
+    })
+  },
+}
+```
+
+```sh
+pnpm --filter your-worker exec wrangler secret put OPENAI_API_KEY
+```
+
+It reads string bindings by name — a var or a secret. A binding that is not a
+string, such as the Worker Loader itself, reads as `undefined`. `env` is held in
+the source's closure: no value reaches the plugin list, a store, the session or
+a tool result, and there is no way to list what is bound.
+
 ## Running the example
 
 ```sh

@@ -2,12 +2,14 @@ import { createClient } from '@tanstack/compose'
 import {
   agentKey,
   createTool,
+  credentialsPlugin,
   loopPlugin,
   modelKey,
   modelsPlugin,
   promptPlugin,
   sessionKey,
   sessionPlugin,
+  staticCredentials,
   toolsPlugin,
 } from '@tanstack/compose-agent'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -48,13 +50,27 @@ const request = (overrides?: Partial<ModelRequest>): ModelRequest => ({
   ...overrides,
 })
 
+/** The credentials one runtime holds, as an operator would assemble them. */
+const credentials = (values: Record<string, string | undefined>) => ({
+  id: 'credentials',
+  plugin: credentialsPlugin,
+  options: { source: staticCredentials(values) },
+})
+
+/** The value the suite gives the default credential. Never sent anywhere real. */
+const key = 'sk-test'
+
 /**
- * Start a client with the model registry and the provider, and hand back the
- * provider the registry now holds.
+ * Start a client with the credentials, the model registry and the provider, and
+ * hand back the provider the registry now holds.
  */
-const provider = async (options: Record<string, unknown>) => {
+const provider = async (
+  options: Record<string, unknown>,
+  values: Record<string, string | undefined> = { OPENAI_API_KEY: key },
+) => {
   const client = createClient({
     plugins: [
+      credentials(values),
       { id: 'models', plugin: modelsPlugin },
       { id: 'model', plugin: openaiModelPlugin, options: options as never },
     ],
@@ -80,10 +96,7 @@ afterEach(() => {
 describe('An OpenAI-compatible model provider', () => {
   it('streams the text of a recorded response as it arrives', async () => {
     endpoint = mockEndpoint({ sse: fixture('text') })
-    const { client, model } = await provider({
-      model: 'gpt-4o-mini',
-      apiKey: 'sk-test',
-    })
+    const { client, model } = await provider({ model: 'gpt-4o-mini' })
 
     const chunks = await collect(
       model.stream(request(), new AbortController().signal),
@@ -96,7 +109,7 @@ describe('An OpenAI-compatible model provider', () => {
 
     const call = endpoint.calls[0]!
     expect(call.url).toBe('https://api.openai.com/v1/chat/completions')
-    expect(call.headers.authorization).toBe('Bearer sk-test')
+    expect(call.headers.authorization).toBe(`Bearer ${key}`)
     expect(call.body).toMatchObject({ model: 'gpt-4o-mini', stream: true })
 
     await client.destroy()
@@ -122,13 +135,16 @@ describe('An OpenAI-compatible model provider', () => {
 
   it('sends the system prompt, the messages and the tools in the wire shape', async () => {
     endpoint = mockEndpoint({ sse: fixture('text') })
-    const { client, model } = await provider({
-      model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1/',
-      apiKey: 'sk-deepseek',
-      headers: { 'x-trace': 'abc' },
-      name: 'deepseek',
-    })
+    const { client, model } = await provider(
+      {
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.deepseek.com/v1/',
+        credential: 'DEEPSEEK_API_KEY',
+        headers: { 'x-trace': 'abc' },
+        name: 'deepseek',
+      },
+      { DEEPSEEK_API_KEY: 'sk-deepseek' },
+    )
 
     await collect(
       model.stream(
@@ -203,31 +219,66 @@ describe('An OpenAI-compatible model provider', () => {
     await client.destroy()
   })
 
-  it('reads its key from a configurable environment variable and sends none when there is none', async () => {
-    process.env.TEST_MODEL_KEY = 'sk-from-env'
+  it('reads the credential it names, so another endpoint names another one', async () => {
     endpoint = mockEndpoint({ sse: fixture('text') })
 
-    const fromEnv = await provider({
-      model: 'gpt-4o-mini',
-      apiKeyEnvVar: 'TEST_MODEL_KEY',
-    })
-    await collect(fromEnv.model.stream(request(), new AbortController().signal))
-    expect(endpoint.calls[0]!.headers.authorization).toBe('Bearer sk-from-env')
-    await fromEnv.client.destroy()
-    delete process.env.TEST_MODEL_KEY
+    const { client, model } = await provider(
+      { model: 'gpt-4o-mini', credential: 'OTHER_MODEL_CREDENTIAL' },
+      { OPENAI_API_KEY: key, OTHER_MODEL_CREDENTIAL: 'sk-the-other-one' },
+    )
+    await collect(model.stream(request(), new AbortController().signal))
 
-    // A local server needs no key at all, and gets no header.
-    const local = await provider({
-      model: 'llama',
-      baseUrl: 'http://localhost:11434/v1',
-      apiKeyEnvVar: 'TEST_MODEL_KEY',
-    })
-    await collect(local.model.stream(request(), new AbortController().signal))
-    expect(endpoint.calls[1]!.url).toBe(
+    expect(endpoint.calls[0]!.headers.authorization).toBe(
+      'Bearer sk-the-other-one',
+    )
+    await client.destroy()
+  })
+
+  it('sends no authorization header when the operator says the endpoint needs none', async () => {
+    endpoint = mockEndpoint({ sse: fixture('text') })
+
+    // A local server without auth. It has to be said, so a credential that is
+    // simply missing is never mistaken for a deliberate keyless endpoint.
+    const { client, model } = await provider(
+      {
+        model: 'llama',
+        baseUrl: 'http://localhost:11434/v1',
+        credential: null,
+      },
+      {},
+    )
+    await collect(model.stream(request(), new AbortController().signal))
+
+    expect(endpoint.calls[0]!.url).toBe(
       'http://localhost:11434/v1/chat/completions',
     )
-    expect(endpoint.calls[1]!.headers.authorization).toBeUndefined()
-    await local.client.destroy()
+    expect(endpoint.calls[0]!.headers.authorization).toBeUndefined()
+    await client.destroy()
+  })
+
+  it('ends in error naming the credential when there is no value for it', async () => {
+    const client = createClient({
+      plugins: [
+        credentials({}),
+        { id: 'models', plugin: modelsPlugin },
+        {
+          id: 'model',
+          plugin: openaiModelPlugin,
+          options: { model: 'gpt-4o-mini' },
+        },
+      ],
+    })
+    await client.settled()
+
+    const entry = client.inspect().find((one) => one.id === 'model')
+    expect(entry?.status).toBe('error')
+    expect(String((entry?.error as Error).message)).toContain(
+      'the credential "OPENAI_API_KEY" has no value',
+    )
+    // Nothing registered, so no request can go out unauthorized.
+    expect(client.getContext(modelKey)!.list()).toEqual([])
+
+    await client.destroy()
   })
 
   it('reports a rejected request and a mid-stream error as failures', async () => {
@@ -265,11 +316,12 @@ describe('An OpenAI-compatible model provider', () => {
     endpoint = mockEndpoint({ sse: fixture('text') })
     const client = createClient({
       plugins: [
+        credentials({ OPENAI_API_KEY: key }),
         { id: 'models', plugin: modelsPlugin },
         {
           id: 'model',
           plugin: openaiModelPlugin,
-          options: { model: 'gpt-4o-mini', apiKey: 'sk-test' },
+          options: { model: 'gpt-4o-mini' },
         },
       ],
     })
@@ -296,11 +348,12 @@ describe('An OpenAI-compatible model provider', () => {
         { id: 'session', plugin: sessionPlugin },
         { id: 'tools', plugin: toolsPlugin, options: { tools: [search] } },
         { id: 'prompt', plugin: promptPlugin },
+        credentials({ OPENAI_API_KEY: key }),
         { id: 'models', plugin: modelsPlugin },
         {
           id: 'model',
           plugin: openaiModelPlugin,
-          options: { model: 'gpt-4o-mini', apiKey: 'sk-test' },
+          options: { model: 'gpt-4o-mini' },
         },
         { id: 'loop', plugin: loopPlugin },
       ],

@@ -14,6 +14,18 @@
  */
 
 export {
+  credentialsKey,
+  credentialsPlugin,
+  environmentCredentials,
+  staticCredentials,
+} from './credentials'
+export type {
+  CredentialSource,
+  Credentials,
+  CredentialsOptionsInput,
+} from './credentials'
+
+export {
   agentKey,
   modelKey,
   promptKey,
