@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
+import { gzipSync } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { rolldown } from 'rolldown'
 import { createClient, createContextKey, definePlugin } from '../src/index'
 import packageJson from '../package.json' with { type: 'json' }
 
@@ -67,15 +69,27 @@ describe('I. Runtime and packaging', () => {
     }
   })
 
-  it('the core uses no Proxy and is checked against the size budget', () => {
+  it('the core uses no Proxy on hot paths', () => {
     for (const source of sources) {
       expect(source.text).not.toMatch(/\bnew Proxy\b/)
     }
-    const budget = readFileSync(
-      join(here, '../../../scripts/check-size.ts'),
-      'utf8',
-    )
-    expect(budget).toMatch(/BUDGET_BYTES = 6 \* 1024/)
+  })
+
+  it('the core stays within its 6 kB min+gzip size budget', async () => {
+    // @tanstack/store is external: it is a dependency, not core code.
+    const bundle = await rolldown({
+      input: join(sourceDir, 'index.ts'),
+      external: ['@tanstack/store'],
+      logLevel: 'silent',
+    })
+    const { output } = await bundle.generate({ format: 'esm', minify: true })
+    await bundle.close()
+    const code = output
+      .filter((chunk) => chunk.type === 'chunk')
+      .map((chunk) => chunk.code)
+      .join('')
+    const bytes = gzipSync(Buffer.from(code, 'utf8'), { level: 9 }).byteLength
+    expect(bytes).toBeLessThanOrEqual(6 * 1024)
   })
 
   it('every public export has JSDoc', () => {

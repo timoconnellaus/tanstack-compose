@@ -38,9 +38,6 @@ importers:
       publint:
         specifier: ^0.3.18
         version: 0.3.24
-      rolldown:
-        specifier: ^1.2.6
-        version: 1.2.6
       sherif:
         specifier: ^1.11.1
         version: 1.13.0
@@ -94,6 +91,9 @@ importers:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
         version: 0.22.0(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11)
+      rolldown:
+        specifier: ^1.2.6
+        version: 1.2.6
 
   packages/compose-agent:
     dependencies:
