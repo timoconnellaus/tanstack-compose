@@ -15,12 +15,14 @@ criteria continue to hold.
 - **A3** A plugin entry may name the host it runs in; entries that name none run in-process. Changing an entry's host is an options change: the instance restarts in the new host.
 - **A4** Authority crosses a host boundary only as stubs. A hosted plugin can call what it was handed and nothing else; the set of stubs an entry receives is decided by the operator when assembling the client.
 - **A5** Stub calls are asynchronous in both directions and carry only structured-clone-safe values; a plugin written against stubs runs unchanged in every host, including in-process.
+- **A6** Every stub call carries the id of the hosted instance that made it, attached by the host where the plugin's code cannot read or forge it, so middleware on the client side can approve, log or refuse the call per instance.
+- **A7** The in-process host can stop an instance between two calls, exactly as a remote host does when it terminates an isolate, so a test that passes against the in-process host means the same thing against every other.
 
 ## B. Every host
 
 - **B1** A hosted plugin cannot reach the network, the filesystem, the process, the DOM, timers, or another plugin except through a stub it was given; a test for each attempts the escape and observes failure.
 - **B2** Code that never yields is stopped within a configured wall-clock limit; the instance ends in `error` with the limit named, and the client and its other instances keep working.
-- **B3** Removing a hosted instance stops its code and reports done only once the host has released it; nothing the plugin started runs or calls a stub after removal completes.
+- **B3** Removing a hosted instance revokes its stubs, stops its code, and reports done only once the host has released it; nothing the plugin started runs after removal completes, and a stub call attempted after revocation fails rather than landing.
 - **B4** An exception thrown in the hosted plugin surfaces as the instance's error with the original message and a usable stack; it never crashes the client.
 - **B5** The kernel's acceptance suite, run with each host in place of the in-process host, passes; where a criterion cannot apply to a hosted plugin, the host's design notes say why.
 
