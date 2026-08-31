@@ -413,4 +413,12 @@ export interface Client {
   resources: (instanceId: string) => ResourceNode | undefined
   /** Read a context key from outside a plugin. */
   getContext: <TValue>(key: ContextKey<TValue>) => TValue | undefined
+  /**
+   * Call a named export of an entry started from plugin source, through its
+   * host. This is the client side of the boundary, not the hosted side: it is
+   * how one plugin reaches another entry's handlers — a **view** calling its
+   * plugin's server half — and a hosted plugin reaches it only if a **stub**
+   * was granted for it.
+   */
+  callSource: (id: string, name: string, input?: unknown) => Promise<unknown>
 }

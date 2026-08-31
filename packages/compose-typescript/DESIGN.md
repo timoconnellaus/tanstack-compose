@@ -229,6 +229,37 @@ the same line count, which the in-process host can `import()` directly.
 Emitting from the program would produce the same JavaScript more slowly and
 would tie the output to the program's file layout for no gain.
 
+## Describing one module to another (`exports`)
+
+A **view** is checked against the named exports of the plugin's server half, so
+that a view calling a handler the plugin does not export is a diagnostic rather
+than a failure on the page (`ui.md` D2). What that needs from a checker is one
+thing: the names of a module's exports, with the type of each where it can be
+recovered.
+
+`SourceChecker.exports({ source, grants })` is that, and it is deliberately not
+about views. It compiles the source in the same language service `check` uses
+for those grants, walks the module symbol's exports, and prints each one's type
+with `typeToString`. Whoever asked turns the result into declarations —
+`@tanstack/compose-agent` builds `interface ServerHandlers { … }` and hangs the
+`server` stub off it — so this package never learns what a view is, and any
+other pairing of two written modules gets the same answer for free.
+
+Two rules keep the printed text honest in a file that is _not_ the module it
+came from:
+
+- **The default export is not listed.** It is the setup function, and it is not
+  callable by name.
+- **A type that names something the module declares itself is dropped**, and the
+  export comes back with a name and no type. `export function f(a: Args)` prints
+  as `(a: Args) => void`, and `Args` means nothing in the other module's
+  declaration file; a dangling name there would read to the model as a mistake
+  in the view rather than a limit of the recovery. Whoever asked falls back to
+  the permissive signature, which is what the boundary enforces anyway.
+
+The member is optional on the seam: a checker without it costs the caller
+nothing but precision.
+
 ## Caching
 
 Per-edit latency is the thing being optimised: a model rewrites a 30-line plugin
@@ -296,6 +327,8 @@ lying about that. Only this package depends on it; core does not, and must not.
 | The module shape the declarations describe is enforced, not just documented                             | `tests/checking.test.ts`                                 |
 | Budget — size and per-check latency                                                                     | `tests/budget.test.ts`                                   |
 | The whole agent loop against this checker, end to end                                                   | `tests/composer.test.ts`                                 |
+| `ui.md` D2 — a view is checked against its plugin's named exports                                       | `tests/views.test.ts`                                    |
+| The exports of one module, with the type of each                                                        | `tests/views.test.ts`                                    |
 
 ## What was decided here
 
@@ -310,6 +343,10 @@ lying about that. Only this package depends on it; core does not, and must not.
 - **Named exports are checked against `Handler`.** The rule "named exports are
   the callable handlers" is enforced, not just documented: an exported constant
   is a diagnostic at the export's own position.
+- **`exports` prints types; it does not synthesize declarations.** The caller
+  owns the shape of what it declares — the interface name, the call signature,
+  the doc comments the model reads. This package owns only what TypeScript can
+  recover, which keeps the seam free of anything view-shaped.
 - **No options.** Which lib, which strictness and which declarations are all
   part of "what type-checks is what runs"; making them configurable would make
   that sentence depend on the operator's configuration. If a host ever needs a

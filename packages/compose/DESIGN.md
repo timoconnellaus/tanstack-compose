@@ -71,6 +71,9 @@ interface Client {
   inspect(): Array<InstanceSnapshot> // G1
   resources(instanceId: string): ResourceNode | undefined // G2
   getContext<T>(key: ContextKey<T>): T | undefined
+
+  // Plugin source.
+  callSource(id: string, name: string, input?: unknown): Promise<unknown>
 }
 ```
 
@@ -540,8 +543,33 @@ concatenation would be guesswork. It carries the grant's `name` and
 `declarations` only — never the grant itself, whose `handler` is client-side
 authority a checker has no business holding.
 
+**`exports` is optional too, and it lets one written module be described to
+another.** `exports({ source, grants })` returns the module's named exports with
+the type of each where the checker can recover one. Core does nothing with it;
+it exists because a written plugin can now be a pair — a server half and a
+**view** — and the half that calls the other should be checked against what the
+other really exports (`ui.md` D2). Putting the recovery on the seam, rather than
+a second source in the check request, keeps core out of the pairing entirely:
+whoever knows what the pair means turns the exports into a grant's declaration
+text, and the entry then carries that text like any other grant, so the check at
+start time and the check before writing are the same check.
+
 Core ships no checker and no `typescript` dependency. The tests use a
 ten-line reference checker to prove the seam.
+
+### Calling a source entry's exports from the client side
+
+`client.callSource(id, name, input)` calls a named export of a source entry
+through its host — the client side of the same door `StubCall.call` opens for a
+grant handler, which reaches only the calling instance's own module.
+
+It is here because a **view** calls its plugin's server half: the `server` stub's
+handler runs client-side, on the view's own instance, and has to reach a
+_different_ entry. Everything the boundary guarantees is unchanged — the call
+goes through the host, only structured-clone-safe values cross, a stopped
+instance refuses — and no new authority reaches hosted code, which can still
+only call what a grant hands it. In 5b the same method is what the shell calls
+when a stub crosses the connection (`ui.md` E3).
 
 ### The hosted entry as an ordinary instance
 

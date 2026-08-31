@@ -715,6 +715,184 @@ agent's own composition, so the declarations for the stubs the composer grants
 go there. It is a field on a result the model already receives, not a tenth
 tool.
 
+## Views
+
+A **view** is the part of a plugin that runs in the browser client: a module of
+the written-plugin shape that fills **slots** and reaches its own plugin's
+handlers through **stubs** (ui.md D1). The composer grows one argument for it —
+`write_plugin { id, source, view? }` — and nothing else about writing a plugin
+changes.
+
+### A view is its own entry
+
+`write_plugin` with a `view` writes **two** plugin entries, not one:
+
+| entry             | source   | stubs                                 |
+| ----------------- | -------- | ------------------------------------- |
+| `summariser`      | `source` | `options.stubs` — tools, prompt, …    |
+| `summariser.view` | `view`   | `options.viewStubs`, narrowed (below) |
+
+The alternative was a `view` field on `PluginEntry` that the kernel starts as a
+second module of one instance. Two entries win on every count that matters:
+
+- The kernel needs no new concept. A view has its own **status**, its own
+  **cleanup**, its own **held resources**, its own **host** — it is an ordinary
+  hosted instance, and every criterion in `kernel.md` and `hosts.md` §A holds
+  for it with nothing added. A view that fails to start is one entry in `error`
+  (D1a) while its plugin keeps running; one instance with two modules would have
+  had to invent a half-failed status.
+- The two halves are separately hashable and separately startable, which is what
+  5b needs: the browser client holds an entry per view, keyed by content hash
+  (E1), and the server's entries stay where they are. A field on one entry would
+  have had to be split at the boundary anyway.
+- Attribution is free. The view calls out as `summariser.view`, so middleware on
+  the client side sees which half made a call (A6, E3) without the host having
+  to say which module it came from.
+
+The pair is written, read and removed together, so the agent never manages the
+second id: `write_plugin` on an id ending in `.view` is refused, `read_plugin`
+returns both sources with both declaration texts, `remove_plugin` on the plugin
+takes its view with it, and rewriting without a `view` argument removes the view
+entry (D3). The ids are `viewIdOf(id)` and `pluginIdOf(id)`, exported, because
+5b's follow needs the same convention.
+
+### The stubs a view is granted
+
+```ts
+// slotsStub — with the vocabulary and the granted slot names it narrows to
+declare const slots: (fill: {
+  slot: GrantedSlot
+  order?: number
+  key?: string
+  view: ViewNode
+}) => Promise<void>
+
+// serverStub — narrowed to the plugin's own exports (below)
+declare const server: <TName extends keyof ServerHandlers>(call: {
+  handler: TName
+  input?: Parameters<ServerHandlers[TName]>[0]
+}) => Promise<Awaited<ReturnType<ServerHandlers[TName]>>>
+
+// agentStub
+declare const agent: () => Promise<{ status: 'idle' | 'running' }>
+
+// sessionStub
+declare const session: (read?: {
+  last?: number
+}) => Promise<Array<SessionEntryRead>>
+```
+
+`server` takes one object rather than `(handler, input)` because a stub is one
+async callable of one argument in every host; a second positional argument would
+be dropped at the boundary rather than passed.
+
+**`ViewNode`: the declarative tree.** A fill's renderer is a function, and a
+function cannot cross a host boundary — so a view describes what it puts in a
+slot as plain data:
+
+```ts
+type ViewNode =
+  | { type: 'text'; text: string; tone?: ViewTone }
+  | {
+      type: 'button'
+      label: string
+      onPress?: string
+      disabled?: boolean
+      tone?: ViewTone
+    }
+  | {
+      type: 'input'
+      name: string
+      placeholder?: string
+      value?: string
+      onChange?: string
+      onSubmit?: string
+    }
+  | { type: 'row'; children: Array<ViewNode> }
+  | { type: 'stack'; children: Array<ViewNode> }
+```
+
+Where a callback would be there is the **name of one of the view module's own
+exports** — `onPress: 'press'` calls `export function press()` — the same rule
+`toolsStub`'s `handler` follows, for the same reason. The vocabulary is
+deliberately small: it is what a plugin needs to put a button beside the input
+and say what happened, and it is in the declarations, so the model writes against
+it with no guessing. Anything richer is a **fill** the operator writes in the
+page, not something an agent-written view invents.
+
+**The renderer seam.** The `slots` handler turns a tree into a fill's renderer
+through a `ViewRenderer` read from context:
+
+```ts
+type ViewRenderer = (
+  view: ViewNode,
+  callbacks: Record<string, (input?: unknown) => Promise<unknown>>,
+) => unknown
+```
+
+The page provides it (`viewRendererKey`); this package never imports React and
+never sees a React element — `render` is `unknown` all the way through.
+`callbacks` holds one entry per handler name the tree names, already bound to
+that export through `StubCall.call`, so the renderer only has to attach them.
+The React implementation lives in the example app, next to
+`@tanstack/react-compose`. The **slot registry** is read the same way, through
+`slotRegistryKey` and a structural `SlotRegistry` (`slot(name)`, `fill(slot, …)`)
+that `@tanstack/react-compose`'s registry satisfies: a page providing its
+registry under this key as well is the whole of the glue.
+
+**Which slots, as part of the grant (D1).** The operator names them
+(`options.viewSlots`); `grantView` rebuilds the `slots` grant with that list, so
+the allow-list is in the entry's own grant twice over — in the declarations, as
+`type GrantedSlot = "chat.input.actions"`, so filling another slot does not
+type-check; and in the handler, which refuses one at run time, because a client
+without a checker starts source as written. A fill of a slot the page does not
+have is refused too, by name.
+
+Re-filling the same `slot` and `key` replaces the previous fill rather than
+stacking a second one; the instance still holds one cleanup for that place, so
+removal is unchanged.
+
+**`agent` and `session` are reads, not subscriptions.** There is no way yet for
+a fill to re-render when something the view read has changed: the tree crossed
+the boundary once, as data. So these two are useful from a handler — press a
+button, read the end of the session, call the server half — and not while
+building a view. Subscriptions across the boundary are a real design question
+(what re-renders, at what cost, with what backpressure) and this slice does not
+need them; when the page needs live state it uses a plugin with a real fill.
+
+### A view is checked against its server half (ui.md D2)
+
+A view calling a handler its plugin does not export should be a diagnostic, not
+a failure on the page. That needs the server half's exports in the view's
+declarations, and there were two ways to get them:
+
+1. Add the server source to the check request in core and let the checker pair
+   them up (`checkView`).
+2. Narrow the view's **grant** before the entry is written, so the `server`
+   stub's `.d.ts` text already names the exports.
+
+The second is smaller and stays true for longer. The composer asks the checker
+for the server half's exports through one optional, additive member on
+`SourceChecker` — `exports({ source, grants })`, which knows nothing about views
+— builds `interface ServerHandlers { … }` from them, and puts that text on the
+`server` grant of the view entry. The narrowed grant then travels **on the
+entry**, so when the kernel checks the view again — at start, at every restart,
+in every host — it checks against the same text, with no second code path and no
+new field in core's check request. A checker without `exports` leaves the
+permissive declaration in place, and the view is checked exactly as well as that
+checker can manage.
+
+Both modules are checked before either is written, so a bad view never starts a
+good plugin, and the failure comes back in the one result shape every other
+failure uses, with `declarations` and `viewDeclarations` alongside the
+diagnostics.
+
+`list_plugins` carries `viewDeclarations` as well as `declarations`, for the
+same reason it carries the latter: before a first write there is no entry to
+read back. What it lists is the shape — the vocabulary, the granted slots — with
+the permissive `server`, because there is no server half to name the handlers of
+until the model has written one.
+
 ## Choices made where the criteria are silent
 
 - **One session event, not one per kind.** `sessionAppendedEvent` carries the
@@ -743,6 +921,15 @@ tool.
 - **`enable_plugin` is refused on a protected entry** along with everything
   else, rather than being allowed as a way back. One rule is easier to state,
   and the agent can never have disabled a protected entry in the first place.
+- **A view is its own entry, with a derived id.** See above. `${id}.view` is a
+  convention, not a kernel concept; the composer and the follow are the only two
+  things that need to know it, and both import `viewIdOf`.
+- **A view fills only slots the page already has.** `slots` refuses a name the
+  registry does not resolve rather than holding the fill until one appears. In a
+  browser client the shell's slots exist before any written view is added, so an
+  unknown name is a mistake, and saying so beats a fill that never shows.
+- **`grantView` narrows only grants this package authored.** A grant the
+  operator wrote passes through untouched; nothing is rewritten by name alone.
 - **The composer names its tools `verb_noun`** — `list_plugins`,
   `write_plugin`, `select_model` — so a model that knows one knows the shape of
   the rest.
@@ -815,6 +1002,22 @@ about carrying its diagnostics and its absence.
 | D8  | `tests/code.test.ts`         | `hands the model the declarations of exactly the stubs the entry was granted` / `shows the model exactly what the source checker checks against`; against the real checker, `../compose-typescript/tests/composer.test.ts`           |
 | D9  | `tests/code.test.ts`         | `starts source unchecked when no checker is provided, and checked when one is`                                                                                                                                                       |
 | E1  | `tests/self-editing.test.ts` | `lists, disables, re-enables, adds, writes, corrects, uses and removes its own plugins`; the same loop against the real TypeScript checker is `../compose-typescript/tests/composer.test.ts`                                         |
+
+### `docs/acceptance/ui.md` §D
+
+D5 is the whole-app test and belongs to the example app; the rows below are what
+this package proves about views without a browser.
+
+| Id  | Test file                                   | `it()` title                                                                                                                                          |
+| --- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | `tests/views.test.ts`                       | `fills a slot of the page with the view of the plugin it wrote` / `refuses a view the slot it was not granted, and the plugin keeps running`          |
+| D1a | `tests/views.test.ts`                       | `leaves a view whose setup throws in error, with its plugin and the page intact` — a fill that fails to _render_ is the adapter's, not this package's |
+| D2  | `../compose-typescript/tests/views.test.ts` | `makes a view calling a handler the plugin does not export a diagnostic`                                                                              |
+| D3  | `tests/views.test.ts`                       | `replaces the fills of a view when the plugin is rewritten` / `empties the slot when the plugin is removed, leaving nothing behind`                   |
+| D4  | —                                           | The in-process host is the trust boundary; nothing here claims to isolate a view. See `hosts.md` §A.                                                  |
+| —   | `tests/views.test.ts`                       | `calls the view of its own module when a fill is pressed` / `reaches the server half through the server stub, as the view itself`                     |
+| —   | `tests/views.test.ts`                       | `reads the agent and the end of the session from a view handler`                                                                                      |
+| —   | `tests/views.test.ts`                       | `refuses to write a view when the operator granted none` / `writes a view only through the plugin it belongs to`                                      |
 
 ### Notes on coverage
 

@@ -182,6 +182,10 @@ export const buildComposer = async (setup: {
   catalog?: Record<string, AnyPlugin>
   protected?: Array<string>
   stubs?: Array<AnyStubGrant>
+  /** The stubs a written view is granted; omitted means views are not granted. */
+  viewStubs?: Array<AnyStubGrant>
+  /** The slot names a written view may fill; omitted means any of them. */
+  viewSlots?: Array<string>
   host?: string
   hosts?: Record<string, Host>
   checker?: SourceChecker
@@ -233,6 +237,12 @@ export const buildComposer = async (setup: {
             catalog: setup.catalog ?? {},
             protected: setup.protected ?? [...registryEntries],
             stubs: setup.stubs ?? [...agentStubs],
+            ...(setup.viewStubs === undefined
+              ? {}
+              : { viewStubs: setup.viewStubs }),
+            ...(setup.viewSlots === undefined
+              ? {}
+              : { viewSlots: setup.viewSlots }),
             ...(setup.host === undefined ? {} : { host: setup.host }),
           } as unknown),
       },

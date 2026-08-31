@@ -185,6 +185,28 @@ export interface SourceChecker {
   declarations?: (
     grants: ReadonlyArray<{ name: string; declarations: string }>,
   ) => string
+  /**
+   * The named exports of a module of plugin source, with the type of each one
+   * where the checker can recover it. Optional and additive: it lets one piece
+   * of source be described to another — a **view** checked against the named
+   * exports of its plugin's server half, say — without core knowing what either
+   * of them is for. A checker that cannot recover exports omits it, and
+   * whatever asked falls back to what it would have declared anyway.
+   */
+  exports?: (request: {
+    /** The source to read the exports of, as written. */
+    source: string
+    /** The declarations that source itself compiles against, in grant order. */
+    grants: ReadonlyArray<{ name: string; declarations: string }>
+  }) => ReadonlyArray<SourceExport>
+}
+
+/** One named export of plugin source, as a {@link SourceChecker} recovered it. */
+export interface SourceExport {
+  /** The export name. The default export is the setup function; it is not one. */
+  name: string
+  /** The printed type, when the checker could recover one. */
+  type?: string
 }
 
 /**
