@@ -103,11 +103,11 @@ One model request plus the tool calls its response made. A turn is one or more s
 _Avoid_: iteration, tick, cycle
 
 **Model**:
-The context key under which a model provider is offered: it turns messages and tool definitions into a streamed response.
+The context key for the model registry: the current model provider, which turns messages and tool definitions into a streamed response. The key is stable; providers register into it.
 _Avoid_: LLM, adapter, backend, driver
 
 **Model provider**:
-A plugin that provides the model key for one vendor or endpoint.
+A plugin that registers one vendor or endpoint into the model registry.
 _Avoid_: adapter, connector, integration
 
 **Tool**:

@@ -8,7 +8,7 @@ the kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 ## A. Everything is a plugin
 
 - **A1** The agent is an ordinary client: the model provider, the tool registry, the prompt assembly, the session log and the loop itself are each plugins, and any of them can be removed, replaced or reconfigured through the plugin list while a conversation is open.
-- **A2** The package provides context keys for `model`, `tools`, `prompt`, `session` and `agent`; a consumer declares the keys it needs and never imports a provider.
+- **A2** The package provides context keys for `model`, `tools`, `prompt`, `session` and `agent`. All five are stable: each is provided by one plugin for the life of the client, and contributions (providers, tools, sections) register into them. A consumer declares the keys it needs and never imports a provider.
 - **A3** A conversation can be assembled with nothing but the package's plugins and a scripted model, with no network and no credentials; the same assembly with a real model provider swapped in is the production shape.
 
 ## B. Session is the source of truth
@@ -22,8 +22,8 @@ the kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 
 - **C1** Input queued while the agent is idle starts a turn; input queued while a turn is running is taken up at the next step boundary, in order.
 - **C2** A step is one request followed by the tool calls in its response; a turn continues with another step while the last response called tools or new input is waiting, and closes otherwise.
-- **C3** The prompt for each step is assembled from the prompt sections registered at that moment, in order; a section added or removed between steps shows up in the very next request.
-- **C4** The tools offered to the model on each step are exactly those registered at that moment; a tool registered mid-turn is callable in the next step, and a removed one is neither offered nor executable.
+- **C3** A turn sees one world: at turn open the loop takes the current model provider, the registered tools and the assembled prompt sections once and holds them for the whole turn; a section, tool or provider added or removed during a turn is picked up by the next turn.
+- **C4** The tools offered and executable within a turn are exactly those registered when the turn opened; a tool registered mid-turn is first offered in the next turn, and a tool removed mid-turn is refused if the model calls it.
 - **C5** Cancelling a running turn stops the in-flight request and any running tool calls, records the cancellation in the session, and leaves the agent idle and reusable.
 - **C6** Removing the loop plugin mid-turn cancels per C5 as part of its cleanup; nothing continues to run or write to the session after removal reports done.
 - **C7** The agent exposes its status (`idle` / `running`) through a store, and a caller can await the moment the agent next becomes idle.
@@ -39,7 +39,7 @@ the kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 ## E. Model providers
 
 - **E1** A model provider streams its response; each chunk is appended to the session as it arrives and the complete assistant message is appended when the stream ends, whether it ended normally, with an error, or by cancellation.
-- **E2** A provider is chosen entirely by which plugin provides the `model` key; swapping providers between steps takes effect on the next request with no change to any other plugin.
+- **E2** The `model` key is a registry provided by one plugin; provider plugins register into it and their cleanup unregisters. Adding, removing or selecting a provider takes effect at the next turn open, without the loop or any other plugin restarting. If the provider a turn is using is removed mid-turn, that step ends with an error entry and the turn closes; the next turn uses the current provider.
 - **E3** The package ships a scripted provider for tests that replays a given sequence of responses, including tool calls and mid-stream failures.
 - **E4** One real provider package exists, speaking the OpenAI-compatible chat-completions protocol over `fetch` with no vendor SDK; its keyless tests run in CI and its with-key smoke test skips itself when no key is present.
 
@@ -51,4 +51,4 @@ the kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 
 ## G. End-to-end
 
-- **G1** One test runs a two-turn conversation against the scripted provider with three tools, one exclusive; a middleware plugin refuses one call and rewrites another; a prompt section is added between turns; the model provider is swapped between turns; the test asserts the derived messages, the session log, the order of tool results, and that the client holds no leaked resources afterwards.
+- **G1** One test runs a three-turn conversation against the scripted provider with three tools, one exclusive; a middleware plugin refuses one call and rewrites another; a prompt section and a tool are added during turn one and first appear in turn two; the model provider is swapped during turn two and first used in turn three; the test asserts the derived messages, the session log, the order of tool results, that the loop instance was never restarted, and that the client holds no leaked resources afterwards.
