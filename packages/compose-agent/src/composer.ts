@@ -277,11 +277,19 @@ export const composerPlugin = createPlugin({
     /**
      * The declarations an entry's source is checked against and the model is
      * shown (D8). They are a function of the entry's granted stubs, so what
-     * type-checks is what runs. One line to swap when a source checker publishes
-     * richer text of its own.
+     * type-checks is what runs. When the client has a source checker that
+     * publishes its own text — a base declaration file, a synthesized `stubs`
+     * type — that text _is_ the check, so it is what the model is shown; a
+     * checker that compiles the grant text as given, and a client with no
+     * checker at all, get the concatenation the kernel would use.
      */
     const declarationsFor = (grants: ReadonlyArray<AnyStubGrant> | undefined) =>
-      stubDeclarations(grants)
+      instance.context.peek(sourceCheckerKey)?.declarations?.(
+        (grants ?? []).map((grant) => ({
+          name: grant.name,
+          declarations: grant.declarations,
+        })),
+      ) ?? stubDeclarations(grants)
 
     // -------------------------------------------------------------- reporting
 
@@ -388,7 +396,7 @@ export const composerPlugin = createPlugin({
     const listTool = createTool({
       name: 'list_plugins',
       description:
-        'List the plugin list of this agent: every entry with its status, the deps it is still missing when pending, whether it is protected, and the names the plugin catalog offers.',
+        'List the plugin list of this agent: every entry with its status, the deps it is still missing when pending, whether it is protected, the names the plugin catalog offers, and the declarations a plugin written with write_plugin is checked against.',
       ...args<Record<string, never>>({ type: 'object', properties: {} }),
       concurrency: 'exclusive',
       execute: (): ComposerResult => ({
@@ -396,6 +404,10 @@ export const composerPlugin = createPlugin({
         message: 'The plugin list, as it runs now.',
         entries: list().map((entry) => report(entry.id)),
         catalog: Object.keys(options.catalog),
+        // The declarations a plugin written here is checked against. They are
+        // on the listing because a first write has no entry to read back, and
+        // the model has to be able to see them before it writes (D8).
+        declarations: declarationsFor(options.stubs),
       }),
     })
 

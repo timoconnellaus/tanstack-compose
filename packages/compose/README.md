@@ -251,7 +251,10 @@ gives the phase, the message and, where available, the line.
 Provide a `SourceChecker` under `sourceCheckerKey` and it is consulted before a
 host is asked to start anything, against the declarations of exactly that
 entry's grants — so it is a type checker and a compiler in one seam. Without it,
-source is started as written.
+source is started as written. A checker that compiles more than the grant text —
+a base declaration file, a synthesized `stubs` type — publishes what it compiles
+as `declarations(grants)`, so whoever shows an author the declarations shows the
+ones the check uses.
 
 > The in-process host runs plugin source in your own process: it is the
 > reference other hosts are measured against, not an isolation boundary. In

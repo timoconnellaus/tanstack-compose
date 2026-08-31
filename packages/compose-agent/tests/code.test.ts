@@ -1,7 +1,12 @@
 import { stubDeclarations } from '@tanstack/compose'
 import { describe, expect, it } from 'vitest'
 import { promptStub, requestAction, toolsKey, toolsStub } from '../src/index'
-import { buildComposer, markerChecker, resultsOf } from './helpers/composer'
+import {
+  buildComposer,
+  declaringChecker,
+  markerChecker,
+  resultsOf,
+} from './helpers/composer'
 import type { ResourceNode } from '@tanstack/compose'
 
 const done = { chunks: ['done'] }
@@ -273,6 +278,31 @@ describe('the plugins the agent writes', () => {
     expect(stubDeclarations([toolsStub, promptStub])).toContain(
       'declare const prompt',
     )
+  })
+
+  it('shows the model exactly what the source checker checks against', async () => {
+    const { agent, session } = await buildComposer({
+      checker: declaringChecker,
+      stubs: [toolsStub],
+      script: [
+        { toolCalls: [{ name: 'list_plugins', args: {} }] },
+        { toolCalls: [write('written', alpha)] },
+        { toolCalls: [read('written')] },
+        done,
+      ],
+    })
+
+    agent.send('what am I checked against?')
+    await agent.idle()
+
+    const expected = declaringChecker.declarations!([
+      { name: toolsStub.name, declarations: toolsStub.declarations },
+    ])
+    const [listed, , wasRead] = resultsOf(session)
+    // The listing is where a model that has written nothing yet sees them.
+    expect(listed?.declarations).toBe(expected)
+    expect(wasRead?.declarations).toBe(expected)
+    expect(expected).not.toBe(stubDeclarations([toolsStub]))
   })
 
   it('carries the checker diagnostics and leaves the entry exactly as it was', async () => {

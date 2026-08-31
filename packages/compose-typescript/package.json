@@ -51,6 +51,7 @@
     "typescript": "6.0.2"
   },
   "devDependencies": {
+    "@tanstack/compose-agent": "workspace:*",
     "rolldown": "^1.2.6"
   }
 }

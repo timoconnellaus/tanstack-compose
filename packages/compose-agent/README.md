@@ -262,7 +262,7 @@ ships in the kernel and is the default.
 
 | Tool                 | What the model can do                                                  |
 | -------------------- | ---------------------------------------------------------------------- |
-| `list_plugins`       | See every entry, its status, what a `pending` one is missing           |
+| `list_plugins`       | See every entry and its status, and the declarations it writes against |
 | `enable_plugin`      | Turn an entry back on                                                  |
 | `disable_plugin`     | Turn an entry off, which is the same as removing it                    |
 | `set_plugin_options` | Replace an entry's options; that instance restarts                     |

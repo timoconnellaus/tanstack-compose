@@ -34,6 +34,13 @@ request's `declarations` string is ignored for that reason: two producers of the
 same text is one too many, and only `grants` carries the names the `stubs`
 object type needs.
 
+The checker exposes the same function as `SourceChecker.declarations`, the
+seam's optional member, so a composer can ask the checker in front of it what a
+grant set compiles to rather than falling back to core's `stubDeclarations` —
+which is the grant text alone, without the base declarations or the `Stubs`
+interface, and therefore not what this checker checks. It is the same function
+object `check` calls: there is one producer, and both callers reach it.
+
 ## The declaration file
 
 Three parts, concatenated in this order. This is the whole world the module is
@@ -283,11 +290,12 @@ lying about that. Only this package depends on it; core does not, and must not.
 | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | D7 — source is checked before it is started; a failure leaves the entry as it was, with line and column | `tests/checking.test.ts`                                 |
 | D7 — checked against exactly the granted stubs                                                          | `tests/checking.test.ts` ("a stub that was not granted") |
-| D8 — the declarations shown are the declarations checked                                                | `tests/declarations.test.ts`                             |
+| D8 — the declarations shown are the declarations checked                                                | `tests/declarations.test.ts`, `tests/composer.test.ts`   |
 | D9 — a plugin behind a context key; the checked output runs in the in-process host                      | `tests/running.test.ts`                                  |
 | D4 — a syntax error is a diagnostic, in the same shape as every other failure                           | `tests/checking.test.ts`                                 |
 | The module shape the declarations describe is enforced, not just documented                             | `tests/checking.test.ts`                                 |
 | Budget — size and per-check latency                                                                     | `tests/budget.test.ts`                                   |
+| The whole agent loop against this checker, end to end                                                   | `tests/composer.test.ts`                                 |
 
 ## What was decided here
 

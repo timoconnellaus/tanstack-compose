@@ -101,6 +101,11 @@ const declarations = pluginDeclarations([
 ])
 ```
 
+The checker publishes the same function as `SourceChecker.declarations`, so a
+composer holding the checker gets this text without importing this package —
+`@tanstack/compose-agent`'s composer shows it on `list_plugins` and
+`read_plugin`, and an agent writing against it is writing against the check.
+
 It is the base declarations — the module shape, `Setup`, `SetupArgument`,
 `Cleanup`, `Handler` — then each grant's own `.d.ts` text in grant order, then a
 `Stubs` interface synthesized from the grant names. There is no `any` in it.
@@ -119,6 +124,7 @@ in plugin source is a type error here rather than a crash in an isolate later.
 ```ts
 const typescriptCheckerPlugin: Plugin
 
+// Its `declarations` member is `pluginDeclarations`.
 function createTypeScriptChecker(): SourceChecker
 
 function pluginDeclarations(

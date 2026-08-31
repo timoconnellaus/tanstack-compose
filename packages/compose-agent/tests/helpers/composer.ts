@@ -147,6 +147,21 @@ export const markerChecker: SourceChecker = {
   },
 }
 
+/**
+ * A checker that publishes declarations of its own — a preamble the grant text
+ * alone does not carry — so a test can show that what the composer hands the
+ * model is what this checker checks against, not the bare concatenation.
+ */
+export const declaringChecker: SourceChecker = {
+  check: markerChecker.check,
+  declarations: (grants) =>
+    [
+      '/** the whole world this module compiles in */',
+      ...grants.map((grant) => grant.declarations),
+      `interface Stubs { ${grants.map((grant) => `readonly ${grant.name}: typeof ${grant.name}`).join('; ')} }`,
+    ].join('\n'),
+}
+
 // ------------------------------------------------------------------ assembly
 
 /** The five entries a recommended assembly protects, plus the composer itself. */

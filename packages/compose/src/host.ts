@@ -174,6 +174,17 @@ export interface SourceChecker {
      */
     grants: ReadonlyArray<{ name: string; declarations: string }>
   }) => SourceCheckResult | Promise<SourceCheckResult>
+  /**
+   * The full text this checker compiles against for a grant set, when it
+   * derives more than the concatenated grant text — a base declaration file, a
+   * synthesized `stubs` type. A composer shows the model this when it is
+   * present, so what the model is shown is what the check uses (D8); a checker
+   * that compiles the grant text as given omits it, and `stubDeclarations` is
+   * the answer.
+   */
+  declarations?: (
+    grants: ReadonlyArray<{ name: string; declarations: string }>,
+  ) => string
 }
 
 /**

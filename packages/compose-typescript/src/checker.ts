@@ -94,6 +94,9 @@ export function createTypeScriptChecker(): SourceChecker {
       if (diagnostics.length > 0) return { diagnostics }
       return { code: transpile(request.source) }
     },
+    // The same producer `check` compiles against, so a composer that shows this
+    // shows the model exactly what its source is checked against (D8).
+    declarations: pluginDeclarations,
   }
 }
 

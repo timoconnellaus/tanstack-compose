@@ -494,6 +494,9 @@ interface SourceChecker {
     declarations: string
     grants: ReadonlyArray<{ name: string; declarations: string }>
   }) => SourceCheckResult | Promise<SourceCheckResult>
+  declarations?: (
+    grants: ReadonlyArray<{ name: string; declarations: string }>,
+  ) => string
 }
 
 interface SourceCheckResult {
@@ -516,6 +519,18 @@ therefore cannot even _name_ a capability it was not granted, which makes the
 type environment a statement of the entry's authority rather than a separate
 thing to keep in sync. The same string is what a composer shows the model
 (D8), so what type-checks is what runs.
+
+**`declarations` is optional, and it is what D8 is about.** A checker that
+compiles the grant text as given has nothing to add: the concatenation is the
+whole of the compilation, and `stubDeclarations(entry.stubs)` is what a composer
+shows. A checker that derives more — a base declaration file describing the
+module shape, a `stubs` object type synthesized from the grant names — compiles
+against text neither core nor the composer can produce, and showing the model
+the concatenation instead would show it something other than what the check
+uses. So the checker may publish the text it actually compiles, and a composer
+prefers it: `checker.declarations?.(grants) ?? stubDeclarations(grants)`. It
+takes the grant set rather than an entry so that the answer for a set of stubs
+can be had before any entry carries them.
 
 `grants` carries the same text with each grant's `name` still attached, in the
 same order. `declarations` alone is enough for a checker that only compiles the

@@ -449,17 +449,17 @@ tool set.
 
 ### The tools
 
-| Tool                 | Arguments               | What it does                                                               |
-| -------------------- | ----------------------- | -------------------------------------------------------------------------- |
-| `list_plugins`       | —                       | Every entry with status, missing deps, protection; and the catalog's names |
-| `enable_plugin`      | `{ id }`                | `enabled: true`                                                            |
-| `disable_plugin`     | `{ id }`                | `enabled: false`, which is equivalent to removal (kernel F2)               |
-| `set_plugin_options` | `{ id, options }`       | Replace the entry's options; the instance restarts                         |
-| `add_plugin`         | `{ id, name, options }` | Add a **plugin catalog** entry by name                                     |
-| `write_plugin`       | `{ id, source }`        | Write **plugin source** as a new entry, or rewrite one the agent wrote     |
-| `read_plugin`        | `{ id }`                | The source of an entry the agent wrote, and its **plugin declarations**    |
-| `remove_plugin`      | `{ id }`                | Remove an entry the agent added or wrote                                   |
-| `select_model`       | `{ name? }`             | `modelKey`'s `select` — no plugin-list edit, nothing restarts              |
+| Tool                 | Arguments               | What it does                                                                                                                                |
+| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_plugins`       | —                       | Every entry with status, missing deps, protection; the catalog's names; and the **plugin declarations** a written plugin is checked against |
+| `enable_plugin`      | `{ id }`                | `enabled: true`                                                                                                                             |
+| `disable_plugin`     | `{ id }`                | `enabled: false`, which is equivalent to removal (kernel F2)                                                                                |
+| `set_plugin_options` | `{ id, options }`       | Replace the entry's options; the instance restarts                                                                                          |
+| `add_plugin`         | `{ id, name, options }` | Add a **plugin catalog** entry by name                                                                                                      |
+| `write_plugin`       | `{ id, source }`        | Write **plugin source** as a new entry, or rewrite one the agent wrote                                                                      |
+| `read_plugin`        | `{ id }`                | The source of an entry the agent wrote, and its **plugin declarations**                                                                     |
+| `remove_plugin`      | `{ id }`                | Remove an entry the agent added or wrote                                                                                                    |
+| `select_model`       | `{ name? }`             | `modelKey`'s `select` — no plugin-list edit, nothing restarts                                                                               |
 
 Every one of them is `concurrency: 'exclusive'`: an edit to the plugin list runs
 alone in its step, never alongside another edit or another tool.
@@ -685,9 +685,35 @@ The check is the same call the kernel makes, with the same declarations, so the
 answer is the same one; a client with no checker skips it and starts source
 unchecked, exactly as the kernel does (D9).
 
-`declarationsFor(grants)` is `stubDeclarations(grants)` and nothing else — one
-line, deliberately, so that when a checker publishes richer text of its own the
-swap happens there.
+### The declarations the model is shown (D8)
+
+`declarationsFor(grants)` asks the source checker first:
+
+```ts
+checker?.declarations?.(grants) ?? stubDeclarations(grants)
+```
+
+D8 says the declarations a written plugin is checked against are the ones the
+model is shown. `stubDeclarations` is the grants' text concatenated, which is
+exactly what a checker that compiles the grant text as given uses — but a
+checker like `@tanstack/compose-typescript` compiles a whole declaration file:
+base declarations for `Setup`, `SetupArgument` and `Handler`, then the grants,
+then a `Stubs` interface synthesized from the grant names. Handing the model the
+concatenation while checking against the file would show it something other than
+what runs, and would leave it to guess the one annotation the file asks for.
+
+So the seam carries an optional `declarations(grants)` (core's `host.ts`), the
+checker implements it, and the composer prefers it. The composer still does not
+depend on any checker: no checker, or a checker without the member, and the
+answer is `stubDeclarations`, as before.
+
+**`list_plugins` carries them too.** `read_plugin` only answers for an entry the
+agent already wrote, so before its first write the model had no way to obtain
+the declarations at all — it had to write blind and read them off the failure.
+The listing is the tool a model calls first and the one place that describes the
+agent's own composition, so the declarations for the stubs the composer grants
+go there. It is a field on a result the model already receives, not a tenth
+tool.
 
 ## Choices made where the criteria are silent
 
@@ -786,9 +812,9 @@ about carrying its diagnostics and its absence.
 | D5  | `tests/code.test.ts`         | `starts written source, and its tool and prompt section arrive in the next turn`                                                                                                                                                     |
 | D6  | `tests/code.test.ts`         | `reads and rewrites only what it wrote itself` / `removes a written entry, leaving no resources and no tools behind`                                                                                                                 |
 | D7  | `tests/code.test.ts`         | `carries the checker diagnostics and leaves the entry exactly as it was` — the checker itself is its own package                                                                                                                     |
-| D8  | `tests/code.test.ts`         | `hands the model the declarations of exactly the stubs the entry was granted`                                                                                                                                                        |
+| D8  | `tests/code.test.ts`         | `hands the model the declarations of exactly the stubs the entry was granted` / `shows the model exactly what the source checker checks against`; against the real checker, `../compose-typescript/tests/composer.test.ts`           |
 | D9  | `tests/code.test.ts`         | `starts source unchecked when no checker is provided, and checked when one is`                                                                                                                                                       |
-| E1  | `tests/self-editing.test.ts` | `lists, disables, re-enables, adds, writes, corrects, uses and removes its own plugins`                                                                                                                                              |
+| E1  | `tests/self-editing.test.ts` | `lists, disables, re-enables, adds, writes, corrects, uses and removes its own plugins`; the same loop against the real TypeScript checker is `../compose-typescript/tests/composer.test.ts`                                         |
 
 ### Notes on coverage
 
