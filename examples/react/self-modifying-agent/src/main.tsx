@@ -1,15 +1,14 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { App } from './App'
+import { ComposeProvider, Slot } from '@tanstack/react-compose'
+import { createAppClient } from './client'
+import { rootSlot } from './slots'
+import './styles.css'
 
-const rootElement = document.getElementById('root')
+const root = document.getElementById('root')
+if (!root) throw new Error('Root element #root not found')
 
-if (!rootElement) {
-  throw new Error('Root element #root not found')
-}
-
-createRoot(rootElement).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+createRoot(root).render(
+  <ComposeProvider client={createAppClient()}>
+    <Slot of={rootSlot} />
+  </ComposeProvider>,
 )

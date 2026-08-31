@@ -1,9 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    "packages/react-compose": {
-      "ignoreDependencies": ["react-dom", "@types/react-dom"]
-    },
     "packages/compose-cloudflare": {
       "entry": ["dev/worker.ts"],
       "ignoreDependencies": ["cloudflare"]
