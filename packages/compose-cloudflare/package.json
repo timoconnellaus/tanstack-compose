@@ -1,0 +1,58 @@
+{
+  "name": "@tanstack/compose-cloudflare",
+  "version": "0.1.0",
+  "description": "A host that runs written plugins in Cloudflare Dynamic Workers for @tanstack/compose",
+  "author": "Tim O'Connell",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TanStack/compose.git",
+    "directory": "packages/compose-cloudflare"
+  },
+  "homepage": "https://github.com/TanStack/compose",
+  "keywords": [
+    "compose",
+    "plugin",
+    "host",
+    "cloudflare",
+    "workers",
+    "typescript"
+  ],
+  "scripts": {
+    "clean": "premove ./dist ./coverage",
+    "test:eslint": "eslint ./src ./tests",
+    "test:types": "tsc",
+    "test:lib": "vitest",
+    "test:lib:dev": "vitest --watch",
+    "test:build": "publint --strict",
+    "build": "tsdown --tsconfig tsconfig.build.json"
+  },
+  "type": "module",
+  "types": "./dist/index.d.cts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@tanstack/compose": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260830.1",
+    "@tanstack/compose-agent": "workspace:*",
+    "rolldown": "^1.2.6"
+  }
+}

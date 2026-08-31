@@ -150,6 +150,28 @@ _Avoid_: remote plugin, sandboxed plugin, isolate plugin
 The async callable handle through which a hosted plugin reaches something on the client side (a tool registry, a context value); the only way authority crosses a host boundary.
 _Avoid_: capability, endowment, proxy object, bridge
 
+### UI
+
+**Slot**:
+A named place in the UI that plugins fill; defined by the plugin that renders it and typed by the props it passes to what fills it.
+_Avoid_: outlet, extension point, zone, portal
+
+**Fill**:
+One plugin's contribution to a slot, registered with an order and removed by cleanup.
+_Avoid_: contribution, widget, extension
+
+**View**:
+The part of a plugin that runs in the browser client: a module that fills slots and reaches its own plugin's handlers through stubs. A plugin may have a view, a server part, or both.
+_Avoid_: frontend, client half, component bundle
+
+**Shell**:
+The plugins a browser client always starts: the page frame, the slot renderer and the plugin that follows the server.
+_Avoid_: app, host page, chrome
+
+**Follow**:
+What a browser client does to a server client: it keeps its own plugin list in step with the server's, starting each active entry's view and removing it when the entry goes.
+_Avoid_: mirror, sync, replicate, hydrate
+
 ### Tooling
 
 **Adapter**:
