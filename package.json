@@ -59,6 +59,7 @@
     "@tanstack/compose-agent": "workspace:*",
     "@tanstack/compose-agent-openai": "workspace:*",
     "@tanstack/compose-devtools": "workspace:*",
+    "@tanstack/compose-typescript": "workspace:*",
     "@tanstack/react-compose": "workspace:*"
   },
   "sherif": {

@@ -31,6 +31,7 @@ is [ROADMAP.md](./ROADMAP.md).
 | [`@tanstack/compose-devtools`](./packages/compose-devtools)         | Devtools panels: instance states, unmet requirements, effect tree, event trace. |
 | [`@tanstack/compose-agent`](./packages/compose-agent)               | The agent layer: model, tools, prompt, session and the loop, all as plugins.    |
 | [`@tanstack/compose-agent-openai`](./packages/compose-agent-openai) | An OpenAI-compatible chat-completions model provider, over `fetch`.             |
+| [`@tanstack/compose-typescript`](./packages/compose-typescript)     | Type-checks and transpiles written plugin source against its granted stubs.     |
 
 ## Examples
 

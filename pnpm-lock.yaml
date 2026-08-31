@@ -123,6 +123,19 @@ importers:
         specifier: workspace:*
         version: link:../compose
 
+  packages/compose-typescript:
+    dependencies:
+      '@tanstack/compose':
+        specifier: workspace:*
+        version: link:../compose
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
+    devDependencies:
+      rolldown:
+        specifier: ^1.2.6
+        version: 1.2.6
+
   packages/react-compose:
     dependencies:
       '@tanstack/compose':
