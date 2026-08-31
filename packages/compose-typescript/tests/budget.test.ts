@@ -84,19 +84,25 @@ describe('what the checker costs', () => {
 
     // Each edit is a fresh source in the same declaration environment, which is
     // what a model rewriting its plugin actually does.
+    // The median of the runs is the figure: a single garbage-collection pause
+    // or a busy neighbour in a parallel test run should not fail the budget.
     const runs = 20
-    const warm = Date.now()
+    const timings: Array<number> = []
     for (let index = 0; index < runs; index += 1) {
       const source = thirtyLines
         .replace('const seen', `const seen${index}`)
         .replaceAll('seen.', `seen${index}.`)
         .replaceAll('seen)', `seen${index})`)
+      const started = performance.now()
       const result = checker.check(request(source)) as SourceCheckResult
+      timings.push(performance.now() - started)
       expect(result.diagnostics).toBeUndefined()
     }
-    const warmMs = (Date.now() - warm) / runs
+    const warmMs = timings.sort((a, b) => a - b)[Math.floor(runs / 2)]!
 
-    console.log(`check: ${coldMs} ms cold, ${warmMs.toFixed(1)} ms warm`)
+    console.log(
+      `check: ${coldMs} ms cold, ${warmMs.toFixed(1)} ms warm (median)`,
+    )
     expect(warmMs).toBeLessThanOrEqual(40)
   }, 120_000)
 })
