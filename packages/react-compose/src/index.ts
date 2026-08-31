@@ -1,45 +1,43 @@
 /**
- * `@tanstack/react-compose` — the React adapter.
+ * `@tanstack/react-compose` — the React **adapter**, and the **slot** registry
+ * every adapter would share.
  *
- * Scaffold only. Every export below is a typed placeholder; see `ROADMAP.md`
- * (slice 2) for when it gets built and `CONTEXT.md` for the terms it has to use.
+ * It exposes a **client** to React through a provider, a hook per client store,
+ * a hook that reads a **context key**, and a `Slot` component. It knows nothing
+ * about agents, chat, or anything a plugin might do with a slot (B1).
+ *
+ * Terms are the ones in `CONTEXT.md`; the design is in `DESIGN.md` next to this
+ * file, and the contract it meets is `docs/acceptance/ui.md` §A and §B.
  */
-import type { ReactNode } from 'react'
-import type { Client, ContextKey } from '@tanstack/compose'
 
-export interface ComposeProviderProps {
-  client: Client
-  children?: ReactNode
-}
+export {
+  ComposeProvider,
+  useClient,
+  useClientErrors,
+  useContextKey,
+  useInstances,
+  usePluginList,
+} from './client'
+export type { ComposeProviderProps, UseContextKeyOptions } from './client'
 
-/** Puts a client on React context so hooks below it resolve against it. */
-export function ComposeProvider(_props: ComposeProviderProps): ReactNode {
-  // TODO: context provider; destroy the client when the provider unmounts.
-  throw new Error(
-    '@tanstack/react-compose: ComposeProvider is not implemented yet',
-  )
-}
+export {
+  createSlot,
+  createSlotRegistry,
+  resolveFills,
+  Slot,
+  slotsKey,
+  slotsPlugin,
+  useFills,
+} from './slots'
+export type {
+  AnySlot,
+  Fill,
+  FillInput,
+  PropsOf,
+  SlotCardinality,
+  SlotComponentProps,
+  SlotRegistry,
+  SlotsState,
+} from './slots'
 
-/**
- * Read a context key from the nearest client, re-rendering when its provider is
- * swapped or goes away.
- */
-export function useService<TValue>(_key: ContextKey<TValue>): TValue {
-  // TODO: subscribe to the client's context store.
-  throw new Error('@tanstack/react-compose: useService is not implemented yet')
-}
-
-/** A live view of one entry in the composition tree. */
-export interface CompositionEntry {
-  id: string
-  plugin: string
-  disabled?: boolean
-}
-
-/** Read (and eventually edit) the live composition tree. */
-export function useComposition(): ReadonlyArray<CompositionEntry> {
-  // TODO: subscribe to the composition store.
-  throw new Error(
-    '@tanstack/react-compose: useComposition is not implemented yet',
-  )
-}
+export { useStore } from '@tanstack/react-store'
