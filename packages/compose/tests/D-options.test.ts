@@ -21,7 +21,7 @@ const other = definePlugin({
 })
 
 describe('D. Options', () => {
-  it('D1 options are validated and defaulted before the instance starts', async () => {
+  it('options are validated and defaulted before the instance starts', async () => {
     starts.length = 0
     const client = createClient({
       plugins: [
@@ -37,7 +37,7 @@ describe('D. Options', () => {
     expect(String(invalid?.error)).toMatch(/options\.every: expected a number/)
   })
 
-  it('D2 an options update restarts only that instance', async () => {
+  it('an options update restarts only that instance', async () => {
     starts.length = 0
     const otherStart = vi.fn()
     const watched = definePlugin({
@@ -69,7 +69,7 @@ describe('D. Options', () => {
     expect(starts).toEqual([1, 2])
   })
 
-  it('D3 an options update is an action tooling can observe, veto or replace', async () => {
+  it('an options update is an action tooling can observe, veto or replace', async () => {
     starts.length = 0
     const client = createClient({
       plugins: [

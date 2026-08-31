@@ -14,7 +14,7 @@ const clockKey = createContextKey<{ now: () => number }>('clock')
 const secretKey = createContextKey<string>('secret')
 
 describe('H. Types', () => {
-  it('H1 reading context is typed from the declared deps', () => {
+  it('reading context is typed from the declared deps', () => {
     definePlugin({
       name: 'typed-reader',
       deps: [clockKey, mailerKey],
@@ -36,7 +36,7 @@ describe('H. Types', () => {
     })
   })
 
-  it('H2 payloads, action input and result, and options are inferred from the builders', () => {
+  it('payloads, action input and result, and options are inferred from the builders', () => {
     const started = createEvent<{ at: number }>('started')
     const awaited = createEvent<{ at: number }>('awaited', { awaited: true })
     const compute = createAction<{ left: number; right: number }, string>(
@@ -79,7 +79,7 @@ describe('H. Types', () => {
     expectTypeOf(client.emit(awaited, { at: 1 })).toEqualTypeOf<Promise<void>>()
   })
 
-  it('H3 a plugin authored in another package keeps full types with value imports only', () => {
+  it('a plugin authored in another package keeps full types with value imports only', () => {
     const client = createClient({
       plugins: [
         {

@@ -125,7 +125,7 @@ const selfEditingPlugin = definePlugin({
 })
 
 describe('J. End to end', () => {
-  it('J1 assembles a client, swaps a provider, and edits its own plugin list', async () => {
+  it('assembles a client, swaps a provider, and edits its own plugin list', async () => {
     lines.length = 0
     const client = createClient({
       plugins: [

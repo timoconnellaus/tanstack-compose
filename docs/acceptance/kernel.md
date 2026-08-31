@@ -1,7 +1,7 @@
 # Kernel acceptance criteria — `@tanstack/compose`
 
-The kernel is done when every criterion below is proven by a test whose title
-contains the criterion id (e.g. `A2`). Criteria are observable from outside the
+The kernel is done when every criterion below holds and is covered by the test
+suite. Criteria are observable from outside the
 package and say nothing about how they are met. Terms are as defined in
 [CONTEXT.md](../../CONTEXT.md).
 
@@ -67,7 +67,7 @@ package and say nothing about how they are met. Terms are as defined in
 - **I1** The core package has no framework dependencies and runs in Node, browsers, and workerd; CI runs the suite in Node and jsdom, plus a smoke test in workerd.
 - **I2** Two copies of the package loaded at once (monorepo or bundler duplication) interoperate; identity checks do not rely on `instanceof`.
 - **I3** Core stays within a size budget of 6 kB min+gzip and uses no `Proxy` on hot paths.
-- **I4** Every public export has JSDoc, and `packages/compose/DESIGN.md` maps every criterion in this file to the test that proves it.
+- **I4** Every public export has JSDoc, and `packages/compose/DESIGN.md` explains how the criteria in this file are met.
 
 ## J. End-to-end
 

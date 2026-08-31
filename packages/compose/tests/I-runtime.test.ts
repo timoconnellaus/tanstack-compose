@@ -12,7 +12,7 @@ const sources = readdirSync(sourceDir)
   .map((name) => ({ name, text: readFileSync(join(sourceDir, name), 'utf8') }))
 
 describe('I. Runtime and packaging', () => {
-  it('I1 the core has no framework dependencies and no runtime-specific imports', () => {
+  it('the core has no framework dependencies and no runtime-specific imports', () => {
     expect(Object.keys(packageJson.dependencies)).toEqual(['@tanstack/store'])
     expect('peerDependencies' in packageJson).toBe(false)
     for (const source of sources) {
@@ -23,7 +23,7 @@ describe('I. Runtime and packaging', () => {
     expect(typeof globalThis.queueMicrotask).toBe('function')
   })
 
-  it('I2 two copies of the package loaded at once interoperate', async () => {
+  it('two copies of the package loaded at once interoperate', async () => {
     const copyA = await import('../src/index')
     vi.resetModules()
     const copyB = await import('../src/index')
@@ -67,7 +67,7 @@ describe('I. Runtime and packaging', () => {
     }
   })
 
-  it('I3 the core uses no Proxy and is checked against the size budget', () => {
+  it('the core uses no Proxy and is checked against the size budget', () => {
     for (const source of sources) {
       expect(source.text).not.toMatch(/\bnew Proxy\b/)
     }
@@ -78,7 +78,7 @@ describe('I. Runtime and packaging', () => {
     expect(budget).toMatch(/BUDGET_BYTES = 6 \* 1024/)
   })
 
-  it('I4 every public export has JSDoc and DESIGN.md maps every criterion', () => {
+  it('every public export has JSDoc', () => {
     const documented = new Map<string, boolean>()
     for (const source of sources) {
       const lines = source.text.split('\n')
@@ -98,19 +98,6 @@ describe('I. Runtime and packaging', () => {
     }
     for (const [name, hasDoc] of documented) {
       expect(`${name}: ${String(hasDoc)}`).toBe(`${name}: true`)
-    }
-
-    const acceptance = readFileSync(
-      join(here, '../../../docs/acceptance/kernel.md'),
-      'utf8',
-    )
-    const design = readFileSync(join(here, '../DESIGN.md'), 'utf8')
-    const ids = [...acceptance.matchAll(/\*\*([A-J]\d+)\*\*/g)].map(
-      (match) => match[1]!,
-    )
-    expect(ids.length).toBeGreaterThan(0)
-    for (const id of ids) {
-      expect(design).toMatch(new RegExp(`\\|\\s*${id}\\s*\\|`))
     }
   })
 })

@@ -6,14 +6,14 @@ top. It follows the conventions of the other TanStack libraries.
 
 ## Where things are decided
 
-| Question                            | Answer lives in                                                                                                                                        |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| What is this thing called?          | [`CONTEXT.md`](./CONTEXT.md) — use its terms in code, docs, tests, and commit messages; treat its `_Avoid_` lists as lint.                             |
-| Why was it built this way?          | [`docs/adr/`](./docs/adr) — one short file per decision. Add one only for a hard-to-reverse choice with real alternatives.                             |
-| When is a piece of work done?       | [`docs/acceptance/`](./docs/acceptance) — numbered, observable criteria per slice. Every criterion id appears in the title of the test that proves it. |
-| What order do we build in?          | [`ROADMAP.md`](./ROADMAP.md)                                                                                                                           |
-| How does a package work internally? | `packages/<name>/DESIGN.md`, written by whoever implements it, before the implementation.                                                              |
-| Background reading                  | [`docs/research/`](./docs/research) — reference material for humans; it is not a spec.                                                                 |
+| Question                            | Answer lives in                                                                                                                   |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| What is this thing called?          | [`CONTEXT.md`](./CONTEXT.md) — use its terms in code, docs, tests, and commit messages; treat its `_Avoid_` lists as lint.        |
+| Why was it built this way?          | [`docs/adr/`](./docs/adr) — one short file per decision. Add one only for a hard-to-reverse choice with real alternatives.        |
+| When is a piece of work done?       | [`docs/acceptance/`](./docs/acceptance) — numbered, observable criteria per slice that state the intent the tests exist to prove. |
+| What order do we build in?          | [`ROADMAP.md`](./ROADMAP.md)                                                                                                      |
+| How does a package work internally? | `packages/<name>/DESIGN.md`, written by whoever implements it, before the implementation.                                         |
+| Background reading                  | [`docs/research/`](./docs/research) — reference material for humans; it is not a spec.                                            |
 
 ## How work proceeds
 
@@ -44,6 +44,6 @@ Run the package-scoped variants (`pnpm --filter @tanstack/compose test:lib`) whi
 ## Conventions
 
 - pnpm workspace + nx; TypeScript strict; vitest; eslint via `@tanstack/eslint-config`; prettier; tsdown builds with strict publint.
-- Tests live in `packages/<name>/tests/`, grouped by acceptance-criterion section (`tests/A-lifecycle.test.ts`, …), and each `it()` title starts with the criterion id it proves.
+- Tests live in `packages/<name>/tests/`; group them by the area of behaviour they cover.
 - Package names: `@tanstack/compose`, `@tanstack/react-compose`, `@tanstack/compose-devtools`, `@tanstack/compose-agent`. Examples live under `examples/<framework>/<name>`.
 - Commits: conventional-commit prefixes (`feat`, `fix`, `chore`, `docs`, `test`), one slice or one concern per commit.

@@ -19,7 +19,7 @@ const flatten = (node: ResourceNode, depth = 0): Array<string> => [
 ]
 
 describe('G. Inspection', () => {
-  it('G1 every instance is listed with id, plugin, status, missing deps and error', async () => {
+  it('every instance is listed with id, plugin, status, missing deps and error', async () => {
     const config = definePlugin({
       name: 'config',
       provides: [configKey],
@@ -63,7 +63,7 @@ describe('G. Inspection', () => {
     ])
   })
 
-  it('G2 the resource tree of an instance is labelled and includes nested registrations', async () => {
+  it('the resource tree of an instance is labelled and includes nested registrations', async () => {
     const child = definePlugin({
       name: 'child',
       provides: [poolKey],
@@ -105,7 +105,7 @@ describe('G. Inspection', () => {
     expect(client.resources('parent')).toBeUndefined()
   })
 
-  it('G3 status changes are observable through a store, with no polling', async () => {
+  it('status changes are observable through a store, with no polling', async () => {
     const provider = definePlugin({
       name: 'provider',
       provides: [poolKey],

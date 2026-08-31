@@ -16,7 +16,7 @@ const makePlugin = (name: string, log: Array<string>) =>
   })
 
 describe('F. Plugin list', () => {
-  it('F1 the plugin list is a store and reconciling only touches entries that changed', async () => {
+  it('the plugin list is a store and reconciling only touches entries that changed', async () => {
     const log: Array<string> = []
     const alpha = makePlugin('alpha', log)
     const beta = makePlugin('beta', log)
@@ -44,7 +44,7 @@ describe('F. Plugin list', () => {
     expect(client.inspect().map((entry) => entry.id)).toEqual(['a', 'c'])
   })
 
-  it('F2 enabled false is equivalent to removal and enabling restores the instance', async () => {
+  it('enabled false is equivalent to removal and enabling restores the instance', async () => {
     const log: Array<string> = []
     const provider = definePlugin({
       name: 'provider',
@@ -89,7 +89,7 @@ describe('F. Plugin list', () => {
     expect(log).toEqual(['start:taken', 'stop', 'start:taken'])
   })
 
-  it('F3 a reconcile that fails leaves the client in the previous consistent state', async () => {
+  it('a reconcile that fails leaves the client in the previous consistent state', async () => {
     const log: Array<string> = []
     const alpha = makePlugin('alpha', log)
     const client = createClient({ plugins: [{ id: 'a', plugin: alpha }] })
@@ -119,7 +119,7 @@ describe('F. Plugin list', () => {
     expect(client.inspect().map((entry) => entry.id)).toEqual(['a', 'b'])
   })
 
-  it('F4 overlapping list edits are serialised and apply in order', async () => {
+  it('overlapping list edits are serialised and apply in order', async () => {
     const log: Array<string> = []
     const slow = definePlugin({
       name: 'slow',
@@ -148,7 +148,7 @@ describe('F. Plugin list', () => {
     expect(client.inspect().map((entry) => entry.id)).toEqual(['quick'])
   })
 
-  it('F5 a plugin can edit the plugin list it belongs to, including disabling itself', async () => {
+  it('a plugin can edit the plugin list it belongs to, including disabling itself', async () => {
     const log: Array<string> = []
     const helper = makePlugin('helper', log)
     const selfEditing = definePlugin({

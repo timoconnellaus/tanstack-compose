@@ -29,7 +29,7 @@ const dependent = definePlugin({
 })
 
 describe('C. Replacement', () => {
-  it('C1 every dependent runs against the new provider after a swap', async () => {
+  it('every dependent runs against the new provider after a swap', async () => {
     seenKinds.length = 0
     const client = createClient({
       plugins: [
@@ -52,7 +52,7 @@ describe('C. Replacement', () => {
     ).toBe('active')
   })
 
-  it('C2 there is no window in which a dependent is active against a removed provider', async () => {
+  it('there is no window in which a dependent is active against a removed provider', async () => {
     seenKinds.length = 0
     const client = createClient({
       plugins: [

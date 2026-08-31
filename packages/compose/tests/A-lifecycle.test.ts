@@ -13,7 +13,7 @@ const pingEvent = createEvent<string>('ping')
 const runAction = createAction<string, string>('run')
 
 describe('A. Lifecycle and cleanup', () => {
-  it('A1 adding a plugin starts it and removing it leaves no trace', async () => {
+  it('adding a plugin starts it and removing it leaves no trace', async () => {
     const heard: Array<string> = []
     const cleared = vi.fn()
 
@@ -64,7 +64,7 @@ describe('A. Lifecycle and cleanup', () => {
     expect(client.inspect()).toEqual([])
   })
 
-  it('A2 removal reports complete only once every async cleanup has finished', async () => {
+  it('removal reports complete only once every async cleanup has finished', async () => {
     const order: Array<string> = []
     let release: (() => void) | undefined
     const slow = definePlugin({
@@ -105,7 +105,7 @@ describe('A. Lifecycle and cleanup', () => {
     await expect(client.removePlugin('slow')).resolves.toBeUndefined()
   })
 
-  it('A3 removing an instance removes every instance it started, recursively', async () => {
+  it('removing an instance removes every instance it started, recursively', async () => {
     const order: Array<string> = []
     const grandchild = definePlugin({
       name: 'grandchild',
@@ -143,7 +143,7 @@ describe('A. Lifecycle and cleanup', () => {
     expect(client.inspect()).toEqual([])
   })
 
-  it('A4 cleanups of one instance run in reverse order of registration', async () => {
+  it('cleanups of one instance run in reverse order of registration', async () => {
     const order: Array<string> = []
     const plugin = definePlugin({
       name: 'ordered',
@@ -165,7 +165,7 @@ describe('A. Lifecycle and cleanup', () => {
     expect(order).toEqual(['third', 'second', 'first'])
   })
 
-  it('A5 registering on an instance being removed or already removed throws', async () => {
+  it('registering on an instance being removed or already removed throws', async () => {
     let handle: Instance | undefined
     const plugin = definePlugin({
       name: 'captured',
@@ -187,7 +187,7 @@ describe('A. Lifecycle and cleanup', () => {
     )
   })
 
-  it('A6 a plugin that throws during start ends in error with nothing left behind', async () => {
+  it('a plugin that throws during start ends in error with nothing left behind', async () => {
     const boom = new Error('boom')
     const cleaned = vi.fn()
     const broken = definePlugin({
@@ -224,7 +224,7 @@ describe('A. Lifecycle and cleanup', () => {
     ).toBe('active')
   })
 
-  it('A7 a cleanup that throws is reported and the remaining cleanups still run', async () => {
+  it('a cleanup that throws is reported and the remaining cleanups still run', async () => {
     const order: Array<string> = []
     const plugin = definePlugin({
       name: 'noisy',

@@ -22,7 +22,7 @@ const timerPlugin = definePlugin({
 })
 
 describe('B. Deps and context', () => {
-  it('B1 an instance stays pending until the last dep is provided, whatever the order', async () => {
+  it('an instance stays pending until the last dep is provided, whatever the order', async () => {
     const started = vi.fn()
     const consumer = definePlugin({
       name: 'consumer',
@@ -53,7 +53,7 @@ describe('B. Deps and context', () => {
     expect(started).toHaveBeenCalledTimes(1)
   })
 
-  it('B2 losing a dep cleans the dependent up and returns it to pending', async () => {
+  it('losing a dep cleans the dependent up and returns it to pending', async () => {
     const cleaned = vi.fn()
     const starts: Array<number> = []
     const consumer = definePlugin({
@@ -86,7 +86,7 @@ describe('B. Deps and context', () => {
     expect(starts).toEqual([1, 1])
   })
 
-  it('B3 only a value provided by an active instance satisfies a dep', async () => {
+  it('only a value provided by an active instance satisfies a dep', async () => {
     // This provider can never become active: it needs a key nobody provides.
     const blockedProvider = definePlugin({
       name: 'blocked-provider',
@@ -134,7 +134,7 @@ describe('B. Deps and context', () => {
     expect(client.getContext(timerKey)).toBeUndefined()
   })
 
-  it('B4 a plugin can read a key it did not declare and keeps running either way', async () => {
+  it('a plugin can read a key it did not declare and keeps running either way', async () => {
     const seen: Array<unknown> = []
     const peeker = definePlugin({
       name: 'peeker',
@@ -158,7 +158,7 @@ describe('B. Deps and context', () => {
     expect(seen[1]).toBeUndefined()
   })
 
-  it('B5 providing a key that is already provided throws for the second provider', async () => {
+  it('providing a key that is already provided throws for the second provider', async () => {
     const otherLogger = definePlugin({
       name: 'other-logger',
       provides: [loggerKey],
@@ -182,7 +182,7 @@ describe('B. Deps and context', () => {
     expect(String(second?.error)).toMatch(/already provided by "logger"/)
   })
 
-  it('B6 circular deps are detected and reported with the cycle named', async () => {
+  it('circular deps are detected and reported with the cycle named', async () => {
     const eggKey = createContextKey<string>('egg')
     const chickenKey = createContextKey<string>('chicken')
     const chicken = definePlugin({

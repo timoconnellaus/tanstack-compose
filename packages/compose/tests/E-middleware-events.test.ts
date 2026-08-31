@@ -23,7 +23,7 @@ const owner = definePlugin({
 })
 
 describe('E. Middleware and events', () => {
-  it('E1 middleware can rewrite the input, rewrite the result, or stop the action', async () => {
+  it('middleware can rewrite the input, rewrite the result, or stop the action', async () => {
     seen.length = 0
     const rewriteInput = definePlugin({
       name: 'rewrite-input',
@@ -76,7 +76,7 @@ describe('E. Middleware and events', () => {
     expect(seen).toEqual([])
   })
 
-  it('E2 middleware runs in registration order, first goes to the front, and removal is clean', async () => {
+  it('middleware runs in registration order, first goes to the front, and removal is clean', async () => {
     const order: Array<string> = []
     const mark = (name: string) =>
       definePlugin({
@@ -112,7 +112,7 @@ describe('E. Middleware and events', () => {
     expect(order).toEqual(['first', 'b'])
   })
 
-  it('E3 a listener observes an event and a throwing listener is contained', async () => {
+  it('a listener observes an event and a throwing listener is contained', async () => {
     const heard: Array<string> = []
     const emitter = definePlugin({
       name: 'emitter',
@@ -151,7 +151,7 @@ describe('E. Middleware and events', () => {
     expect(heard).toEqual(['emitter heard itself'])
   })
 
-  it('E4 dispatch is fire-and-forget or awaited according to the event definition', async () => {
+  it('dispatch is fire-and-forget or awaited according to the event definition', async () => {
     const finished = vi.fn()
     const slow = definePlugin({
       name: 'slow-listener',

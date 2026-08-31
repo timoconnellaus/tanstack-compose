@@ -4,7 +4,7 @@ import { createClient, createContextKey, definePlugin } from '../../src/index'
 const greetingKey = createContextKey<string>('greeting')
 
 describe('I. Runtime and packaging — workerd', () => {
-  it('I1 the kernel assembles, provides and cleans up under workerd', async () => {
+  it('the kernel assembles, provides and cleans up under workerd', async () => {
     expect(
       typeof navigator === 'undefined' ? '' : navigator.userAgent,
     ).toContain('Cloudflare-Workers')
