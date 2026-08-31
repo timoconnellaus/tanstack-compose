@@ -110,6 +110,10 @@ _Avoid_: LLM, adapter, backend, driver
 A plugin that registers one vendor or endpoint into the model registry.
 _Avoid_: adapter, connector, integration
 
+**Credential**:
+A secret a plugin needs at runtime, named in its options and read by name through the `credentials` context key; the value is never in the plugin list, the session or any store.
+_Avoid_: secret (for the reference), api key (generic), token
+
 **Tool**:
 A named, typed capability the model may call; registered by a plugin and executed through an action so middleware can approve, rewrite or refuse the call.
 _Avoid_: function, skill, command, capability
