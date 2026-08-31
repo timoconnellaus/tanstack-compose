@@ -260,47 +260,47 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
 
 ## Criterion → test
 
-| Id  | Test file                           | `it()` title                                                                           |
-| --- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| A1  | `tests/A-lifecycle.test.ts`         | `adding a plugin starts it and removing it leaves no trace`                            |
-| A2  | `tests/A-lifecycle.test.ts`         | `removal reports complete only once every async cleanup has finished`                  |
-| A3  | `tests/A-lifecycle.test.ts`         | `removing an instance removes every instance it started, recursively`                  |
-| A4  | `tests/A-lifecycle.test.ts`         | `cleanups of one instance run in reverse order of registration`                        |
-| A5  | `tests/A-lifecycle.test.ts`         | `registering on an instance being removed or already removed throws`                   |
-| A6  | `tests/A-lifecycle.test.ts`         | `a plugin that throws during start ends in error with nothing left behind`             |
-| A7  | `tests/A-lifecycle.test.ts`         | `a cleanup that throws is reported and the remaining cleanups still run`               |
-| B1  | `tests/B-deps.test.ts`              | `an instance stays pending until the last dep is provided, whatever the order`         |
-| B2  | `tests/B-deps.test.ts`              | `losing a dep cleans the dependent up and returns it to pending`                       |
-| B3  | `tests/B-deps.test.ts`              | `only a value provided by an active instance satisfies a dep`                          |
-| B4  | `tests/B-deps.test.ts`              | `a plugin can read a key it did not declare and keeps running either way`              |
-| B5  | `tests/B-deps.test.ts`              | `providing a key that is already provided throws for the second provider`              |
-| B6  | `tests/B-deps.test.ts`              | `circular deps are detected and reported with the cycle named`                         |
-| C1  | `tests/C-replacement.test.ts`       | `every dependent runs against the new provider after a swap`                           |
-| C2  | `tests/C-replacement.test.ts`       | `there is no window in which a dependent is active against a removed provider`         |
-| D1  | `tests/D-options.test.ts`           | `options are validated and defaulted before the instance starts`                       |
-| D2  | `tests/D-options.test.ts`           | `an options update restarts only that instance`                                        |
-| D3  | `tests/D-options.test.ts`           | `an options update is an action tooling can observe, veto or replace`                  |
-| E1  | `tests/E-middleware-events.test.ts` | `middleware can rewrite the input, rewrite the result, or stop the action`             |
-| E2  | `tests/E-middleware-events.test.ts` | `middleware runs in registration order, first goes to the front, and removal is clean` |
-| E3  | `tests/E-middleware-events.test.ts` | `a listener observes an event and a throwing listener is contained`                    |
-| E4  | `tests/E-middleware-events.test.ts` | `dispatch is fire-and-forget or awaited according to the event definition`             |
-| F1  | `tests/F-plugin-list.test.ts`       | `the plugin list is a store and reconciling only touches entries that changed`         |
-| F2  | `tests/F-plugin-list.test.ts`       | `enabled false is equivalent to removal and enabling restores the instance`            |
-| F3  | `tests/F-plugin-list.test.ts`       | `a reconcile that fails leaves the client in the previous consistent state`            |
-| F4  | `tests/F-plugin-list.test.ts`       | `overlapping list edits are serialised and apply in order`                             |
-| F5  | `tests/F-plugin-list.test.ts`       | `a plugin can edit the plugin list it belongs to, including disabling itself`          |
-| G1  | `tests/G-inspection.test.ts`        | `every instance is listed with id, plugin, status, missing deps and error`             |
-| G2  | `tests/G-inspection.test.ts`        | `the resource tree of an instance is labelled and includes nested registrations`       |
-| G3  | `tests/G-inspection.test.ts`        | `status changes are observable through a store, with no polling`                       |
-| H1  | `tests/H-types.test-d.ts`           | `reading context is typed from the declared deps`                                      |
-| H2  | `tests/H-types.test-d.ts`           | `payloads, action input and result, and options are inferred from the builders`        |
-| H3  | `tests/H-types.test-d.ts`           | `a plugin authored in another package keeps full types with value imports only`        |
-| I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`               |
-| I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd`                           |
-| I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                |
-| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy and is checked against the size budget`                        |
-| I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                     |
-| J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                  |
+| Id  | Test file                           | `it()` title                                                                                  |
+| --- | ----------------------------------- | --------------------------------------------------------------------------------------------- |
+| A1  | `tests/A-lifecycle.test.ts`         | `adding a plugin starts it and removing it leaves no trace`                                   |
+| A2  | `tests/A-lifecycle.test.ts`         | `removal reports complete only once every async cleanup has finished`                         |
+| A3  | `tests/A-lifecycle.test.ts`         | `removing an instance removes every instance it started, recursively`                         |
+| A4  | `tests/A-lifecycle.test.ts`         | `cleanups of one instance run in reverse order of registration`                               |
+| A5  | `tests/A-lifecycle.test.ts`         | `registering on an instance being removed or already removed throws`                          |
+| A6  | `tests/A-lifecycle.test.ts`         | `a plugin that throws during start ends in error with nothing left behind`                    |
+| A7  | `tests/A-lifecycle.test.ts`         | `a cleanup that throws is reported and the remaining cleanups still run`                      |
+| B1  | `tests/B-deps.test.ts`              | `an instance stays pending until the last dep is provided, whatever the order`                |
+| B2  | `tests/B-deps.test.ts`              | `losing a dep cleans the dependent up and returns it to pending`                              |
+| B3  | `tests/B-deps.test.ts`              | `only a value provided by an active instance satisfies a dep`                                 |
+| B4  | `tests/B-deps.test.ts`              | `a plugin can read a key it did not declare and keeps running either way`                     |
+| B5  | `tests/B-deps.test.ts`              | `providing a key that is already provided throws for the second provider`                     |
+| B6  | `tests/B-deps.test.ts`              | `circular deps are detected and reported with the cycle named`                                |
+| C1  | `tests/C-replacement.test.ts`       | `every dependent runs against the new provider after a swap`                                  |
+| C2  | `tests/C-replacement.test.ts`       | `there is no window in which a dependent is active against a removed provider`                |
+| D1  | `tests/D-options.test.ts`           | `options are validated and defaulted before the instance starts`                              |
+| D2  | `tests/D-options.test.ts`           | `an options update restarts only that instance`                                               |
+| D3  | `tests/D-options.test.ts`           | `an options update is an action tooling can observe, veto or replace`                         |
+| E1  | `tests/E-middleware-events.test.ts` | `middleware can rewrite the input, rewrite the result, or stop the action`                    |
+| E2  | `tests/E-middleware-events.test.ts` | `middleware runs in registration order, first goes to the front, and removal is clean`        |
+| E3  | `tests/E-middleware-events.test.ts` | `a listener observes an event and a throwing listener is contained`                           |
+| E4  | `tests/E-middleware-events.test.ts` | `dispatch is fire-and-forget or awaited according to the event definition`                    |
+| F1  | `tests/F-plugin-list.test.ts`       | `the plugin list is a store and reconciling only touches entries that changed`                |
+| F2  | `tests/F-plugin-list.test.ts`       | `enabled false is equivalent to removal and enabling restores the instance`                   |
+| F3  | `tests/F-plugin-list.test.ts`       | `a reconcile that fails leaves the client in the previous consistent state`                   |
+| F4  | `tests/F-plugin-list.test.ts`       | `overlapping list edits are serialised and apply in order`                                    |
+| F5  | `tests/F-plugin-list.test.ts`       | `a plugin can edit the plugin list it belongs to, including disabling itself`                 |
+| G1  | `tests/G-inspection.test.ts`        | `every instance is listed with id, plugin, status, missing deps and error`                    |
+| G2  | `tests/G-inspection.test.ts`        | `the resource tree of an instance is labelled and includes nested registrations`              |
+| G3  | `tests/G-inspection.test.ts`        | `status changes are observable through a store, with no polling`                              |
+| H1  | `tests/H-types.test-d.ts`           | `reading context is typed from the declared deps`                                             |
+| H2  | `tests/H-types.test-d.ts`           | `payloads, action input and result, and options are inferred from the builders`               |
+| H3  | `tests/H-types.test-d.ts`           | `a plugin authored in another package keeps full types with value imports only`               |
+| I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`                      |
+| I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd`                                  |
+| I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                       |
+| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 6 kB min+gzip size budget` |
+| I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                            |
+| J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                         |
 
 ### Notes on coverage
 
@@ -309,7 +309,6 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
   (`vitest.jsdom.config.ts`), then the workerd smoke test
   (`vitest.workerd.config.ts`, `@cloudflare/vitest-pool-workers` with its
   `cloudflareTest` plugin). No criterion is only partially met.
-- **I3 — size** is checked by `scripts/check-size.ts`: a rolldown bundle of
-  `src/index.ts`, minified and gzipped, with `@tanstack/store` external. It runs
-  first in `pnpm test:ci`. The kernel is currently 3.2 kB min+gzip against the
-  6 kB budget.
+- **I3 — size** is a test in `tests/I-runtime.test.ts`: a rolldown bundle of
+  `src/index.ts`, minified and gzipped, with `@tanstack/store` external. The
+  kernel is currently 3.2 kB min+gzip against the 6 kB budget.
