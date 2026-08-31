@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createClient, createContextKey, definePlugin } from '../src/index'
+import { createClient, createContextKey, createPlugin } from '../src/index'
 
 const loggerKey = createContextKey<{ log: (message: string) => void }>('logger')
 const timerKey = createContextKey<{ now: () => number }>('timer')
 const absentKey = createContextKey<string>('absent')
 
-const loggerPlugin = definePlugin({
+const loggerPlugin = createPlugin({
   name: 'logger',
   provides: [loggerKey],
   setup(instance) {
@@ -13,7 +13,7 @@ const loggerPlugin = definePlugin({
   },
 })
 
-const timerPlugin = definePlugin({
+const timerPlugin = createPlugin({
   name: 'timer',
   provides: [timerKey],
   setup(instance) {
@@ -24,7 +24,7 @@ const timerPlugin = definePlugin({
 describe('B. Deps and context', () => {
   it('an instance stays pending until the last dep is provided, whatever the order', async () => {
     const started = vi.fn()
-    const consumer = definePlugin({
+    const consumer = createPlugin({
       name: 'consumer',
       deps: [loggerKey, timerKey],
       setup(instance) {
@@ -56,7 +56,7 @@ describe('B. Deps and context', () => {
   it('losing a dep cleans the dependent up and returns it to pending', async () => {
     const cleaned = vi.fn()
     const starts: Array<number> = []
-    const consumer = definePlugin({
+    const consumer = createPlugin({
       name: 'consumer',
       deps: [timerKey],
       setup(instance) {
@@ -88,7 +88,7 @@ describe('B. Deps and context', () => {
 
   it('only a value provided by an active instance satisfies a dep', async () => {
     // This provider can never become active: it needs a key nobody provides.
-    const blockedProvider = definePlugin({
+    const blockedProvider = createPlugin({
       name: 'blocked-provider',
       deps: [absentKey],
       provides: [loggerKey],
@@ -96,7 +96,7 @@ describe('B. Deps and context', () => {
         instance.provide(loggerKey, { log: () => {} })
       },
     })
-    const failingProvider = definePlugin({
+    const failingProvider = createPlugin({
       name: 'failing-provider',
       provides: [timerKey],
       setup(instance) {
@@ -104,7 +104,7 @@ describe('B. Deps and context', () => {
         throw new Error('nope')
       },
     })
-    const consumer = definePlugin({
+    const consumer = createPlugin({
       name: 'consumer',
       deps: [loggerKey, timerKey],
       setup() {},
@@ -136,7 +136,7 @@ describe('B. Deps and context', () => {
 
   it('a plugin can read a key it did not declare and keeps running either way', async () => {
     const seen: Array<unknown> = []
-    const peeker = definePlugin({
+    const peeker = createPlugin({
       name: 'peeker',
       setup(instance) {
         seen.push(instance.context.peek(loggerKey))
@@ -159,7 +159,7 @@ describe('B. Deps and context', () => {
   })
 
   it('providing a key that is already provided throws for the second provider', async () => {
-    const otherLogger = definePlugin({
+    const otherLogger = createPlugin({
       name: 'other-logger',
       provides: [loggerKey],
       setup(instance) {
@@ -185,7 +185,7 @@ describe('B. Deps and context', () => {
   it('circular deps are detected and reported with the cycle named', async () => {
     const eggKey = createContextKey<string>('egg')
     const chickenKey = createContextKey<string>('chicken')
-    const chicken = definePlugin({
+    const chicken = createPlugin({
       name: 'chicken',
       deps: [eggKey],
       provides: [chickenKey],
@@ -193,7 +193,7 @@ describe('B. Deps and context', () => {
         instance.provide(chickenKey, 'chicken')
       },
     })
-    const egg = definePlugin({
+    const egg = createPlugin({
       name: 'egg',
       deps: [chickenKey],
       provides: [eggKey],

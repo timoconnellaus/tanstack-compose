@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createClient, createContextKey, definePlugin } from '../../src/index'
+import { createClient, createContextKey, createPlugin } from '../../src/index'
 
 const greetingKey = createContextKey<string>('greeting')
 
@@ -10,7 +10,7 @@ describe('I. Runtime and packaging — workerd', () => {
     ).toContain('Cloudflare-Workers')
 
     const cleaned: Array<string> = []
-    const provider = definePlugin({
+    const provider = createPlugin({
       name: 'provider',
       provides: [greetingKey],
       setup(instance) {
@@ -20,7 +20,7 @@ describe('I. Runtime and packaging — workerd', () => {
         })
       },
     })
-    const consumer = definePlugin({
+    const consumer = createPlugin({
       name: 'consumer',
       deps: [greetingKey],
       setup(instance) {

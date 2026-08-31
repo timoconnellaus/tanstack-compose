@@ -4,7 +4,7 @@ import {
   createClient,
   createContextKey,
   createEvent,
-  definePlugin,
+  createPlugin,
 } from '../src/index'
 import type { InstanceSnapshot, ResourceNode } from '../src/index'
 
@@ -20,19 +20,19 @@ const flatten = (node: ResourceNode, depth = 0): Array<string> => [
 
 describe('G. Inspection', () => {
   it('every instance is listed with id, plugin, status, missing deps and error', async () => {
-    const config = definePlugin({
+    const config = createPlugin({
       name: 'config',
       provides: [configKey],
       setup(instance) {
         instance.provide(configKey, { url: 'https://example.test' })
       },
     })
-    const waiting = definePlugin({
+    const waiting = createPlugin({
       name: 'waiting',
       deps: [configKey, poolKey],
       setup() {},
     })
-    const failing = definePlugin({
+    const failing = createPlugin({
       name: 'failing',
       setup() {
         throw new Error('did not start')
@@ -64,7 +64,7 @@ describe('G. Inspection', () => {
   })
 
   it('the resource tree of an instance is labelled and includes nested registrations', async () => {
-    const child = definePlugin({
+    const child = createPlugin({
       name: 'child',
       provides: [poolKey],
       setup(instance) {
@@ -72,7 +72,7 @@ describe('G. Inspection', () => {
         instance.cleanup(() => {}, 'pool socket')
       },
     })
-    const parent = definePlugin({
+    const parent = createPlugin({
       name: 'parent',
       provides: [configKey],
       async setup(instance) {
@@ -106,14 +106,14 @@ describe('G. Inspection', () => {
   })
 
   it('status changes are observable through a store, with no polling', async () => {
-    const provider = definePlugin({
+    const provider = createPlugin({
       name: 'provider',
       provides: [poolKey],
       setup(instance) {
         instance.provide(poolKey, { size: 2 })
       },
     })
-    const consumer = definePlugin({
+    const consumer = createPlugin({
       name: 'consumer',
       deps: [poolKey],
       setup() {},

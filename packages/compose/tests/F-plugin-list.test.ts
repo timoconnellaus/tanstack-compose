@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createClient, createContextKey, definePlugin } from '../src/index'
+import { createClient, createContextKey, createPlugin } from '../src/index'
 import type { PluginEntry } from '../src/index'
 
 const seatKey = createContextKey<string>('seat')
 
 const makePlugin = (name: string, log: Array<string>) =>
-  definePlugin({
+  createPlugin({
     name,
     setup(instance) {
       log.push(`start:${name}:${instance.id}`)
@@ -46,14 +46,14 @@ describe('F. Plugin list', () => {
 
   it('enabled false is equivalent to removal and enabling restores the instance', async () => {
     const log: Array<string> = []
-    const provider = definePlugin({
+    const provider = createPlugin({
       name: 'provider',
       provides: [seatKey],
       setup(instance) {
         instance.provide(seatKey, 'taken')
       },
     })
-    const dependent = definePlugin({
+    const dependent = createPlugin({
       name: 'dependent',
       deps: [seatKey],
       setup(instance) {
@@ -121,7 +121,7 @@ describe('F. Plugin list', () => {
 
   it('overlapping list edits are serialised and apply in order', async () => {
     const log: Array<string> = []
-    const slow = definePlugin({
+    const slow = createPlugin({
       name: 'slow',
       async setup(instance) {
         await new Promise((resolve) => setTimeout(resolve, 5))
@@ -151,7 +151,7 @@ describe('F. Plugin list', () => {
   it('a plugin can edit the plugin list it belongs to, including disabling itself', async () => {
     const log: Array<string> = []
     const helper = makePlugin('helper', log)
-    const selfEditing = definePlugin({
+    const selfEditing = createPlugin({
       name: 'self-editing',
       setup(instance) {
         log.push('start:self-editing')

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createClient, definePlugin, optionsUpdateAction } from '../src/index'
+import { createClient, createPlugin, optionsUpdateAction } from '../src/index'
 import { intervalValidator } from './helpers/validator'
 
 const starts: Array<number> = []
 
-const ticker = definePlugin({
+const ticker = createPlugin({
   name: 'ticker',
   validator: intervalValidator,
   setup(instance, options) {
@@ -13,7 +13,7 @@ const ticker = definePlugin({
   },
 })
 
-const other = definePlugin({
+const other = createPlugin({
   name: 'other',
   setup(instance) {
     instance.cleanup(() => {})
@@ -40,7 +40,7 @@ describe('D. Options', () => {
   it('an options update restarts only that instance', async () => {
     starts.length = 0
     const otherStart = vi.fn()
-    const watched = definePlugin({
+    const watched = createPlugin({
       name: 'watched',
       setup() {
         otherStart()

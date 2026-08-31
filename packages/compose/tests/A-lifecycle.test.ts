@@ -4,7 +4,7 @@ import {
   createClient,
   createContextKey,
   createEvent,
-  definePlugin,
+  createPlugin,
 } from '../src/index'
 import type { Instance } from '../src/index'
 
@@ -17,7 +17,7 @@ describe('A. Lifecycle and cleanup', () => {
     const heard: Array<string> = []
     const cleared = vi.fn()
 
-    const child = definePlugin({
+    const child = createPlugin({
       name: 'child',
       setup(instance) {
         instance.cleanup(() => {
@@ -26,7 +26,7 @@ describe('A. Lifecycle and cleanup', () => {
       },
     })
 
-    const owner = definePlugin({
+    const owner = createPlugin({
       name: 'owner',
       provides: [valueKey],
       setup(instance) {
@@ -67,7 +67,7 @@ describe('A. Lifecycle and cleanup', () => {
   it('removal reports complete only once every async cleanup has finished', async () => {
     const order: Array<string> = []
     let release: (() => void) | undefined
-    const slow = definePlugin({
+    const slow = createPlugin({
       name: 'slow',
       setup(instance) {
         instance.cleanup(
@@ -107,7 +107,7 @@ describe('A. Lifecycle and cleanup', () => {
 
   it('removing an instance removes every instance it started, recursively', async () => {
     const order: Array<string> = []
-    const grandchild = definePlugin({
+    const grandchild = createPlugin({
       name: 'grandchild',
       setup(instance) {
         instance.cleanup(() => {
@@ -115,7 +115,7 @@ describe('A. Lifecycle and cleanup', () => {
         })
       },
     })
-    const child = definePlugin({
+    const child = createPlugin({
       name: 'child',
       async setup(instance) {
         await instance.start(grandchild)
@@ -124,7 +124,7 @@ describe('A. Lifecycle and cleanup', () => {
         })
       },
     })
-    const parent = definePlugin({
+    const parent = createPlugin({
       name: 'parent',
       async setup(instance) {
         await instance.start(child)
@@ -145,7 +145,7 @@ describe('A. Lifecycle and cleanup', () => {
 
   it('cleanups of one instance run in reverse order of registration', async () => {
     const order: Array<string> = []
-    const plugin = definePlugin({
+    const plugin = createPlugin({
       name: 'ordered',
       setup(instance) {
         instance.cleanup(() => {
@@ -167,7 +167,7 @@ describe('A. Lifecycle and cleanup', () => {
 
   it('registering on an instance being removed or already removed throws', async () => {
     let handle: Instance | undefined
-    const plugin = definePlugin({
+    const plugin = createPlugin({
       name: 'captured',
       setup(instance) {
         handle = instance
@@ -190,7 +190,7 @@ describe('A. Lifecycle and cleanup', () => {
   it('a plugin that throws during start ends in error with nothing left behind', async () => {
     const boom = new Error('boom')
     const cleaned = vi.fn()
-    const broken = definePlugin({
+    const broken = createPlugin({
       name: 'broken',
       provides: [valueKey],
       setup(instance) {
@@ -199,7 +199,7 @@ describe('A. Lifecycle and cleanup', () => {
         throw boom
       },
     })
-    const healthy = definePlugin({
+    const healthy = createPlugin({
       name: 'healthy',
       setup() {
         // nothing to do
@@ -226,7 +226,7 @@ describe('A. Lifecycle and cleanup', () => {
 
   it('a cleanup that throws is reported and the remaining cleanups still run', async () => {
     const order: Array<string> = []
-    const plugin = definePlugin({
+    const plugin = createPlugin({
       name: 'noisy',
       setup(instance) {
         instance.cleanup(() => {

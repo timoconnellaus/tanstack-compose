@@ -4,7 +4,7 @@ import {
   createClient,
   createContextKey,
   createEvent,
-  definePlugin,
+  createPlugin,
 } from '../src/index'
 import { mailSentEvent, mailerKey, mailerPlugin } from './helpers/other-package'
 import { intervalValidator } from './helpers/validator'
@@ -15,7 +15,7 @@ const secretKey = createContextKey<string>('secret')
 
 describe('H. Types', () => {
   it('reading context is typed from the declared deps', () => {
-    definePlugin({
+    createPlugin({
       name: 'typed-reader',
       deps: [clockKey, mailerKey],
       setup(instance) {
@@ -43,7 +43,7 @@ describe('H. Types', () => {
       'compute',
     )
 
-    definePlugin({
+    createPlugin({
       name: 'inferred',
       validator: intervalValidator,
       setup(instance, options) {
@@ -101,7 +101,7 @@ describe('H. Types', () => {
       Mailer | undefined
     >()
 
-    definePlugin({
+    createPlugin({
       name: 'consumer',
       deps: [mailerKey],
       setup(instance) {

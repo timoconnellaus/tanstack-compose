@@ -19,7 +19,7 @@ createEvent<TPayload>(name: string): EventDefinition<TPayload, false>
 createEvent<TPayload>(name: string, options: { awaited: true }): EventDefinition<TPayload, true>
 createAction<TInput = void, TResult = void>(name: string): ActionDefinition<TInput, TResult>
 
-definePlugin<TDeps, TProvides, TValidator>(definition: {
+createPlugin<TDeps, TProvides, TValidator>(definition: {
   name: string
   deps?: TDeps                 // context keys this plugin needs before it can start
   provides?: TProvides         // context keys it may provide

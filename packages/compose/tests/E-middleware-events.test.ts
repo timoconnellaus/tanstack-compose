@@ -3,7 +3,7 @@ import {
   createAction,
   createClient,
   createEvent,
-  definePlugin,
+  createPlugin,
 } from '../src/index'
 
 const greet = createAction<string, string>('greet')
@@ -12,7 +12,7 @@ const drained = createEvent<{ what: string }>('drained', { awaited: true })
 
 const seen: Array<string> = []
 
-const owner = definePlugin({
+const owner = createPlugin({
   name: 'owner',
   setup(instance) {
     instance.defineAction(greet, (input) => {
@@ -25,7 +25,7 @@ const owner = definePlugin({
 describe('E. Middleware and events', () => {
   it('middleware can rewrite the input, rewrite the result, or stop the action', async () => {
     seen.length = 0
-    const rewriteInput = definePlugin({
+    const rewriteInput = createPlugin({
       name: 'rewrite-input',
       setup(instance) {
         instance.use(greet, ({ input, next }) => next(input.toUpperCase()))
@@ -45,7 +45,7 @@ describe('E. Middleware and events', () => {
       { id: 'owner', plugin: owner },
       {
         id: 'rewrite-result',
-        plugin: definePlugin({
+        plugin: createPlugin({
           name: 'rewrite-result',
           setup(instance) {
             instance.use(
@@ -62,7 +62,7 @@ describe('E. Middleware and events', () => {
       { id: 'owner', plugin: owner },
       {
         id: 'stop',
-        plugin: definePlugin({
+        plugin: createPlugin({
           name: 'stop',
           setup(instance) {
             instance.use(greet, () => 'stopped')
@@ -79,7 +79,7 @@ describe('E. Middleware and events', () => {
   it('middleware runs in registration order, first goes to the front, and removal is clean', async () => {
     const order: Array<string> = []
     const mark = (name: string) =>
-      definePlugin({
+      createPlugin({
         name,
         setup(instance) {
           instance.use(
@@ -114,7 +114,7 @@ describe('E. Middleware and events', () => {
 
   it('a listener observes an event and a throwing listener is contained', async () => {
     const heard: Array<string> = []
-    const emitter = definePlugin({
+    const emitter = createPlugin({
       name: 'emitter',
       setup(instance) {
         instance.cleanup(() => {})
@@ -122,7 +122,7 @@ describe('E. Middleware and events', () => {
         instance.on(noticed, () => heard.push('emitter heard itself'))
       },
     })
-    const observer = definePlugin({
+    const observer = createPlugin({
       name: 'observer',
       setup(instance) {
         instance.on(noticed, () => {
@@ -153,7 +153,7 @@ describe('E. Middleware and events', () => {
 
   it('dispatch is fire-and-forget or awaited according to the event definition', async () => {
     const finished = vi.fn()
-    const slow = definePlugin({
+    const slow = createPlugin({
       name: 'slow-listener',
       setup(instance) {
         instance.on(drained, async () => {

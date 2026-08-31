@@ -84,6 +84,44 @@ _Avoid_: config, settings, props
 A Standard Schema used to validate and default options before an instance starts.
 _Avoid_: schema (when meaning the runtime check), config class
 
+### Agent
+
+**Agent**:
+A client whose plugins together run a conversation loop: it takes input, requests a model, runs the tools the model calls, and repeats until nothing is owed.
+_Avoid_: assistant, bot, harness, driver
+
+**Session**:
+The append-only log of everything that happened in one conversation. It is the source of truth: what the model sees is derived from it, and a session can be replayed from it.
+_Avoid_: history, transcript, thread, conversation state
+
+**Turn**:
+One drain of input: opens when the agent takes up new input and closes when the model has stopped calling tools and nothing more is queued.
+_Avoid_: run, round, exchange
+
+**Step**:
+One model request plus the tool calls its response made. A turn is one or more steps.
+_Avoid_: iteration, tick, cycle
+
+**Model**:
+The context key under which a model provider is offered: it turns messages and tool definitions into a streamed response.
+_Avoid_: LLM, adapter, backend, driver
+
+**Model provider**:
+A plugin that provides the model key for one vendor or endpoint.
+_Avoid_: adapter, connector, integration
+
+**Tool**:
+A named, typed capability the model may call; registered by a plugin and executed through an action so middleware can approve, rewrite or refuse the call.
+_Avoid_: function, skill, command, capability
+
+**Prompt section**:
+A piece of system prompt a plugin contributes; sections are assembled in order for every step.
+_Avoid_: system message fragment, instruction block, persona
+
+**Request**:
+The action that sends one step's messages and tools to the model; middleware around it can rewrite or veto what the model sees.
+_Avoid_: completion, call, inference
+
 ### Execution
 
 **Host**:

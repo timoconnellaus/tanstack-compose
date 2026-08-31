@@ -243,7 +243,7 @@ class ClientImpl implements Client {
       const plugin = entry.plugin as { type?: unknown } | undefined
       if (plugin?.type !== 'compose/plugin') {
         throw new Error(
-          `@tanstack/compose: entry "${entry.id}" does not hold a plugin created by definePlugin`,
+          `@tanstack/compose: entry "${entry.id}" does not hold a plugin created by createPlugin`,
         )
       }
     }

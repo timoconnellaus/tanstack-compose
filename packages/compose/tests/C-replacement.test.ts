@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createClient, createContextKey, definePlugin } from '../src/index'
+import { createClient, createContextKey, createPlugin } from '../src/index'
 
 const loggerKey = createContextKey<{
   log: (message: string) => void
@@ -7,7 +7,7 @@ const loggerKey = createContextKey<{
 }>('logger')
 
 const makeLogger = (kind: string) =>
-  definePlugin({
+  createPlugin({
     name: `${kind}-logger`,
     provides: [loggerKey],
     setup(instance) {
@@ -20,7 +20,7 @@ const bufferLogger = makeLogger('buffer')
 
 // Written once, with no knowledge that the provider can be swapped.
 const seenKinds: Array<string> = []
-const dependent = definePlugin({
+const dependent = createPlugin({
   name: 'dependent',
   deps: [loggerKey],
   setup(instance) {

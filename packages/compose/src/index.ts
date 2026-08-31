@@ -12,7 +12,7 @@ export {
   createAction,
   createContextKey,
   createEvent,
-  definePlugin,
+  createPlugin,
 } from './definitions'
 
 export type {

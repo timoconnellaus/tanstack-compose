@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { rolldown } from 'rolldown'
-import { createClient, createContextKey, definePlugin } from '../src/index'
+import { createClient, createContextKey, createPlugin } from '../src/index'
 import packageJson from '../package.json' with { type: 'json' }
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -33,14 +33,14 @@ describe('I. Runtime and packaging', () => {
 
     // A key and a plugin from copy B, hosted by a client from copy A.
     const key = copyB.createContextKey<string>('greeting')
-    const provider = copyB.definePlugin({
+    const provider = copyB.createPlugin({
       name: 'provider',
       provides: [key],
       setup(instance) {
         instance.provide(key, 'hello')
       },
     })
-    const consumer = copyA.definePlugin({
+    const consumer = copyA.createPlugin({
       name: 'consumer',
       deps: [key],
       setup() {},
@@ -119,4 +119,4 @@ describe('I. Runtime and packaging', () => {
 // Used above only to keep the plugin honest about its shape.
 void createClient
 void createContextKey
-void definePlugin
+void createPlugin

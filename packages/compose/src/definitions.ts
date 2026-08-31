@@ -253,7 +253,7 @@ export type OptionsInputOf<TPlugin> =
  *
  * @example
  * ```ts
- * const logger = definePlugin({
+ * const logger = createPlugin({
  *   name: 'logger',
  *   provides: [loggerKey],
  *   setup(instance) {
@@ -262,7 +262,7 @@ export type OptionsInputOf<TPlugin> =
  * })
  * ```
  */
-export function definePlugin<
+export function createPlugin<
   const TDeps extends ReadonlyArray<AnyContextKey> = [],
   const TProvides extends ReadonlyArray<AnyContextKey> = [],
   TValidator extends StandardSchemaV1<any, any> | undefined = undefined,

@@ -3,7 +3,7 @@ import {
   createAction,
   createClient,
   createContextKey,
-  definePlugin,
+  createPlugin,
 } from '../src/index'
 
 interface Logger {
@@ -33,7 +33,7 @@ const editList = createAction<
 const lines: Array<string> = []
 
 const makeLogger = (kind: string) =>
-  definePlugin({
+  createPlugin({
     name: `${kind}-logger`,
     provides: [loggerKey],
     setup(instance) {
@@ -44,7 +44,7 @@ const makeLogger = (kind: string) =>
     },
   })
 
-const timerPlugin = definePlugin({
+const timerPlugin = createPlugin({
   name: 'timer',
   provides: [timerKey],
   setup(instance) {
@@ -60,7 +60,7 @@ const timerPlugin = definePlugin({
 })
 
 // The tools registry needs a logger, so it is a dependent of both providers.
-const toolsPlugin = definePlugin({
+const toolsPlugin = createPlugin({
   name: 'tools',
   deps: [loggerKey, timerKey],
   provides: [toolsKey],
@@ -85,7 +85,7 @@ const toolsPlugin = definePlugin({
   },
 })
 
-const echoToolPlugin = definePlugin({
+const echoToolPlugin = createPlugin({
   name: 'echo-tool',
   deps: [toolsKey],
   setup(instance) {
@@ -94,7 +94,7 @@ const echoToolPlugin = definePlugin({
 })
 
 // Rewrites every tool call without the tools plugin knowing.
-const rewriterPlugin = definePlugin({
+const rewriterPlugin = createPlugin({
   name: 'rewriter',
   setup(instance) {
     instance.use(callTool, ({ input, next }) =>
@@ -103,7 +103,7 @@ const rewriterPlugin = definePlugin({
   },
 })
 
-const selfEditingPlugin = definePlugin({
+const selfEditingPlugin = createPlugin({
   name: 'composer',
   setup(instance) {
     instance.defineAction(editList, async (step) => {

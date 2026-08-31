@@ -21,13 +21,13 @@ globally. A plugin declares the keys it `provides` and the keys it needs as
 `deps`, and every registration it makes is undone when its instance is removed.
 
 ```ts
-import { createContextKey, definePlugin } from '@tanstack/compose'
+import { createContextKey, createPlugin } from '@tanstack/compose'
 
 export const loggerKey = createContextKey<{ log: (message: string) => void }>(
   'logger',
 )
 
-export const consoleLogger = definePlugin({
+export const consoleLogger = createPlugin({
   name: 'console-logger',
   provides: [loggerKey],
   setup(instance) {
@@ -43,7 +43,7 @@ declared — and the value is always there, because an instance with an unmet de
 stays `pending` instead of starting.
 
 ```ts
-const heartbeat = definePlugin({
+const heartbeat = createPlugin({
   name: 'heartbeat',
   deps: [loggerKey],
   setup(instance) {
@@ -108,7 +108,7 @@ a path-annotated message; it never starts.
 ```ts
 import * as v from 'valibot'
 
-const timerPlugin = definePlugin({
+const timerPlugin = createPlugin({
   name: 'timer',
   validator: v.object({ every: v.optional(v.number(), 1000) }),
   setup(instance, options) {
@@ -134,14 +134,14 @@ const callTool = createAction<{ name: string; args: string }, string>(
   'tools.call',
 )
 
-const tools = definePlugin({
+const tools = createPlugin({
   name: 'tools',
   setup(instance) {
     instance.defineAction(callTool, ({ name, args }) => `${name}:${args}`)
   },
 })
 
-const shouting = definePlugin({
+const shouting = createPlugin({
   name: 'shouting',
   setup(instance) {
     instance.use(callTool, ({ input, next }) =>
