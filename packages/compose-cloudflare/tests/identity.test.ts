@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createClient, createStub } from '@tanstack/compose'
-import { countingLoader, compatibilityDate, testHost } from './helpers/host'
 import { createCloudflareHost } from '../src/index'
+import { compatibilityDate, countingLoader, testHost } from './helpers/host'
 
 const source = (greeting: string) => `
 export default async function setup({ stubs }) {
@@ -107,8 +107,8 @@ describe('which isolate a written plugin lands in', () => {
     await client.destroy()
   })
 
-  it('is a host over one loader, whichever client asks it', async () => {
-    const host = testHost()
-    expect(host.name).toBe('cloudflare')
+  it('answers to the name entries ask for it by', () => {
+    expect(testHost().name).toBe('cloudflare')
+    expect(testHost({ name: 'isolated' }).name).toBe('isolated')
   })
 })

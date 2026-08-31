@@ -37,3 +37,6 @@ vite.config.ts.timestamp-*
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# wrangler local state
+.wrangler/

@@ -11,7 +11,7 @@ import type { CloudflareHostOptions } from '../../src/index'
 export const compatibilityDate = '2026-05-01'
 
 /** The Worker Loader binding this Worker was given. */
-export const loader = (env as unknown as { LOADER: WorkerLoader }).LOADER
+const loader = (env as unknown as { LOADER: WorkerLoader }).LOADER
 
 /** A host over the test Worker's loader, with the suite's defaults. */
 export function testHost(overrides: Partial<CloudflareHostOptions> = {}): Host {
@@ -38,6 +38,6 @@ export function countingLoader(): {
         })
       },
       load: (code) => loader.load(code),
-    } as WorkerLoader,
+    },
   }
 }

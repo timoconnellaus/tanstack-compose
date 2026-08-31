@@ -75,8 +75,9 @@ describe('removing a hosted instance', () => {
       code: 'export default async function setup() {}',
       options: {},
       stubs: {
-        note: async (input) => {
+        note: (input) => {
           notes.push(input as string)
+          return Promise.resolve()
         },
       },
     })

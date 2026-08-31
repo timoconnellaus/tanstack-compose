@@ -3,6 +3,10 @@
   "workspaces": {
     "packages/react-compose": {
       "ignoreDependencies": ["react-dom", "@types/react-dom"]
+    },
+    "packages/compose-cloudflare": {
+      "entry": ["dev/worker.ts"],
+      "ignoreDependencies": ["cloudflare"]
     }
   },
   "ignoreWorkspaces": ["examples/**"],
