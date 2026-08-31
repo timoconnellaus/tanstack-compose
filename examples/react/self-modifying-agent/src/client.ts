@@ -8,6 +8,8 @@ import {
   scriptedModelPlugin,
   sessionPlugin,
   toolsPlugin,
+  credentialsPlugin,
+  staticCredentials,
 } from '@tanstack/compose-agent'
 import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
 import { slotsPlugin } from '@tanstack/react-compose'
@@ -54,7 +56,7 @@ export const cannedConversation: Array<ScriptedResponse> = [
   },
   {
     chunks: [
-      'Set VITE_OPENAI_API_KEY and reload to talk to a real model instead.',
+      "Set VITE_OPENAI_BASE_URL to the app's /ai route and reload to talk to a real model instead.",
     ],
   },
 ]
@@ -67,17 +69,22 @@ export interface AppClientOptions {
   model?: PluginEntry
 }
 
-/** The model entry the environment asks for: a real endpoint, or the script. */
+/**
+ * The model entry the environment asks for: a real endpoint, or the script.
+ * The page never holds a credential: a real endpoint is one that needs none
+ * from the browser — the app's own `/ai` route, which speaks the
+ * OpenAI-compatible protocol over a Worker binding.
+ */
 function modelEntry(script: Array<ScriptedResponse>): PluginEntry {
   const env = import.meta.env
-  if (env.VITE_OPENAI_API_KEY || env.VITE_OPENAI_BASE_URL) {
+  if (env.VITE_OPENAI_BASE_URL) {
     return {
       id: 'model',
       plugin: openaiModelPlugin,
       options: {
         model: env.VITE_OPENAI_MODEL ?? 'gpt-4o-mini',
         baseUrl: env.VITE_OPENAI_BASE_URL,
-        apiKey: env.VITE_OPENAI_API_KEY,
+        credential: null,
       },
     }
   }
@@ -112,6 +119,13 @@ export function createAppClient(options: AppClientOptions = {}): Client {
         },
       },
       { id: 'models', plugin: modelsPlugin },
+      // Providers read credentials by name; the page holds none, so the
+      // source is empty and a provider that needs one ends in `error`.
+      {
+        id: 'credentials',
+        plugin: credentialsPlugin,
+        options: { source: staticCredentials({}) },
+      },
       options.model ?? modelEntry(script),
       { id: 'loop', plugin: loopPlugin },
 
@@ -130,6 +144,7 @@ export function createAppClient(options: AppClientOptions = {}): Client {
             'tools',
             'prompt',
             'models',
+            'credentials',
             'model',
             'loop',
             'slots',

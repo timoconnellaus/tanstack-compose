@@ -26,13 +26,15 @@ pnpm build:all
 pnpm --filter @tanstack/compose-example-react-self-modifying-agent dev
 ```
 
-It runs with **no API key**: the **model provider** is the scripted one, replaying
-a canned conversation. Set `VITE_OPENAI_API_KEY` (and optionally
-`VITE_OPENAI_BASE_URL` and `VITE_OPENAI_MODEL`) and reload to talk to a real
-OpenAI-compatible endpoint instead — nothing else in the assembly changes.
+It runs with **no credential**: the **model provider** is the scripted one,
+replaying a canned conversation. The page never holds a key. To talk to a real
+model, point `VITE_OPENAI_BASE_URL` (and optionally `VITE_OPENAI_MODEL`) at an
+OpenAI-compatible endpoint that needs none from the browser — the app's own
+`/ai` route, served by a Worker over the Workers AI binding — and reload;
+nothing else in the assembly changes.
 
 ```sh
-VITE_OPENAI_API_KEY=sk-… pnpm --filter @tanstack/compose-example-react-self-modifying-agent dev
+VITE_OPENAI_BASE_URL=/ai pnpm --filter @tanstack/compose-example-react-self-modifying-agent dev
 ```
 
 Tests:
