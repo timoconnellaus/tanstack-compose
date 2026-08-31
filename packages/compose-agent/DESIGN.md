@@ -16,10 +16,13 @@ Decisions already fixed: [ADR-0001](../../docs/adr/0001-types-by-inference-not-a
 
 Five keys, created with the kernel's `createContextKey`, so the value type
 travels with the key and a consumer imports the key and never a provider (A2).
+All five are **stable**: each is provided by exactly one plugin for the life of
+the client, and everything else — providers, tools, sections — registers into
+them. Nothing downstream ever loses a dep because a contribution came or went.
 
 ```ts
-/** The model: turns messages and tool definitions into a streamed response. */
-export const modelKey: ContextKey<ModelProvider> =
+/** The model registry: the current provider. Providers register into it. */
+export const modelKey: ContextKey<ModelRegistry> =
   createContextKey('agent.model')
 
 /** The tool registry: what the model may call, and how it is executed. */
@@ -47,6 +50,13 @@ interface ModelProvider {
     request: ModelRequest,
     signal: AbortSignal,
   ) => AsyncIterable<ModelChunk>
+}
+
+interface ModelRegistry {
+  register: (provider: ModelProvider) => Cleanup
+  list: () => Array<ModelProvider>
+  current: () => ModelProvider | undefined
+  select: (name: string | undefined) => void
 }
 
 interface ToolRegistry {
@@ -162,38 +172,64 @@ result. The returned entries are handed to a fresh `sessionPlugin` through its
 
 ## Plugins
 
-| Plugin                | Provides     | Deps         | Options                                              |
-| --------------------- | ------------ | ------------ | ---------------------------------------------------- |
-| `sessionPlugin`       | `sessionKey` | —            | `{ entries?: Array<SessionEntry> }`                  |
-| `toolsPlugin`         | `toolsKey`   | —            | `{ tools?: Array<AnyTool> }`                         |
-| `promptPlugin`        | `promptKey`  | —            | `{ sections?: Array<PromptSection> }`                |
-| `loopPlugin`          | `agentKey`   | `sessionKey` | `{ maxSteps?: number; modelOptions?: object }`       |
-| `scriptedModelPlugin` | `modelKey`   | —            | `{ name?: string; script: Array<ScriptedResponse> }` |
-| `toolsetPlugin`       | —            | `toolsKey`   | `{ tools: Array<AnyTool> }`                          |
-| `promptSectionPlugin` | —            | `promptKey`  | `{ sections: Array<PromptSection> }`                 |
+| Plugin                | Provides     | Deps                                              | Options                                              |
+| --------------------- | ------------ | ------------------------------------------------- | ---------------------------------------------------- |
+| `sessionPlugin`       | `sessionKey` | —                                                 | `{ entries?: Array<SessionEntry> }`                  |
+| `toolsPlugin`         | `toolsKey`   | —                                                 | `{ tools?: Array<AnyTool> }`                         |
+| `promptPlugin`        | `promptKey`  | —                                                 | `{ sections?: Array<PromptSection> }`                |
+| `modelsPlugin`        | `modelKey`   | —                                                 | `{ select?: string }`                                |
+| `loopPlugin`          | `agentKey`   | `sessionKey`, `toolsKey`, `promptKey`, `modelKey` | `{ maxSteps?: number; modelOptions?: object }`       |
+| `scriptedModelPlugin` | —            | `modelKey`                                        | `{ name?: string; script: Array<ScriptedResponse> }` |
+| `toolsetPlugin`       | —            | `toolsKey`                                        | `{ tools: Array<AnyTool> }`                          |
+| `promptSectionPlugin` | —            | `promptKey`                                       | `{ sections: Array<PromptSection> }`                 |
+
+The four registries are the stable half; `scriptedModelPlugin`, `toolsetPlugin`
+and `promptSectionPlugin` are the contributing half, each registering into a
+registry in `setup` and unregistering through its own cleanup.
 
 Each is an ordinary plugin, so any of them can be removed, replaced or
 reconfigured through the plugin list while a conversation is open (A1).
 
-### Why the loop only _depends_ on the session
+### A turn sees one world
 
-The loop declares `deps: [sessionKey]` and reads `modelKey`, `toolsKey` and
-`promptKey` with `context.peek` at the moment it needs them. This is the choice
-E2, C3 and C4 force: a dep that disappears deactivates its dependent, so if the
-loop depended on `modelKey`, swapping the model provider would restart the loop
-and abort the conversation — where E2 requires the swap to "take effect on the
-next request with no change to any other plugin". Peeking also makes C3 and C4
-fall out for free, since the registries are read per step rather than captured
-at setup.
+The loop hard-depends on all four registries — `sessionKey`, `toolsKey`,
+`promptKey`, `modelKey` — and reads none of them opportunistically. Because the
+keys are stable, that costs nothing: a provider, tool or section coming or going
+never unpublishes a key, so it never deactivates the loop.
 
-The session is different: it is the source of truth, and a loop without one has
-nothing to write to. Replacing the session plugin mid-turn therefore does
-deactivate the loop, which cancels the open turn through the loop's cleanup —
-the same path as C6.
+When a turn opens, the loop takes the world once:
 
-An absent model provider is not an exception: the request action returns a
-response carrying `error`, so a missing provider behaves exactly like a provider
-that failed (D5).
+```ts
+world = {
+  provider: models.current(),
+  tools: tools.list(),
+  system: prompt.assemble(),
+}
+```
+
+Every step of that turn runs against that snapshot, and the snapshot is dropped
+when the turn closes (C3). A contribution added or removed while a turn is
+running is therefore picked up by the _next_ turn, and the loop is never
+restarted to make that happen.
+
+Two consequences the criteria name explicitly:
+
+- A tool in the turn's world that has since been unregistered is **refused**
+  with `tool "…" was unregistered while the turn was running` — offered for the
+  whole turn, executable only while it is still registered (C4).
+- A provider in the turn's world that has since been unregistered ends the step
+  with `the model provider "…" was unregistered while the turn was running`,
+  recorded as a model error, and the turn closes; the next turn opens against
+  whatever `current()` returns then (E2).
+
+An empty registry is not an exception either: with no provider registered the
+request action returns a response carrying `error`, so it behaves exactly like a
+provider that failed (D5).
+
+Replacing a _registry_ plugin is a different matter: it unpublishes the key, so
+the loop is deactivated and restarted, which cancels the open turn through the
+loop's cleanup — the same path as C6. That is the honest behaviour, and A1 only
+asks that it work, not that it be invisible.
 
 ## Requests and tool calls are actions
 
@@ -272,7 +308,8 @@ produces the usual error outcome.
 
    running:
      while input is queued:
-       turn ─▶ turn-opened, drain queue into `input` entries
+       turn ─▶ take the world once: models.current(), tools.list(), prompt.assemble()
+               turn-opened, drain queue into `input` entries
          step ─▶ step-opened
                  dispatch(requestAction)      ── chunk entries appended as they stream
                  append assistant entry       ── always, whatever came back (E1)
@@ -287,6 +324,8 @@ produces the usual error outcome.
 
 - **Turn** numbers start at `1` and continue past the highest turn already in a
   replayed log. **Step** numbers start at `1` within each turn.
+- **The world is per turn**, not per step: the provider, the tool list and the
+  assembled prompt are all fixed for the turn (C3, C4, E2).
 - **`maxSteps`** (default `16`) bounds a turn; exceeding it appends an `error`
   entry with scope `loop` and closes the turn with reason `error`. Nothing in
   the criteria asks for a bound, but an unbounded loop against a misbehaving
@@ -359,7 +398,7 @@ a section added or removed between steps shows up in the very next request (C3).
 
 ## The scripted provider (E3)
 
-`scriptedModelPlugin` provides `modelKey` from a plain array:
+`scriptedModelPlugin` registers a provider built from a plain array:
 
 ```ts
 interface ScriptedResponse {
@@ -380,14 +419,20 @@ they are deterministic. The provider records nothing: a test that wants to know
 what the model saw registers middleware on `requestAction`, which is the same
 seam a production plugin would use.
 
-## Model providers are chosen by the key alone (E2, E4)
+## Model providers register into the registry (E2, E4)
 
-`@tanstack/compose-agent-openai` provides `modelKey` by speaking the
+`modelsPlugin` owns `modelKey` and nothing else does. `current()` returns the
+provider `select` named while it is registered, and otherwise the most recently
+registered one — so an agent with a single provider never selects anything, and
+a selection naming a provider that is not registered falls back rather than
+leaving the agent with no model at all.
+
+`@tanstack/compose-agent-openai` registers into that registry by speaking the
 OpenAI-compatible chat-completions streaming protocol over global `fetch`, with
 no vendor SDK, so it works against OpenAI, DeepSeek or a local server through
 `baseUrl`. It imports `modelKey` and the vocabulary types from this package by
-value only (F3). Swapping it for the scripted provider — or for another
-endpoint — is one plugin-list edit and touches nothing else.
+value only (F3). Adding it, removing it or selecting another provider is one
+plugin-list edit that restarts nothing and takes effect at the next turn.
 
 ## Choices made where the criteria are silent
 
@@ -416,39 +461,40 @@ endpoint — is one plugin-list edit and touches nothing else.
 
 Informational: test titles describe behaviour and carry no criterion ids.
 
-| Id  | Test file                                      | `it()` title                                                                                 |
-| --- | ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| A1  | `tests/plugins.test.ts`                        | `every part of the agent is a plugin that can be removed and replaced mid-conversation`      |
-| A2  | `tests/plugins.test.ts`                        | `a consumer declares the keys it needs and never imports a provider`                         |
-| A3  | `tests/plugins.test.ts`                        | `a conversation runs on the package's plugins and a scripted model, with no network`         |
-| B1  | `tests/session.test.ts`                        | `every model-visible fact is appended to the log as it happens`                              |
-| B2  | `tests/session.test.ts`                        | `messages are derived from the log and deriving twice gives the same messages`               |
-| B3  | `tests/session.test.ts`                        | `a log replayed into a fresh client derives the same messages, and forks at a step boundary` |
-| B4  | `tests/session.test.ts`                        | `appends are observable as events and through the entries store`                             |
-| C1  | `tests/loop.test.ts`                           | `input while idle starts a turn and input during a turn is taken up at the next step`        |
-| C2  | `tests/loop.test.ts`                           | `a step is a request and its tool calls, and the turn closes when nothing is owed`           |
-| C3  | `tests/loop.test.ts`                           | `the prompt is assembled per step from the sections registered at that moment`               |
-| C4  | `tests/loop.test.ts`                           | `the tools offered are the ones registered at that moment`                                   |
-| C5  | `tests/loop.test.ts`                           | `cancelling stops the request and the tool calls and leaves the agent idle and reusable`     |
-| C6  | `tests/loop.test.ts`                           | `removing the loop mid-turn cancels it and nothing writes to the session afterwards`         |
-| C7  | `tests/loop.test.ts`                           | `the agent status is a store and becoming idle can be awaited`                               |
-| D1  | `tests/actions.test.ts`                        | `middleware can rewrite what the model sees or veto the step`                                |
-| D2  | `tests/actions.test.ts`                        | `middleware can rewrite the arguments, replace the result, or refuse the call`               |
-| D3  | `tests/actions.test.ts`                        | `invalid arguments produce an error result rather than a thrown exception`                   |
-| D4  | `tests/actions.test.ts`                        | `tool calls run with their declared concurrency and results keep the model's order`          |
-| D5  | `tests/actions.test.ts`                        | `a throwing tool keeps the turn going and a failing model closes it`                         |
-| E1  | `tests/providers.test.ts`                      | `chunks are appended as they stream and the assistant message is appended when it ends`      |
-| E2  | `tests/providers.test.ts`                      | `the provider is chosen by the key alone and can be swapped between steps`                   |
-| E3  | `tests/providers.test.ts`                      | `the scripted provider replays responses, tool calls and mid-stream failures`                |
-| E4  | `../compose-agent-openai/tests/openai.test.ts` | the keyless suite: streaming, event framing, the wire shape, failures, and a whole turn      |
-| E4  | `../compose-agent-openai/tests/smoke.test.ts`  | `answers one turn of a conversation` — skips itself when no key is present                   |
-| F1  | `tests/types.test-d.ts`                        | `a tool's arguments and result are typed from its definition`                                |
-| F2  | `tests/types.test-d.ts`                        | `session entries narrow on their kind`                                                       |
-| F3  | `tests/types.test-d.ts`                        | `a plugin authored in another package keeps full types with value imports only`              |
-| G1  | `tests/end-to-end.test.ts`                     | `runs a two-turn conversation with tools, middleware, a new prompt section and a swap`       |
-| —   | `tests/loop.test.ts`                           | `a turn that never stops calling tools is stopped by its step limit`                         |
-| —   | `tests/packaging.test.ts`                      | zero runtime deps beyond the kernel and the store; no runtime-specific imports               |
-| —   | `tests/workerd/smoke.test.ts`                  | `an agent runs a turn under workerd`                                                         |
+| Id  | Test file                                      | `it()` title                                                                                   |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| A1  | `tests/plugins.test.ts`                        | `every part of the agent is a plugin that can be removed and replaced mid-conversation`        |
+| A2  | `tests/plugins.test.ts`                        | `a consumer declares the keys it needs and never imports a provider`                           |
+| A3  | `tests/plugins.test.ts`                        | `a conversation runs on the package's plugins and a scripted model, with no network`           |
+| B1  | `tests/session.test.ts`                        | `every model-visible fact is appended to the log as it happens`                                |
+| B2  | `tests/session.test.ts`                        | `messages are derived from the log and deriving twice gives the same messages`                 |
+| B3  | `tests/session.test.ts`                        | `a log replayed into a fresh client derives the same messages, and forks at a step boundary`   |
+| B4  | `tests/session.test.ts`                        | `appends are observable as events and through the entries store`                               |
+| C1  | `tests/loop.test.ts`                           | `input while idle starts a turn and input during a turn is taken up at the next step`          |
+| C2  | `tests/loop.test.ts`                           | `a step is a request and its tool calls, and the turn closes when nothing is owed`             |
+| C3  | `tests/loop.test.ts`                           | `a turn takes the prompt, the tools and the provider once and holds them for every step`       |
+| C4  | `tests/loop.test.ts`                           | `the tools of a turn are those registered when it opened, and one removed mid-turn is refused` |
+| C5  | `tests/loop.test.ts`                           | `cancelling stops the request and the tool calls and leaves the agent idle and reusable`       |
+| C6  | `tests/loop.test.ts`                           | `removing the loop mid-turn cancels it and nothing writes to the session afterwards`           |
+| C7  | `tests/loop.test.ts`                           | `the agent status is a store and becoming idle can be awaited`                                 |
+| D1  | `tests/actions.test.ts`                        | `middleware can rewrite what the model sees or veto the step`                                  |
+| D2  | `tests/actions.test.ts`                        | `middleware can rewrite the arguments, replace the result, or refuse the call`                 |
+| D3  | `tests/actions.test.ts`                        | `invalid arguments produce an error result rather than a thrown exception`                     |
+| D4  | `tests/actions.test.ts`                        | `tool calls run with their declared concurrency and results keep the model's order`            |
+| D5  | `tests/actions.test.ts`                        | `a throwing tool keeps the turn going and a failing model closes it`                           |
+| E1  | `tests/providers.test.ts`                      | `chunks are appended as they stream and the assistant message is appended when it ends`        |
+| E2  | `tests/providers.test.ts`                      | `the registry chooses the provider at turn open, and one removed mid-turn ends the step`       |
+| E3  | `tests/providers.test.ts`                      | `the scripted provider replays responses, tool calls and mid-stream failures`                  |
+| E4  | `../compose-agent-openai/tests/openai.test.ts` | the keyless suite: streaming, event framing, the wire shape, failures, and a whole turn        |
+| E4  | `../compose-agent-openai/tests/openai.test.ts` | `registers into the model registry and unregisters with its plugin`                            |
+| E4  | `../compose-agent-openai/tests/smoke.test.ts`  | `answers one turn of a conversation` — skips itself when no key is present                     |
+| F1  | `tests/types.test-d.ts`                        | `a tool's arguments and result are typed from its definition`                                  |
+| F2  | `tests/types.test-d.ts`                        | `session entries narrow on their kind`                                                         |
+| F3  | `tests/types.test-d.ts`                        | `a plugin authored in another package keeps full types with value imports only`                |
+| G1  | `tests/end-to-end.test.ts`                     | `runs a three-turn conversation with tools, middleware, a mid-turn addition and a swap`        |
+| —   | `tests/loop.test.ts`                           | `a turn that never stops calling tools is stopped by its step limit`                           |
+| —   | `tests/packaging.test.ts`                      | zero runtime deps beyond the kernel and the store; no runtime-specific imports                 |
+| —   | `tests/workerd/smoke.test.ts`                  | `an agent runs a turn under workerd`                                                           |
 
 ### Notes on coverage
 

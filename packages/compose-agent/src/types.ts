@@ -134,15 +134,27 @@ export interface ModelResponse {
   error?: string
 }
 
-/** The provider the `model` key carries. */
+/** One vendor or endpoint, registered into the model registry. */
 export interface ModelProvider {
-  /** Shown in inspection; how a test tells two providers apart. */
+  /** Identifies the provider in the registry and in inspection. */
   readonly name: string
   /** Stream one response. Stops when `signal` aborts. */
   stream: (
     request: ModelRequest,
     signal: AbortSignal,
   ) => AsyncIterable<ModelChunk>
+}
+
+/** The registry the `model` key carries. Stable for the life of the client. */
+export interface ModelRegistry {
+  /** Add a provider; call the returned cleanup to remove it again (E2). */
+  register: (provider: ModelProvider) => Cleanup
+  /** Every provider registered right now, in registration order. */
+  list: () => Array<ModelProvider>
+  /** The provider the next turn will use, or `undefined` if none is registered. */
+  current: () => ModelProvider | undefined
+  /** Choose the current provider by name; `undefined` restores the default. */
+  select: (name: string | undefined) => void
 }
 
 // ------------------------------------------------------------------ session

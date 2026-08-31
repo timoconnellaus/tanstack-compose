@@ -14,7 +14,9 @@ import { validateArgs } from './tools'
 import type {
   Agent,
   AgentStatus,
+  AnyTool,
   CloseReason,
+  ModelProvider,
   ModelRequest,
   ModelResponse,
   SessionEntry,
@@ -28,6 +30,16 @@ const messageOf = (error: unknown): string =>
   typeof error === 'object' && error !== null && 'message' in error
     ? String(error.message)
     : String(error)
+
+/**
+ * What one turn runs against: taken once when the turn opens and held for every
+ * step of it, so a turn sees one world (C3, C4, E2).
+ */
+interface TurnWorld {
+  provider: ModelProvider | undefined
+  tools: Array<AnyTool>
+  system: string
+}
 
 /** Where to resume turn numbering when a session was replayed or forked. */
 const highestTurn = (entries: ReadonlyArray<SessionEntry>): number =>
@@ -74,9 +86,10 @@ const loopOptions = optionsSchema<
  * {@link requestAction} and {@link toolCallAction}, which are the seams every
  * other plugin intercepts it through (D1, D2).
  *
- * It depends only on the session — the model, the tools and the prompt are read
- * at the moment each step needs them, so any of the three can be added, removed
- * or swapped between steps (C3, C4, E2).
+ * A turn sees one world: when it opens, the loop takes the current model
+ * provider, the registered tools and the assembled prompt once, and every step
+ * of that turn runs against them. A provider, tool or section added or removed
+ * while a turn is running is picked up by the next turn (C3, C4, E2).
  *
  * @example
  * ```ts
@@ -87,17 +100,22 @@ const loopOptions = optionsSchema<
  */
 export const loopPlugin = createPlugin({
   name: 'loop',
-  deps: [sessionKey],
+  deps: [sessionKey, toolsKey, promptKey, modelKey],
   provides: [agentKey],
   validator: loopOptions,
   setup(instance, options) {
     const session = instance.context.get(sessionKey)
+    const tools = instance.context.get(toolsKey)
+    const prompt = instance.context.get(promptKey)
+    const models = instance.context.get(modelKey)
     const status = new Store<AgentStatus>('idle')
     const queued: Array<string> = []
     const idleWaiters: Array<() => void> = []
     const detached = new AbortController()
 
     let turn = highestTurn(session.snapshot())
+    /** The open turn's world, or `undefined` between turns. */
+    let world: TurnWorld | undefined
     let controller: AbortController | undefined
     let running: Promise<void> | undefined
     /** No new turns; the open one is being cancelled. */
@@ -118,12 +136,21 @@ export const loopPlugin = createPlugin({
       requestAction,
       async (request: ModelRequest): Promise<ModelResponse> => {
         const aborted = signal()
-        const provider = instance.context.peek(modelKey)
+        const provider = world?.provider
         if (!provider) {
           return {
             text: '',
             toolCalls: [],
-            error: 'no plugin provides the model key',
+            error: 'no model provider is registered',
+          }
+        }
+        // The turn holds its provider, but a provider unregistered underneath it
+        // cannot be asked for another step (E2).
+        if (!models.list().includes(provider)) {
+          return {
+            text: '',
+            toolCalls: [],
+            error: `the model provider "${provider.name}" was unregistered while the turn was running`,
           }
         }
         let text = ''
@@ -153,9 +180,15 @@ export const loopPlugin = createPlugin({
     instance.defineAction(
       toolCallAction,
       async ({ call }): Promise<ToolOutcome> => {
-        const registry = instance.context.peek(toolsKey)
-        const tool = registry?.get(call.name)
+        const tool = world?.tools.find((each) => each.name === call.name)
         if (!tool) return { ok: false, error: `unknown tool "${call.name}"` }
+        // Offered for the whole turn, but refused once it is gone (C4).
+        if (!tools.list().includes(tool)) {
+          return {
+            ok: false,
+            error: `tool "${call.name}" was unregistered while the turn was running`,
+          }
+        }
         const validated = await validateArgs(tool, call.args)
         if (!validated.ok) return validated
         try {
@@ -172,22 +205,18 @@ export const loopPlugin = createPlugin({
 
     // ---------------------------------------------------------------- the loop
 
-    const buildRequest = (turnNumber: number, step: number): ModelRequest => {
-      const prompt = instance.context.peek(promptKey)
-      const registry = instance.context.peek(toolsKey)
-      return {
-        turn: turnNumber,
-        step,
-        system: prompt?.assemble() ?? '',
-        messages: session.messages(),
-        tools: (registry?.list() ?? []).map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-        })),
-        options: { ...options.modelOptions },
-      }
-    }
+    const buildRequest = (turnNumber: number, step: number): ModelRequest => ({
+      turn: turnNumber,
+      step,
+      system: world?.system ?? '',
+      messages: session.messages(),
+      tools: (world?.tools ?? []).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      })),
+      options: { ...options.modelOptions },
+    })
 
     const drain = (turnNumber: number): number => {
       let taken = 0
@@ -225,11 +254,10 @@ export const loopPlugin = createPlugin({
       calls: ReadonlyArray<ToolCall>,
       aborted: AbortSignal,
     ): Promise<boolean> => {
-      const registry = instance.context.peek(toolsKey)
       const batches: Array<Array<ToolCall>> = []
       let open: Array<ToolCall> | undefined
       for (const call of calls) {
-        const tool = registry?.get(call.name)
+        const tool = world?.tools.find((each) => each.name === call.name)
         if (tool?.concurrency === 'parallel') {
           if (!open) {
             open = []
@@ -276,6 +304,12 @@ export const loopPlugin = createPlugin({
       // it to `false` for the rest of the turn after the first check.
       const cancelled = (): boolean => abort.signal.aborted
       controller = abort
+      // One world for the whole turn (C3).
+      world = {
+        provider: models.current(),
+        tools: tools.list(),
+        system: prompt.assemble(),
+      }
 
       append({ kind: 'turn-opened', turn: current })
       drain(current)
@@ -384,6 +418,7 @@ export const loopPlugin = createPlugin({
       } finally {
         append({ kind: 'turn-closed', turn: current, reason })
         controller = undefined
+        world = undefined
       }
     }
 

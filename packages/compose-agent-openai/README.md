@@ -13,14 +13,17 @@ npm install @tanstack/compose @tanstack/compose-agent @tanstack/compose-agent-op
 
 ## Usage
 
-It is one entry in the plugin list, providing the agent layer's `model` key.
-Nothing else in the agent knows which provider is running.
+It is one entry in the plugin list. It registers itself into the agent layer's
+model registry — `modelsPlugin` owns the `model` key — so nothing else in the
+agent knows or cares which provider is running.
 
 ```ts
 import { createClient } from '@tanstack/compose'
 import {
   agentKey,
   loopPlugin,
+  modelsPlugin,
+  promptPlugin,
   sessionPlugin,
   toolsPlugin,
 } from '@tanstack/compose-agent'
@@ -30,6 +33,8 @@ const client = createClient({
   plugins: [
     { id: 'session', plugin: sessionPlugin },
     { id: 'tools', plugin: toolsPlugin, options: { tools: [search] } },
+    { id: 'prompt', plugin: promptPlugin },
+    { id: 'models', plugin: modelsPlugin },
     {
       id: 'model',
       plugin: openaiModelPlugin,
@@ -80,19 +85,25 @@ merged into the request body, so provider-specific settings need no API here.
 
 ## Swapping providers
 
-A provider is chosen entirely by which plugin provides the `model` key, and the
-loop reads that key per step. Swapping one for another — including for the
-scripted provider the agent layer ships for tests — is one plugin-list edit and
-changes nothing else.
+Providers register into the model registry, and the registry hands the loop a
+provider when a turn opens. So several can be registered at once and switched
+between by name, and adding or removing one restarts nothing — it takes effect
+at the next turn.
 
 ```ts
-await client.setPluginList(
-  client.pluginList.state.map((entry) =>
-    entry.id === 'model'
-      ? { id: 'model', plugin: scriptedModelPlugin, options: { script } }
-      : entry,
-  ),
-)
+// Register a second provider alongside this one.
+await client.addPlugin({
+  id: 'local',
+  plugin: openaiModelPlugin,
+  options: { model: 'llama3', baseUrl: 'http://localhost:11434/v1' },
+})
+
+const models = client.getContext(modelKey)!
+models.list().map((provider) => provider.name) // ['gpt-4o-mini', 'llama3']
+models.select('gpt-4o-mini') // used from the next turn on
+
+// Or drop it again; the `model` key and everything downstream stay put.
+await client.removePlugin('local')
 ```
 
 ## Tests

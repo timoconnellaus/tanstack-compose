@@ -7,10 +7,11 @@ import {
   requestAction,
   toolCallAction,
   toolMiddleware,
+  toolsetPlugin,
 } from '../src/index'
-import { buildAgent, kindsOf } from './helpers/agent'
+import { buildAgent, deferred, kindsOf, watchLoop } from './helpers/agent'
 import { anyValidator, validator } from './helpers/validator'
-import type { ModelProvider, ToolOutcome } from '../src/index'
+import type { ModelProvider, ModelRegistry, ToolOutcome } from '../src/index'
 
 const wordValidator = validator<unknown, { word: string }>((value) => {
   const word = (value as { word?: unknown } | null)?.word
@@ -20,29 +21,26 @@ const wordValidator = validator<unknown, { word: string }>((value) => {
   return { value: { word } }
 })
 
-/** A second provider, so the swap between turns is a real change of plugin. */
-const closingModelPlugin = createPlugin({
-  name: 'closing-model',
-  provides: [modelKey],
-  setup(instance) {
-    const provider: ModelProvider = {
-      name: 'closing',
-      stream: () =>
-        (async function* stream() {
-          await Promise.resolve()
-          yield {
-            kind: 'text' as const,
-            text: 'Goodbye from the second provider.',
-          }
-        })(),
-    }
-    instance.provide(modelKey, provider)
-  },
-})
+/** A second provider, registered into the model registry during turn two. */
+const closingProvider: ModelProvider = {
+  name: 'closing',
+  stream: () =>
+    (async function* stream() {
+      await Promise.resolve()
+      yield {
+        kind: 'text' as const,
+        text: 'Goodbye from the second provider.',
+      }
+    })(),
+}
 
 describe('G. End to end', () => {
-  it('runs a two-turn conversation with tools, middleware, a new prompt section and a swap', async () => {
+  it('runs a three-turn conversation with tools, middleware, a mid-turn addition and a swap', async () => {
     const ran: Array<string> = []
+    const midTurn = deferred()
+    const release = deferred()
+    let models: ModelRegistry | undefined = undefined
+
     const shout = createTool({
       name: 'shout',
       description: 'Shout a word',
@@ -54,11 +52,13 @@ describe('G. End to end', () => {
     })
     const audit = createTool({
       name: 'audit',
-      description: 'Runs alone',
+      description: 'Runs alone, and holds turn one open',
       validator: anyValidator,
       concurrency: 'exclusive',
-      execute: () => {
+      execute: async () => {
         ran.push('audit')
+        midTurn.resolve()
+        await release.promise
         return 'audited'
       },
     })
@@ -69,6 +69,17 @@ describe('G. End to end', () => {
       execute: () => {
         ran.push('secret')
         return 'leaked'
+      },
+    })
+    /** Added during turn one; first callable in turn two, where it swaps the provider. */
+    const note = createTool({
+      name: 'note',
+      description: 'Make a note, and bring a second provider in',
+      validator: anyValidator,
+      execute: () => {
+        ran.push('note')
+        models!.register(closingProvider)
+        return 'noted'
       },
     })
 
@@ -102,51 +113,75 @@ describe('G. End to end', () => {
           ],
         },
         { chunks: ['Turn one is done.'] },
+        { toolCalls: [{ name: 'note', args: {} }] },
+        { chunks: ['Turn two is done.'] },
       ],
     })
+    models = client.getContext(modelKey)
     await client.addPlugin({ id: 'policy', plugin: policyPlugin })
 
-    const steps: Array<{ system: string; provider: string }> = []
+    const steps: Array<{ system: string; tools: Array<string> }> = []
     client.use(requestAction, ({ input, next }) => {
       steps.push({
         system: input.system,
-        provider: client.getContext(modelKey)!.name,
+        tools: input.tools.map((tool) => tool.name),
       })
       return next(input)
     })
+    const loop = watchLoop(client)
 
+    // ------------------------------------------------- turn one
     agent.send('say hello')
-    await agent.idle()
+    await midTurn.promise
 
-    // Between the turns: a new prompt section, and a different provider.
+    // A prompt section and a tool, added while turn one is running.
+    await client.addPlugin({
+      id: 'notes',
+      plugin: toolsetPlugin,
+      options: { tools: [note] },
+    })
     await client.addPlugin({
       id: 'closing-note',
       plugin: promptSectionPlugin,
       options: { sections: [{ name: 'closing', text: 'Sign off warmly.' }] },
     })
-    await client.setPluginList(
-      client.pluginList.state.map((entry) =>
-        entry.id === 'model'
-          ? { id: 'model', plugin: closingModelPlugin }
-          : entry,
-      ),
-    )
+
+    release.resolve()
+    await agent.idle()
+
+    // ------------------------------------------------- turns two and three
+    agent.send('make a note')
+    await agent.idle()
+    expect(models!.current()).toBe(closingProvider)
 
     agent.send('now say goodbye')
     await agent.idle()
 
-    // The prompt and the provider each step saw.
+    // The world each step saw: turn one held what it opened with, turn two
+    // picked up the section and the tool, turn three kept them.
     expect(steps).toEqual([
-      { system: 'Be helpful.', provider: 'scripted' },
-      { system: 'Be helpful.', provider: 'scripted' },
-      { system: 'Be helpful.\n\nSign off warmly.', provider: 'closing' },
+      { system: 'Be helpful.', tools: ['shout', 'audit', 'secret'] },
+      { system: 'Be helpful.', tools: ['shout', 'audit', 'secret'] },
+      {
+        system: 'Be helpful.\n\nSign off warmly.',
+        tools: ['shout', 'audit', 'secret', 'note'],
+      },
+      {
+        system: 'Be helpful.\n\nSign off warmly.',
+        tools: ['shout', 'audit', 'secret', 'note'],
+      },
+      {
+        system: 'Be helpful.\n\nSign off warmly.',
+        tools: ['shout', 'audit', 'secret', 'note'],
+      },
     ])
 
     // Only the calls the policy allowed ran, and the rewrite reached the tool.
-    expect(ran).toEqual(['shout:hello there', 'audit'])
+    expect(ran).toEqual(['shout:hello there', 'audit', 'note'])
 
-    // The session log, both turns end to end.
+    // The session log, all three turns end to end.
     expect(kindsOf(session.snapshot())).toEqual([
+      // turn one
       'turn-opened',
       'input',
       'step-opened',
@@ -165,6 +200,20 @@ describe('G. End to end', () => {
       'assistant',
       'step-closed',
       'turn-closed',
+      // turn two
+      'turn-opened',
+      'input',
+      'step-opened',
+      'assistant',
+      'tool-call',
+      'tool-result',
+      'step-closed',
+      'step-opened',
+      'chunk',
+      'assistant',
+      'step-closed',
+      'turn-closed',
+      // turn three
       'turn-opened',
       'input',
       'step-opened',
@@ -184,6 +233,7 @@ describe('G. End to end', () => {
       ['shout', { ok: true, value: 'HELLO THERE' }],
       ['audit', { ok: true, value: 'audited' }],
       ['secret', { ok: false, error: 'refused by policy' }],
+      ['note', { ok: true, value: 'noted' }],
     ])
 
     // The messages derived from that log.
@@ -220,6 +270,20 @@ describe('G. End to end', () => {
         isError: true,
       },
       { role: 'assistant', content: 'Turn one is done.', toolCalls: [] },
+      { role: 'user', content: 'make a note' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'call-4', name: 'note', args: {} }],
+      },
+      {
+        role: 'tool',
+        callId: 'call-4',
+        name: 'note',
+        content: 'noted',
+        isError: false,
+      },
+      { role: 'assistant', content: 'Turn two is done.', toolCalls: [] },
       { role: 'user', content: 'now say goodbye' },
       {
         role: 'assistant',
@@ -228,8 +292,10 @@ describe('G. End to end', () => {
       },
     ])
 
-    // Nothing was swallowed on the way.
+    // Nothing was swallowed on the way, and the loop never restarted.
     expect(client.errors.state).toEqual([])
+    loop.stop()
+    expect(loop.statuses).toEqual(['active'])
 
     // And the client holds no leaked resources afterwards.
     const ids = client.inspect().map((entry) => entry.id)

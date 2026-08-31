@@ -5,21 +5,35 @@ import {
   createTool,
   loopPlugin,
   modelKey,
+  modelsPlugin,
   promptKey,
+  promptPlugin,
   requestAction,
   sessionKey,
   sessionPlugin,
   toolsKey,
+  toolsPlugin,
 } from '../src/index'
-import { buildAgent, deferred, kindsOf } from './helpers/agent'
+import { buildAgent, deferred, kindsOf, watchLoop } from './helpers/agent'
 import { anyValidator } from './helpers/validator'
 import type { Cleanup } from '@tanstack/compose'
 import type {
   AnyTool,
   ModelProvider,
+  ModelRegistry,
   PromptRegistry,
+  SessionEntry,
+  ToolOutcome,
   ToolRegistry,
 } from '../src/index'
+
+/** The name and outcome of every tool result in a log, in order. */
+const outcomeNames = (
+  entries: ReadonlyArray<SessionEntry>,
+): Array<[string, ToolOutcome]> =>
+  entries
+    .filter((entry) => entry.kind === 'tool-result')
+    .map((entry) => [entry.name, entry.outcome])
 
 describe('C. The loop', () => {
   it('input while idle starts a turn and input during a turn is taken up at the next step', async () => {
@@ -163,31 +177,42 @@ describe('C. The loop', () => {
     await client.destroy()
   })
 
-  it('the prompt is assembled per step from the sections registered at that moment', async () => {
+  it('a turn takes the prompt, the tools and the provider once and holds them for every step', async () => {
     let prompt: PromptRegistry | undefined = undefined
-    let remove: Cleanup | undefined
+    let models: ModelRegistry | undefined = undefined
 
-    const addSection = createTool({
-      name: 'add-section',
-      description: 'Add a prompt section',
+    const second: ModelProvider = {
+      name: 'second',
+      stream: () =>
+        (async function* stream() {
+          await Promise.resolve()
+          yield { kind: 'text' as const, text: 'from the second provider' }
+        })(),
+    }
+
+    const evolve = createTool({
+      name: 'evolve',
+      description: 'Change the world while the turn is running',
       validator: anyValidator,
       execute: () => {
-        remove = prompt!.register({ name: 'extra', text: 'Be terse.' })
-        return 'added'
+        prompt!.register({ name: 'extra', text: 'Be terse.' })
+        models!.register(second)
+        return 'evolved'
       },
     })
 
     const systems: Array<string> = []
-    const { client, agent } = await buildAgent({
-      tools: [addSection],
+    const { client, agent, session } = await buildAgent({
+      tools: [evolve],
       sections: [{ name: 'base', text: 'You are helpful.' }],
       script: [
-        { toolCalls: [{ name: 'add-section', args: {} }] },
-        { chunks: ['ok'] },
-        { chunks: ['ok again'] },
+        { toolCalls: [{ name: 'evolve', args: {} }] },
+        { chunks: ['turn one is done'] },
       ],
     })
     prompt = client.getContext(promptKey)
+    models = client.getContext(modelKey)
+    const loop = watchLoop(client)
     client.use(requestAction, ({ input, next }) => {
       systems.push(input.system)
       return next(input)
@@ -195,27 +220,43 @@ describe('C. The loop', () => {
 
     agent.send('go')
     await agent.idle()
-    expect(systems).toEqual([
-      'You are helpful.',
-      'You are helpful.\n\nBe terse.',
-    ])
 
-    // Removing the section takes it out of the very next request.
-    remove!()
+    // Both steps of turn one ran against the world the turn opened with, even
+    // though the section and the provider were registered during step one.
+    expect(systems).toEqual(['You are helpful.', 'You are helpful.'])
+    expect(session.messages().at(-1)).toEqual({
+      role: 'assistant',
+      content: 'turn one is done',
+      toolCalls: [],
+    })
+    // The registrations did land; they are simply not this turn's world.
+    expect(models!.current()).toBe(second)
+
     agent.send('again')
     await agent.idle()
-    expect(systems.at(-1)).toBe('You are helpful.')
+
+    // The next turn picks both of them up.
+    expect(systems.at(-1)).toBe('You are helpful.\n\nBe terse.')
+    expect(session.messages().at(-1)).toEqual({
+      role: 'assistant',
+      content: 'from the second provider',
+      toolCalls: [],
+    })
+
+    // None of that restarted the loop.
+    loop.stop()
+    expect(loop.statuses).toEqual(['active'])
 
     await client.destroy()
   })
 
-  it('the tools offered are the ones registered at that moment', async () => {
+  it('the tools of a turn are those registered when it opened, and one removed mid-turn is refused', async () => {
     let registry: ToolRegistry | undefined = undefined
-    let remove: Cleanup | undefined
+    let removeExtra: Cleanup | undefined = undefined
 
     const extra = createTool({
       name: 'extra',
-      description: 'Registered mid-turn',
+      description: 'Registered while a turn is running',
       validator: anyValidator,
       execute: () => 'extra ran',
     })
@@ -224,50 +265,90 @@ describe('C. The loop', () => {
       description: 'Register another tool',
       validator: anyValidator,
       execute: () => {
-        remove = registry!.register(extra)
+        removeExtra = registry!.register(extra)
         return 'grown'
+      },
+    })
+    const drop = createTool({
+      name: 'drop',
+      description: 'Unregister the tool it added',
+      validator: anyValidator,
+      concurrency: 'exclusive',
+      execute: () => {
+        removeExtra!()
+        return 'dropped'
       },
     })
 
     const offered: Array<Array<string>> = []
     const { client, agent, session } = await buildAgent({
-      tools: [grow],
+      tools: [grow, drop],
       script: [
         { toolCalls: [{ name: 'grow', args: {} }] },
         { toolCalls: [{ name: 'extra', args: {} }] },
-        { chunks: ['done'] },
+        { chunks: ['turn one is done'] },
         { toolCalls: [{ name: 'extra', args: {} }] },
-        { chunks: ['gone'] },
+        { chunks: ['turn two is done'] },
+        {
+          toolCalls: [
+            { name: 'drop', args: {} },
+            { name: 'extra', args: {} },
+          ],
+        },
+        { chunks: ['turn three is done'] },
       ],
     })
     registry = client.getContext(toolsKey)
+    const loop = watchLoop(client)
     client.use(requestAction, ({ input, next }) => {
       offered.push(input.tools.map((tool) => tool.name))
       return next(input)
     })
 
-    agent.send('go')
+    // Turn one: `extra` is registered during step one and is neither offered
+    // nor executable for the rest of the turn.
+    agent.send('one')
     await agent.idle()
-    expect(offered).toEqual([['grow'], ['grow', 'extra'], ['grow', 'extra']])
-    expect(
-      session
-        .snapshot()
-        .find(
-          (entry) => entry.kind === 'tool-result' && entry.name === 'extra',
-        ),
-    ).toMatchObject({ outcome: { ok: true, value: 'extra ran' } })
+    expect(offered).toEqual([
+      ['grow', 'drop'],
+      ['grow', 'drop'],
+      ['grow', 'drop'],
+    ])
+    expect(outcomeNames(session.snapshot())).toEqual([
+      ['grow', { ok: true, value: 'grown' }],
+      ['extra', { ok: false, error: 'unknown tool "extra"' }],
+    ])
 
-    // Removed: neither offered nor executable.
-    remove!()
-    agent.send('again')
+    // Turn two opens with it, so it is offered and runs.
+    agent.send('two')
     await agent.idle()
-    expect(offered.at(-1)).toEqual(['grow'])
-    expect(
-      session
-        .snapshot()
-        .filter((entry) => entry.kind === 'tool-result')
-        .at(-1),
-    ).toMatchObject({ outcome: { ok: false, error: 'unknown tool "extra"' } })
+    expect(offered.slice(3)).toEqual([
+      ['grow', 'drop', 'extra'],
+      ['grow', 'drop', 'extra'],
+    ])
+    expect(outcomeNames(session.snapshot()).at(-1)).toEqual([
+      'extra',
+      { ok: true, value: 'extra ran' },
+    ])
+
+    // Turn three opens with it too, but it is unregistered mid-turn, so the
+    // call the model makes afterwards is refused.
+    agent.send('three')
+    await agent.idle()
+    expect(offered.at(-1)).toEqual(['grow', 'drop', 'extra'])
+    expect(outcomeNames(session.snapshot()).slice(-2)).toEqual([
+      ['drop', { ok: true, value: 'dropped' }],
+      [
+        'extra',
+        {
+          ok: false,
+          error: 'tool "extra" was unregistered while the turn was running',
+        },
+      ],
+    ])
+
+    loop.stop()
+    expect(loop.statuses).toEqual(['active'])
 
     await client.destroy()
   })
@@ -277,7 +358,7 @@ describe('C. The loop', () => {
     const streaming = deferred()
     const slowModel = createPlugin({
       name: 'slow-model',
-      provides: [modelKey],
+      deps: [modelKey],
       setup(instance) {
         const provider: ModelProvider = {
           name: 'slow',
@@ -293,13 +374,16 @@ describe('C. The loop', () => {
               yield { kind: 'text' as const, text: 'lo' }
             })(),
         }
-        instance.provide(modelKey, provider)
+        instance.cleanup(instance.context.get(modelKey).register(provider))
       },
     })
 
     const client = createClient({
       plugins: [
         { id: 'session', plugin: sessionPlugin },
+        { id: 'tools', plugin: toolsPlugin },
+        { id: 'prompt', plugin: promptPlugin },
+        { id: 'models', plugin: modelsPlugin },
         { id: 'model', plugin: slowModel },
         { id: 'loop', plugin: loopPlugin },
       ],

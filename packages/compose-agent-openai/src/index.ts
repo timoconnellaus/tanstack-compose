@@ -2,8 +2,8 @@
  * `@tanstack/compose-agent-openai` — a **model provider** that speaks the
  * OpenAI-compatible chat-completions streaming protocol over the global
  * `fetch`, with no vendor SDK. Point `baseUrl` at OpenAI, DeepSeek or a local
- * server; nothing else in an agent changes, because a provider is chosen
- * entirely by which plugin provides the `model` key.
+ * server; nothing else in an agent changes, because the plugin only registers
+ * itself into the agent layer's model registry.
  *
  * Terms are the ones in `CONTEXT.md`; the contract it meets is E4 of
  * `docs/acceptance/agent.md`.
@@ -260,9 +260,10 @@ async function* streamCompletion(
 }
 
 /**
- * A **model provider** for any OpenAI-compatible chat-completions endpoint.
- * Provides the agent layer's `model` key, so swapping it for another provider —
- * or for the scripted one — is a single plugin-list edit (E2, E4).
+ * A **model provider** for any OpenAI-compatible chat-completions endpoint. It
+ * registers into the agent layer's model registry and unregisters through its
+ * cleanup, so adding it, removing it or selecting another provider takes effect
+ * at the next turn with nothing else restarting (E2, E4).
  *
  * @example
  * ```ts
@@ -275,7 +276,7 @@ async function* streamCompletion(
  */
 export const openaiModelPlugin = createPlugin({
   name: 'openai-model',
-  provides: [modelKey],
+  deps: [modelKey],
   validator: openaiOptions,
   setup(instance, options) {
     const provider: ModelProvider = {
@@ -283,6 +284,9 @@ export const openaiModelPlugin = createPlugin({
       stream: (request: ModelRequest, signal: AbortSignal) =>
         streamCompletion(options, request, signal),
     }
-    instance.provide(modelKey, provider)
+    instance.cleanup(
+      instance.context.get(modelKey).register(provider),
+      `provider(${options.name})`,
+    )
   },
 })

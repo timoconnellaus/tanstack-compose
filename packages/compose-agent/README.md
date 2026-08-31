@@ -16,13 +16,14 @@ tool set is an edit to the plugin list, while a conversation is open.
 npm install @tanstack/compose @tanstack/compose-agent
 ```
 
-## An agent is five plugin entries
+## An agent is six plugin entries
 
 ```ts
 import { createClient } from '@tanstack/compose'
 import {
   agentKey,
   loopPlugin,
+  modelsPlugin,
   promptPlugin,
   scriptedModelPlugin,
   sessionPlugin,
@@ -38,6 +39,7 @@ const client = createClient({
       plugin: promptPlugin,
       options: { sections: [{ name: 'role', text: 'You are a librarian.' }] },
     },
+    { id: 'models', plugin: modelsPlugin },
     {
       id: 'model',
       plugin: scriptedModelPlugin,
@@ -59,8 +61,22 @@ during a turn is taken up at the next **step** boundary. `agent.status` is a
 `running`, and `agent.cancel()` stops the in-flight request and any running tool
 calls, records the cancellation, and leaves the agent idle and reusable.
 
-Swap the scripted provider for a real one — `@tanstack/compose-agent-openai`, or
-your own plugin providing `modelKey` — and nothing else changes.
+The five keys — `session`, `tools`, `prompt`, `model` and `agent` — are stable:
+each is provided by one plugin for the life of the client, and everything else
+registers into them. Swap the scripted provider for a real one
+(`@tanstack/compose-agent-openai`, or your own) and nothing else changes.
+
+## A turn sees one world
+
+When a turn opens, the loop takes the current model provider, the registered
+tools and the assembled prompt **once**, and every step of that turn runs
+against them. A provider, tool or prompt section added or removed while a turn
+is running is picked up by the next turn — the loop is never restarted to make
+that happen, and a conversation never changes shape underneath itself.
+
+Within a turn: a tool the turn opened with but that has since been unregistered
+is refused with an error result, and a provider that has since been unregistered
+ends the step with an error and closes the turn.
 
 ## Tools
 
@@ -100,8 +116,8 @@ await client.addPlugin({
 })
 ```
 
-A tool registered mid-turn is callable in the next step; a removed one is
-neither offered to the model nor executable.
+A tool registered while a turn is running is first offered in the next turn; one
+removed mid-turn is refused if the model calls it.
 
 ## Wrapping what the agent does
 
@@ -143,8 +159,8 @@ const policy = createPlugin({
 
 ## Prompt sections
 
-Sections are assembled in order for every step, so one added or removed between
-steps shows up in the very next request.
+Sections are assembled in order once per turn, so one added or removed while a
+turn is running shows up in the next turn's requests.
 
 ```ts
 import { promptSectionPlugin } from '@tanstack/compose-agent'

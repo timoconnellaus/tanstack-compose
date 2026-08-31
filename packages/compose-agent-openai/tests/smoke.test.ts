@@ -2,8 +2,11 @@ import { createClient } from '@tanstack/compose'
 import {
   agentKey,
   loopPlugin,
+  modelsPlugin,
+  promptPlugin,
   sessionKey,
   sessionPlugin,
+  toolsPlugin,
 } from '@tanstack/compose-agent'
 import { describe, expect, it } from 'vitest'
 import { openaiModelPlugin } from '../src/index'
@@ -24,6 +27,9 @@ describe.skipIf(!hasKey)('A real OpenAI-compatible endpoint', () => {
     const client = createClient({
       plugins: [
         { id: 'session', plugin: sessionPlugin },
+        { id: 'tools', plugin: toolsPlugin },
+        { id: 'prompt', plugin: promptPlugin },
+        { id: 'models', plugin: modelsPlugin },
         {
           id: 'model',
           plugin: openaiModelPlugin,

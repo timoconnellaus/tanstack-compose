@@ -30,6 +30,7 @@ export {
   validateArgs,
 } from './tools'
 export { promptPlugin, promptSectionPlugin } from './prompt'
+export { modelsPlugin } from './models'
 export { loopPlugin } from './loop'
 export { scriptedModelPlugin } from './scripted'
 export type { ScriptedResponse } from './scripted'
@@ -43,6 +44,7 @@ export type {
   Message,
   ModelChunk,
   ModelProvider,
+  ModelRegistry,
   ModelRequest,
   ModelResponse,
   PromptRegistry,

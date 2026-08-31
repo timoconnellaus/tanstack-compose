@@ -6,7 +6,7 @@ import type {
 } from '@tanstack/compose'
 import type {
   Agent,
-  ModelProvider,
+  ModelRegistry,
   ModelRequest,
   ModelResponse,
   PromptRegistry,
@@ -18,12 +18,13 @@ import type {
 } from './types'
 
 /**
- * The **model**: a provider that turns messages and tool definitions into a
- * streamed response. Provided by a model provider plugin; read by the loop at
- * the moment it makes a request, so providers can be swapped between steps (E2).
+ * The **model** registry: the current **model provider**, which turns messages
+ * and tool definitions into a streamed response. The key is stable — one plugin
+ * provides it for the life of the client, and provider plugins register into it
+ * and unregister through their cleanup (A2, E2).
  */
-export const modelKey: ContextKey<ModelProvider> =
-  createContextKey<ModelProvider>('agent.model')
+export const modelKey: ContextKey<ModelRegistry> =
+  createContextKey<ModelRegistry>('agent.model')
 
 /** The **tool** registry: what the model may call, and how a call is executed. */
 export const toolsKey: ContextKey<ToolRegistry> =

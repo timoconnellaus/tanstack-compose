@@ -2,6 +2,7 @@ import { createClient } from '@tanstack/compose'
 import {
   agentKey,
   loopPlugin,
+  modelsPlugin,
   promptPlugin,
   scriptedModelPlugin,
   sessionKey,
@@ -30,8 +31,9 @@ export const deferred = <TValue = void>() => {
 }
 
 /**
- * The whole agent: a session, a tool registry, a prompt registry, a scripted
- * model and the loop — five plugin entries and nothing else (A3).
+ * The whole agent: a session, a tool registry, a prompt registry, a model
+ * registry, a scripted provider registered into it, and the loop — six plugin
+ * entries and nothing else (A3).
  */
 export const buildAgent = async (setup?: {
   script?: Array<ScriptedResponse>
@@ -58,6 +60,7 @@ export const buildAgent = async (setup?: {
         plugin: promptPlugin,
         options: { sections: setup?.sections },
       },
+      { id: 'models', plugin: modelsPlugin },
       {
         id: 'model',
         plugin: scriptedModelPlugin,
@@ -77,6 +80,22 @@ export const buildAgent = async (setup?: {
     session: client.getContext(sessionKey)!,
     tools: client.getContext(toolsKey)!,
   }
+}
+
+/**
+ * Record the loop instance's status every time the client publishes, so a test
+ * can show that nothing it did restarted the loop. A restart shows up as the
+ * status leaving `active`, and as a new `agentKey` value.
+ */
+export const watchLoop = (client: Client) => {
+  const statusOf = () =>
+    client.inspect().find((entry) => entry.id === 'loop')?.status ?? 'missing'
+  const statuses: Array<string> = [statusOf()]
+  const subscription = client.instances.subscribe(() => {
+    const status = statusOf()
+    if (status !== statuses[statuses.length - 1]) statuses.push(status)
+  })
+  return { statuses, stop: () => subscription.unsubscribe() }
 }
 
 /** The kinds of every entry in a log, for asserting the shape of a turn. */

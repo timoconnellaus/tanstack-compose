@@ -19,10 +19,12 @@ const scriptedOptions = optionsSchema<
 >((value) => ({ name: value.name ?? 'scripted', script: [...value.script] }))
 
 /**
- * A model provider that replays a written script, so a whole conversation runs
- * with no network and no credentials (A3, E3). Responses are consumed in order,
- * one per request; running past the end throws, which the loop records as a
- * model error rather than quietly repeating the last response.
+ * A **model provider** that replays a written script, so a whole conversation
+ * runs with no network and no credentials (A3, E3). It registers into the model
+ * registry and unregisters through its cleanup, like any other provider (E2).
+ * Responses are consumed in order, one per request; running past the end throws,
+ * which the loop records as a model error rather than quietly repeating the
+ * last response.
  *
  * @example
  * ```ts
@@ -40,7 +42,7 @@ const scriptedOptions = optionsSchema<
  */
 export const scriptedModelPlugin = createPlugin({
   name: 'scripted-model',
-  provides: [modelKey],
+  deps: [modelKey],
   validator: scriptedOptions,
   setup(instance, options) {
     let index = 0
@@ -80,6 +82,9 @@ export const scriptedModelPlugin = createPlugin({
       },
     }
 
-    instance.provide(modelKey, provider)
+    instance.cleanup(
+      instance.context.get(modelKey).register(provider),
+      `provider(${options.name})`,
+    )
   },
 })

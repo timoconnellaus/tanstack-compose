@@ -4,6 +4,8 @@ import {
   agentKey,
   createTool,
   loopPlugin,
+  modelsPlugin,
+  promptPlugin,
   scriptedModelPlugin,
   sessionKey,
   sessionPlugin,
@@ -38,6 +40,8 @@ describe('Runtime — workerd', () => {
       plugins: [
         { id: 'session', plugin: sessionPlugin },
         { id: 'tools', plugin: toolsPlugin, options: { tools: [ping] } },
+        { id: 'prompt', plugin: promptPlugin },
+        { id: 'models', plugin: modelsPlugin },
         {
           id: 'model',
           plugin: scriptedModelPlugin,

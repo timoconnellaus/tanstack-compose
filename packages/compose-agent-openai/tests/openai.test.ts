@@ -4,6 +4,8 @@ import {
   createTool,
   loopPlugin,
   modelKey,
+  modelsPlugin,
+  promptPlugin,
   sessionKey,
   sessionPlugin,
   toolsPlugin,
@@ -46,15 +48,19 @@ const request = (overrides?: Partial<ModelRequest>): ModelRequest => ({
   ...overrides,
 })
 
-/** Start a client with just the provider, and hand back the model it provides. */
+/**
+ * Start a client with the model registry and the provider, and hand back the
+ * provider the registry now holds.
+ */
 const provider = async (options: Record<string, unknown>) => {
   const client = createClient({
     plugins: [
+      { id: 'models', plugin: modelsPlugin },
       { id: 'model', plugin: openaiModelPlugin, options: options as never },
     ],
   })
   await client.settled()
-  return { client, model: client.getContext(modelKey)! }
+  return { client, model: client.getContext(modelKey)!.current()! }
 }
 
 const collect = async (
@@ -255,6 +261,33 @@ describe('An OpenAI-compatible model provider', () => {
     await client.destroy()
   })
 
+  it('registers into the model registry and unregisters with its plugin', async () => {
+    endpoint = mockEndpoint({ sse: fixture('text') })
+    const client = createClient({
+      plugins: [
+        { id: 'models', plugin: modelsPlugin },
+        {
+          id: 'model',
+          plugin: openaiModelPlugin,
+          options: { model: 'gpt-4o-mini', apiKey: 'sk-test' },
+        },
+      ],
+    })
+    await client.settled()
+
+    const registry = client.getContext(modelKey)!
+    expect(registry.list().map((each) => each.name)).toEqual(['gpt-4o-mini'])
+    expect(registry.current()!.name).toBe('gpt-4o-mini')
+
+    // The key stays; only the provider goes.
+    await client.removePlugin('model')
+    expect(client.getContext(modelKey)).toBe(registry)
+    expect(registry.list()).toEqual([])
+    expect(registry.current()).toBeUndefined()
+
+    await client.destroy()
+  })
+
   it('drives a whole turn of the agent loop, imported by value across packages', async () => {
     endpoint = mockEndpoint({ sse: fixture('text') })
 
@@ -262,6 +295,8 @@ describe('An OpenAI-compatible model provider', () => {
       plugins: [
         { id: 'session', plugin: sessionPlugin },
         { id: 'tools', plugin: toolsPlugin, options: { tools: [search] } },
+        { id: 'prompt', plugin: promptPlugin },
+        { id: 'models', plugin: modelsPlugin },
         {
           id: 'model',
           plugin: openaiModelPlugin,

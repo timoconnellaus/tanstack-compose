@@ -4,6 +4,7 @@ import {
   agentKey,
   createTool,
   loopPlugin,
+  modelsPlugin,
   promptKey,
   promptPlugin,
   promptSectionPlugin,
@@ -15,7 +16,7 @@ import {
   toolsPlugin,
   toolsetPlugin,
 } from '../src/index'
-import { buildAgent, deferred } from './helpers/agent'
+import { buildAgent, deferred, watchLoop } from './helpers/agent'
 import { lookupPlugin, lookupTool } from './helpers/other-package'
 import { anyValidator } from './helpers/validator'
 
@@ -25,6 +26,7 @@ describe('A. Everything is a plugin', () => {
       sessionPlugin,
       toolsPlugin,
       promptPlugin,
+      modelsPlugin,
       scriptedModelPlugin,
       loopPlugin,
     ]) {
@@ -55,8 +57,9 @@ describe('A. Everything is a plugin', () => {
       sections: [{ name: 'base', text: 'Before.' }],
       script: [
         { toolCalls: [{ name: 'wait', args: {} }] },
+        { chunks: ['turn one is done'] },
         { toolCalls: [{ name: 'extra', args: {} }] },
-        { chunks: ['finished'] },
+        { chunks: ['turn two is done'] },
       ],
     })
     const requests: Array<{ system: string; tools: Array<string> }> = []
@@ -67,14 +70,12 @@ describe('A. Everything is a plugin', () => {
       })
       return next(input)
     })
+    const loop = watchLoop(client)
 
     agent.send('go')
     await running.promise
 
-    // Reconfigured, added to and swapped, all while the turn is open.
-    await client.setOptions('prompt', {
-      sections: [{ name: 'base', text: 'After.' }],
-    })
+    // Contributions added while the turn is running: neither disturbs the loop.
     await client.addPlugin({
       id: 'extra-tools',
       plugin: toolsetPlugin,
@@ -89,15 +90,22 @@ describe('A. Everything is a plugin', () => {
     released.resolve()
     await agent.idle()
 
+    // Turn one ran against the world it opened with; turn two picks the rest up.
+    agent.send('again')
+    await agent.idle()
     expect(requests).toEqual([
       { system: 'Before.', tools: ['wait'] },
-      { system: 'After.\n\nAdded.', tools: ['wait', 'extra'] },
-      { system: 'After.\n\nAdded.', tools: ['wait', 'extra'] },
+      { system: 'Before.', tools: ['wait'] },
+      { system: 'Before.\n\nAdded.', tools: ['wait', 'extra'] },
+      { system: 'Before.\n\nAdded.', tools: ['wait', 'extra'] },
     ])
     expect(session.snapshot().at(-1)).toMatchObject({
       kind: 'turn-closed',
       reason: 'complete',
     })
+    // Adding contributions never restarted the loop.
+    loop.stop()
+    expect(loop.statuses).toEqual(['active'])
 
     // Removing an entry takes its contribution away again.
     await client.removePlugin('extra-tools')
@@ -108,7 +116,19 @@ describe('A. Everything is a plugin', () => {
         .list()
         .map((tool) => tool.name),
     ).toEqual(['wait'])
+    expect(client.getContext(promptKey)!.assemble()).toBe('Before.')
+
+    // A registry itself can be reconfigured. Because the loop depends on the
+    // key, that does restart the loop — with a fresh agent handle.
+    const before = client.getContext(agentKey)
+    await client.setOptions('prompt', {
+      sections: [{ name: 'base', text: 'After.' }],
+    })
+    expect(client.getContext(agentKey)).not.toBe(before)
     expect(client.getContext(promptKey)!.assemble()).toBe('After.')
+    expect(client.inspect().every((entry) => entry.status === 'active')).toBe(
+      true,
+    )
 
     // And every part can be removed outright, leaving nothing behind.
     await client.setPluginList([])
@@ -129,6 +149,8 @@ describe('A. Everything is a plugin', () => {
       plugins: [
         { id: 'session', plugin: sessionPlugin },
         { id: 'tools', plugin: toolsPlugin },
+        { id: 'prompt', plugin: promptPlugin },
+        { id: 'models', plugin: modelsPlugin },
         {
           id: 'model',
           plugin: scriptedModelPlugin,
@@ -177,11 +199,12 @@ describe('A. Everything is a plugin', () => {
         ],
       })
 
-      // Five entries: session, tools, prompt, model, loop. Nothing else.
+      // Six entries: session, tools, prompt, models, the provider, loop.
       expect(client.pluginList.state.map((entry) => entry.id)).toEqual([
         'session',
         'tools',
         'prompt',
+        'models',
         'model',
         'loop',
       ])
