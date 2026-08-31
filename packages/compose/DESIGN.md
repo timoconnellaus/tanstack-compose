@@ -233,14 +233,23 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
      list is ever observable (F3). A vetoed reconcile (middleware that never calls
      `next`) rolls back the same way.
 - **Self-edit (F5).** `instance.client` is not the client object `createClient`
-  returned: it is a view of it whose edit helpers resolve as soon as the edit is
-  recorded, and whose `settled()` resolves immediately. A plugin is always inside
-  a pass, so there is nothing for it to wait for, and awaiting one of its own
-  edits can never deadlock. The edit schedules a follow-up pass like any other,
-  and an outside caller's `settled()` still covers it. Everyone outside keeps
-  full-settlement semantics. (A flag saying "a pass is running" would not do:
-  passes are asynchronous, so an outside caller can be in the middle of one
-  without being part of it.)
+  returned: it is a view of it, one per instance, built on first use. Its edit
+  helpers and its `settled()` resolve as soon as the edit is _recorded_ while
+  that instance's own code is running inside a pass — during its `setup` or one
+  of its cleanups, which is exactly what the record's `phase` names. There is
+  nothing for it to wait for from in there, and awaiting one of its own edits
+  would deadlock on the pass it is part of. The edit schedules a follow-up pass
+  like any other, and an outside caller's `settled()` still covers it.
+
+  At any other time — from a tool call, a listener, a timer, anything that runs
+  after the instance is `active` — the instance is an ordinary caller and its
+  edits resolve on full settlement, like everyone else's. That is what lets a
+  plugin that edits the list on someone else's behalf report what its edit did:
+  the agent layer's composer awaits `setPluginList` and then reads the statuses
+  it produced. A per-instance flag is what makes this exact; a global "a pass is
+  running" flag would not, because passes are asynchronous and a caller can be
+  in the middle of one without being part of it.
+
 - `setOptions` dispatches `optionsUpdateAction`, whose handler writes the entry's
   options; the ensuing reconcile restarts exactly that entry (D2), and middleware
   on the action can observe, replace or veto the update (D3).
@@ -570,47 +579,47 @@ parity oracle, and the two have different jobs.
 
 ## Criterion → test
 
-| Id  | Test file                           | `it()` title                                                                                                                                       |
-| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | `tests/A-lifecycle.test.ts`         | `adding a plugin starts it and removing it leaves no trace`                                                                                        |
-| A2  | `tests/A-lifecycle.test.ts`         | `removal reports complete only once every async cleanup has finished`                                                                              |
-| A3  | `tests/A-lifecycle.test.ts`         | `removing an instance removes every instance it started, recursively`                                                                              |
-| A4  | `tests/A-lifecycle.test.ts`         | `cleanups of one instance run in reverse order of registration`                                                                                    |
-| A5  | `tests/A-lifecycle.test.ts`         | `registering on an instance being removed or already removed throws`                                                                               |
-| A6  | `tests/A-lifecycle.test.ts`         | `a plugin that throws during start ends in error with nothing left behind`                                                                         |
-| A7  | `tests/A-lifecycle.test.ts`         | `a cleanup that throws is reported and the remaining cleanups still run`                                                                           |
-| B1  | `tests/B-deps.test.ts`              | `an instance stays pending until the last dep is provided, whatever the order`                                                                     |
-| B2  | `tests/B-deps.test.ts`              | `losing a dep cleans the dependent up and returns it to pending`                                                                                   |
-| B3  | `tests/B-deps.test.ts`              | `only a value provided by an active instance satisfies a dep`                                                                                      |
-| B4  | `tests/B-deps.test.ts`              | `a plugin can read a key it did not declare and keeps running either way`                                                                          |
-| B5  | `tests/B-deps.test.ts`              | `providing a key that is already provided throws for the second provider`                                                                          |
-| B6  | `tests/B-deps.test.ts`              | `circular deps are detected and reported with the cycle named`                                                                                     |
-| C1  | `tests/C-replacement.test.ts`       | `every dependent runs against the new provider after a swap`                                                                                       |
-| C2  | `tests/C-replacement.test.ts`       | `there is no window in which a dependent is active against a removed provider`                                                                     |
-| D1  | `tests/D-options.test.ts`           | `options are validated and defaulted before the instance starts`                                                                                   |
-| D2  | `tests/D-options.test.ts`           | `an options update restarts only that instance`                                                                                                    |
-| D3  | `tests/D-options.test.ts`           | `an options update is an action tooling can observe, veto or replace`                                                                              |
-| E1  | `tests/E-middleware-events.test.ts` | `middleware can rewrite the input, rewrite the result, or stop the action`                                                                         |
-| E2  | `tests/E-middleware-events.test.ts` | `middleware runs in registration order, first goes to the front, and removal is clean`                                                             |
-| E3  | `tests/E-middleware-events.test.ts` | `a listener observes an event and a throwing listener is contained`                                                                                |
-| E4  | `tests/E-middleware-events.test.ts` | `dispatch is fire-and-forget or awaited according to the event definition`                                                                         |
-| F1  | `tests/F-plugin-list.test.ts`       | `the plugin list is a store and reconciling only touches entries that changed`                                                                     |
-| F2  | `tests/F-plugin-list.test.ts`       | `enabled false is equivalent to removal and enabling restores the instance`                                                                        |
-| F3  | `tests/F-plugin-list.test.ts`       | `a reconcile that fails leaves the client in the previous consistent state`                                                                        |
-| F4  | `tests/F-plugin-list.test.ts`       | `overlapping list edits are serialised and apply in order`                                                                                         |
-| F5  | `tests/F-plugin-list.test.ts`       | `a plugin can edit the plugin list it belongs to, including disabling itself`                                                                      |
-| G1  | `tests/G-inspection.test.ts`        | `every instance is listed with id, plugin, status, missing deps and error`                                                                         |
-| G2  | `tests/G-inspection.test.ts`        | `the resource tree of an instance is labelled and includes nested registrations`                                                                   |
-| G3  | `tests/G-inspection.test.ts`        | `status changes are observable through a store, with no polling`                                                                                   |
-| H1  | `tests/H-types.test-d.ts`           | `reading context is typed from the declared deps`                                                                                                  |
-| H2  | `tests/H-types.test-d.ts`           | `payloads, action input and result, and options are inferred from the builders`                                                                    |
-| H3  | `tests/H-types.test-d.ts`           | `a plugin authored in another package keeps full types with value imports only`                                                                    |
-| I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`                                                                           |
-| I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd` / `reports a clear error for a source entry, because workerd forbids evaluating code` |
-| I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                                                                            |
-| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 6 kB min+gzip size budget`                                                      |
-| I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                                                                                 |
-| J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                                                                              |
+| Id  | Test file                           | `it()` title                                                                                                                                                      |
+| --- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | `tests/A-lifecycle.test.ts`         | `adding a plugin starts it and removing it leaves no trace`                                                                                                       |
+| A2  | `tests/A-lifecycle.test.ts`         | `removal reports complete only once every async cleanup has finished`                                                                                             |
+| A3  | `tests/A-lifecycle.test.ts`         | `removing an instance removes every instance it started, recursively`                                                                                             |
+| A4  | `tests/A-lifecycle.test.ts`         | `cleanups of one instance run in reverse order of registration`                                                                                                   |
+| A5  | `tests/A-lifecycle.test.ts`         | `registering on an instance being removed or already removed throws`                                                                                              |
+| A6  | `tests/A-lifecycle.test.ts`         | `a plugin that throws during start ends in error with nothing left behind`                                                                                        |
+| A7  | `tests/A-lifecycle.test.ts`         | `a cleanup that throws is reported and the remaining cleanups still run`                                                                                          |
+| B1  | `tests/B-deps.test.ts`              | `an instance stays pending until the last dep is provided, whatever the order`                                                                                    |
+| B2  | `tests/B-deps.test.ts`              | `losing a dep cleans the dependent up and returns it to pending`                                                                                                  |
+| B3  | `tests/B-deps.test.ts`              | `only a value provided by an active instance satisfies a dep`                                                                                                     |
+| B4  | `tests/B-deps.test.ts`              | `a plugin can read a key it did not declare and keeps running either way`                                                                                         |
+| B5  | `tests/B-deps.test.ts`              | `providing a key that is already provided throws for the second provider`                                                                                         |
+| B6  | `tests/B-deps.test.ts`              | `circular deps are detected and reported with the cycle named`                                                                                                    |
+| C1  | `tests/C-replacement.test.ts`       | `every dependent runs against the new provider after a swap`                                                                                                      |
+| C2  | `tests/C-replacement.test.ts`       | `there is no window in which a dependent is active against a removed provider`                                                                                    |
+| D1  | `tests/D-options.test.ts`           | `options are validated and defaulted before the instance starts`                                                                                                  |
+| D2  | `tests/D-options.test.ts`           | `an options update restarts only that instance`                                                                                                                   |
+| D3  | `tests/D-options.test.ts`           | `an options update is an action tooling can observe, veto or replace`                                                                                             |
+| E1  | `tests/E-middleware-events.test.ts` | `middleware can rewrite the input, rewrite the result, or stop the action`                                                                                        |
+| E2  | `tests/E-middleware-events.test.ts` | `middleware runs in registration order, first goes to the front, and removal is clean`                                                                            |
+| E3  | `tests/E-middleware-events.test.ts` | `a listener observes an event and a throwing listener is contained`                                                                                               |
+| E4  | `tests/E-middleware-events.test.ts` | `dispatch is fire-and-forget or awaited according to the event definition`                                                                                        |
+| F1  | `tests/F-plugin-list.test.ts`       | `the plugin list is a store and reconciling only touches entries that changed`                                                                                    |
+| F2  | `tests/F-plugin-list.test.ts`       | `enabled false is equivalent to removal and enabling restores the instance`                                                                                       |
+| F3  | `tests/F-plugin-list.test.ts`       | `a reconcile that fails leaves the client in the previous consistent state`                                                                                       |
+| F4  | `tests/F-plugin-list.test.ts`       | `overlapping list edits are serialised and apply in order`                                                                                                        |
+| F5  | `tests/F-plugin-list.test.ts`       | `a plugin can edit the plugin list it belongs to, including disabling itself` / `settles an edit a plugin makes once it is running, so it can report what it did` |
+| G1  | `tests/G-inspection.test.ts`        | `every instance is listed with id, plugin, status, missing deps and error`                                                                                        |
+| G2  | `tests/G-inspection.test.ts`        | `the resource tree of an instance is labelled and includes nested registrations`                                                                                  |
+| G3  | `tests/G-inspection.test.ts`        | `status changes are observable through a store, with no polling`                                                                                                  |
+| H1  | `tests/H-types.test-d.ts`           | `reading context is typed from the declared deps`                                                                                                                 |
+| H2  | `tests/H-types.test-d.ts`           | `payloads, action input and result, and options are inferred from the builders`                                                                                   |
+| H3  | `tests/H-types.test-d.ts`           | `a plugin authored in another package keeps full types with value imports only`                                                                                   |
+| I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`                                                                                          |
+| I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd` / `reports a clear error for a source entry, because workerd forbids evaluating code`                |
+| I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                                                                                           |
+| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 6 kB min+gzip size budget`                                                                     |
+| I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                                                                                                |
+| J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                                                                                             |
 
 ### `docs/acceptance/hosts.md` §A
 

@@ -4,10 +4,13 @@
  * tool registry, the prompt registry, the session log and the loop are each
  * plugins, every **request** and **tool** call is an **action** other plugins
  * can wrap, and the **session** is the source of truth everything the model
- * sees is derived from.
+ * sees is derived from. The **composer** is one more plugin: it hands the model
+ * tools for editing that plugin list, including writing plugins as **plugin
+ * source**.
  *
  * Terms are the ones in `CONTEXT.md`; the design is in `DESIGN.md` next to this
- * file, and the contract it meets is `docs/acceptance/agent.md`.
+ * file, and the contracts it meets are `docs/acceptance/agent.md` and
+ * `docs/acceptance/self-modification.md`.
  */
 
 export {
@@ -31,9 +34,19 @@ export {
 } from './tools'
 export { promptPlugin, promptSectionPlugin } from './prompt'
 export { modelsPlugin } from './models'
+export { composerPlugin } from './composer'
+export { agentStubs, promptStub, toolsStub } from './stubs'
+export { jsonSchemaValidator } from './json-schema'
 export { loopPlugin } from './loop'
 export { scriptedModelPlugin } from './scripted'
 export type { ScriptedResponse } from './scripted'
+export type {
+  ComposerEntry,
+  ComposerOptionsInput,
+  ComposerResult,
+} from './composer'
+export type { WrittenSection, WrittenTool } from './stubs'
+export type { JsonSchema, JsonSchemaType } from './json-schema'
 
 export type {
   Agent,

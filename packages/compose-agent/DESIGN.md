@@ -434,6 +434,261 @@ no vendor SDK, so it works against OpenAI, DeepSeek or a local server through
 value only (F3). Adding it, removing it or selecting another provider is one
 plugin-list edit that restarts nothing and takes effect at the next turn.
 
+## The composer: the agent edits itself
+
+How the package meets [`docs/acceptance/self-modification.md`](../../docs/acceptance/self-modification.md),
+except §D7–D9, which belong to the source checker — a plugin behind
+`sourceCheckerKey`, in its own package. The host contract and the in-process
+host are the kernel's ([`compose/DESIGN.md` §Hosts and plugin source](../compose/DESIGN.md)).
+
+The **composer** is one more plugin. It depends on `toolsKey` and `modelKey`,
+registers nine tools into the tool registry, and edits the **plugin list**
+through `instance.client`. It is not privileged: remove its entry and the agent
+loses the ability to edit itself, exactly as removing `toolsetPlugin` loses a
+tool set.
+
+### The tools
+
+| Tool                 | Arguments               | What it does                                                               |
+| -------------------- | ----------------------- | -------------------------------------------------------------------------- |
+| `list_plugins`       | —                       | Every entry with status, missing deps, protection; and the catalog's names |
+| `enable_plugin`      | `{ id }`                | `enabled: true`                                                            |
+| `disable_plugin`     | `{ id }`                | `enabled: false`, which is equivalent to removal (kernel F2)               |
+| `set_plugin_options` | `{ id, options }`       | Replace the entry's options; the instance restarts                         |
+| `add_plugin`         | `{ id, name, options }` | Add a **plugin catalog** entry by name                                     |
+| `write_plugin`       | `{ id, source }`        | Write **plugin source** as a new entry, or rewrite one the agent wrote     |
+| `read_plugin`        | `{ id }`                | The source of an entry the agent wrote, and its **plugin declarations**    |
+| `remove_plugin`      | `{ id }`                | Remove an entry the agent added or wrote                                   |
+| `select_model`       | `{ name? }`             | `modelKey`'s `select` — no plugin-list edit, nothing restarts              |
+
+Every one of them is `concurrency: 'exclusive'`: an edit to the plugin list runs
+alone in its step, never alongside another edit or another tool.
+
+They are ordinary tools built with `createTool`, so they go through
+`toolCallAction` and approval, logging and refusal middleware apply to them
+exactly as to any other tool (A4). Their arguments are validated by their own
+validators before they run (agent.md D3).
+
+### One result shape
+
+Every tool returns the same object, whether it worked, was refused, or failed:
+
+```ts
+interface ComposerResult {
+  ok: boolean
+  message: string
+  error?: string // why it was refused or how it failed
+  entries: Array<ComposerEntry> // the entries the edit touched, after settling
+  effect?: string // when the change reaches the model
+  catalog?: Array<string>
+  source?: string
+  declarations?: string
+  diagnostics?: Array<SourceDiagnostic>
+  providers?: Array<string>
+  selected?: string
+}
+
+interface ComposerEntry {
+  id: string
+  plugin: string // the plugin's name, or `source`
+  kind: 'plugin' | 'source'
+  enabled: boolean
+  protected: boolean
+  status: Status | 'disabled'
+  missing?: Array<string> // when `pending`
+  error?: string // when `error`
+  sourceError?: SourceError // when `error` on a source entry
+  readable?: boolean // whether the agent may read this source back
+}
+```
+
+`entries` is the entries the tool named **plus every entry the edit left
+`pending` or in `error`**, in plugin-list order. That is what makes a
+consequence somewhere else in the list visible in the same result: disabling a
+provider names the dependents that went `pending` and what each of them is
+missing (A3, C1), and a written entry that failed to start carries its
+`SourceError` — `phase`, `message`, `line`, `column`, `diagnostics` — so a
+check failure, a parse failure, a setup throw and a first-call throw are one
+recovery loop with one shape (D4).
+
+**Failure is a value, not an error outcome.** A refusal or a failure comes back
+as `{ ok: false, error, entries, … }` inside a successful `ToolOutcome`, rather
+than as `{ ok: false, error: string }` at the outcome level. `ToolOutcome`'s
+error variant carries only a string, and D4 asks for diagnostics with line and
+column in the tool result; a structured payload is the only way to carry them.
+The model reads `ok` and `error` at the top of the JSON either way.
+
+### One path to what runs (A2)
+
+Every tool ends in the same three lines:
+
+```ts
+await client.setPluginList(next)
+await client.settled()
+return { ok: true, message, entries: rowsFor([id]), effect: nextTurn }
+```
+
+There is no second path. Nothing calls `registry.register` on the model's
+behalf, nothing holds an instance handle, nothing reaches into the loop. A
+reconcile that fails rejects there; the kernel restores the previous list, the
+composer turns the rejection into `{ ok: false, error }`, and the turn carries
+on (C3).
+
+`select_model` is the one tool that is not a plugin-list edit: it calls
+`select` on the model registry, which the next turn reads. That is not a second
+path to what _runs_ — the provider was already registered by its own entry — it
+is the registry's own runtime choice (agent.md E2).
+
+### When an edit reaches the model
+
+A **turn** sees one world (agent.md C3): the loop takes the registered tools and
+the assembled **prompt sections** when the turn opens and holds them for every
+**step** of it. So an edit made during a turn — which is the only time the model
+can make one — is offered from the **next turn**, not from the next step of the
+same turn. Every tool's description and every successful result say so in
+words, in the result's `effect` field.
+
+Where self-modification C4 and D5 say "the next step", this is the same barrier
+stated from the other side: the next request the model makes with the new world
+in place. Making it literally the next step would mean re-reading the
+registries per step, which contradicts agent.md C3 — a delivered criterion — and
+would let a conversation change shape underneath itself mid-turn.
+
+### `set options` on a registry entry restarts the loop
+
+The five registry entries — `session`, `tools`, `prompt`, `models`, `loop` —
+each provide a stable key. Updating an entry's options restarts that instance
+(kernel D2), which unpublishes its key, which deactivates the loop, whose
+cleanup cancels the open turn (agent.md C6). In other words: `set_plugin_options`
+on any of those five ends the turn the model was in the middle of.
+
+That is honest behaviour, not a bug, and it is why **the recommended assembly
+protects all five**. The composer's own entry is protected by construction (B2),
+so a recommended assembly protects six entries in total. `select_model` exists
+precisely so the common case — "use the other model" — has a path that restarts
+nothing.
+
+### Limits
+
+- **Protected entries** (B1, B2). `protected` is a list of entry ids in the
+  composer's options, and `instance.id` is always in it. A protected entry
+  cannot be enabled, disabled, reconfigured, rewritten or removed; the attempt
+  returns `{ ok: false, error: 'the entry "…" is protected …' }` and touches
+  nothing. Enabling is refused along with the rest: one rule, and an entry the
+  operator both protected and disabled was meant to stay that way.
+- **The catalog** (B3). `add_plugin` takes a catalog _name_, never a plugin. An
+  unknown name comes back with the names that do exist. Options are validated by
+  the catalog plugin's own validator **before** the list is touched, so invalid
+  options change nothing — rather than adding an entry that lands in `error`.
+  `set_plugin_options` validates the same way.
+- **The operator's half** (B4). The catalog, the protected ids, the **stubs**
+  every written plugin is granted and the **host** they run in are the
+  composer's options. No tool reads or writes them, and the composer's own entry
+  is protected, so the model cannot reconfigure them either. They are validated
+  when the composer starts: a catalog holding something that is not a plugin
+  leaves the composer in `error` with a path-annotated message, like any other
+  options failure (kernel D1).
+
+### Writing plugins
+
+An entry the agent writes is `{ id, source, host, stubs }` — the same
+`PluginEntry` shape the operator would write by hand. `host` and `stubs` come
+from the composer's options, so what a written plugin can reach is decided once,
+by the operator, for every plugin the agent will ever write (B4, hosts A4).
+
+**The stubs this package owns.** A written plugin is handed one async callable
+per grant, and each grant carries the `.d.ts` text it is checked against and its
+author is shown (D8):
+
+```ts
+// toolsStub
+declare const tools: (tool: {
+  name: string
+  description: string
+  parameters?: JsonSchema
+  handler: string
+  concurrency?: 'parallel' | 'exclusive'
+}) => Promise<void>
+
+// promptStub
+declare const prompt: (section: {
+  name: string
+  order?: number
+  text: string
+}) => Promise<void>
+```
+
+`toolsStub`'s declarations also carry the `JsonSchema` interface, because a
+written plugin cannot hand a validator across a host boundary — it can only hand
+plain data. So it declares its tool's arguments as JSON Schema, and that one
+object becomes both the `parameters` the model is shown and, through
+`jsonSchemaValidator`, the `validator` the model's arguments are checked against
+(agent.md D3). The two cannot drift, and the composer's own tools are built the
+same way.
+
+`handler` names an export of the written module rather than carrying a function,
+for the same reason. The stub's handler calls it back through
+`StubCall.call`, which routes through the entry's host.
+
+Both handlers run client-side with the hosted instance's own `Instance` handle
+and read context through `instance.context.get(...)` — the grant declares the
+dep, so the hosted entry sits in the dependency graph like any other instance
+and stays `pending` until `toolsKey` and `promptKey` are provided. Every
+registration is `instance.cleanup(...)`, owned by the hosted instance, so
+ordinary kernel cleanup undoes it when the entry is removed or rewritten (D3):
+nothing the previous code registered survives.
+
+`promptStub` takes a string, not a function: `PromptSection.text` may be a
+function, but a function cannot cross a host boundary. A written section that
+has to change re-registers.
+
+### The read gate (D3)
+
+Copied, deliberately, from a working agent authoring loop: a rewrite is refused
+unless the agent has **read that entry's current source in this session**.
+
+The composer keeps two pieces of state per instance:
+
+- `written` — the ids the agent wrote. Only these can be read back (D6) or
+  rewritten; `added` is the same for catalog entries, and only entries in either
+  set can be removed. An entry from the operator's assembly has no source the
+  agent may read, and one from the catalog has no source at all.
+- `observed` — for each entry, the source text `read_plugin` last returned.
+
+`write_plugin` on an id that already exists therefore refuses three ways, in
+order: the entry is protected; the entry is not one the agent wrote; the agent
+has not read it (`read the source of "…" with read_plugin before rewriting it`);
+the source has moved since the read (`the source of "…" has changed since you
+read it; read it again and try again`). Writing a _new_ id passes no gate —
+there is nothing to have read.
+
+Only `read_plugin` records a read. A successful write does not, so the loop the
+model runs is write → read → rewrite, and `read_plugin` is also where the model
+goes to see the entry's error: it returns the source, the declarations, and the
+entry's status and `SourceError` together.
+
+The state is the composer instance's, so "this session" means "while this
+composer instance has been running". A restarted composer has read nothing,
+which refuses more, never less.
+
+### Checking before writing (D7, D9)
+
+The kernel checks plugin source through `sourceCheckerKey` when one is provided,
+and starts it as written when none is. The composer checks it **once more,
+before it touches the plugin list**, for one reason: D7 says source that does
+not type-check leaves the entry as it was. If the composer wrote first, a
+rewrite that fails to check would already have torn the running instance down.
+So the composer asks the checker, and on rejection returns the diagnostics with
+the declarations and changes nothing.
+
+The check is the same call the kernel makes, with the same declarations, so the
+answer is the same one; a client with no checker skips it and starts source
+unchecked, exactly as the kernel does (D9).
+
+`declarationsFor(grants)` is `stubDeclarations(grants)` and nothing else — one
+line, deliberately, so that when a checker publishes richer text of its own the
+swap happens there.
+
 ## Choices made where the criteria are silent
 
 - **One session event, not one per kind.** `sessionAppendedEvent` carries the
@@ -456,6 +711,15 @@ plugin-list edit that restarts nothing and takes effect at the next turn.
 - **Tool results are stringified for the model** with `JSON.stringify`, except a
   string result which is passed through. The session keeps the real value in
   `outcome.value`; only the derived message is text.
+- **A composer failure is a value, not an error outcome.** See above: the error
+  variant of `ToolOutcome` carries only a string, and D4 wants diagnostics.
+- **Only `read_plugin` opens the read gate**, not a successful write. See above.
+- **`enable_plugin` is refused on a protected entry** along with everything
+  else, rather than being allowed as a way back. One rule is easier to state,
+  and the agent can never have disabled a protected entry in the first place.
+- **The composer names its tools `verb_noun`** — `list_plugins`,
+  `write_plugin`, `select_model` — so a model that knows one knows the shape of
+  the rest.
 
 ## Criterion → test
 
@@ -495,6 +759,36 @@ Informational: test titles describe behaviour and carry no criterion ids.
 | —   | `tests/loop.test.ts`                           | `a turn that never stops calling tools is stopped by its step limit`                           |
 | —   | `tests/packaging.test.ts`                      | zero runtime deps beyond the kernel and the store; no runtime-specific imports                 |
 | —   | `tests/workerd/smoke.test.ts`                  | `an agent runs a turn under workerd`                                                           |
+
+### `docs/acceptance/self-modification.md`
+
+D7–D9 are the source checker's; the rows below are what this package proves
+about carrying its diagnostics and its absence.
+
+| Id  | Test file                    | `it()` title                                                                                                                                                                                                                         |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | `tests/composer.test.ts`     | the first five titles, one per tool, plus `tests/code.test.ts` for `write_plugin` and `read_plugin`                                                                                                                                  |
+| A2  | `tests/composer.test.ts`     | `changes what runs only by writing the plugin list`                                                                                                                                                                                  |
+| A3  | `tests/composer.test.ts`     | `lists every entry with its status, and names what a pending entry is missing` / `disables an entry and enables it again, both in one turn`                                                                                          |
+| A4  | `tests/composer.test.ts`     | `is an ordinary tool, so middleware can refuse an edit`                                                                                                                                                                              |
+| B1  | `tests/limits.test.ts`       | `refuses to disable, reconfigure or remove a protected entry`                                                                                                                                                                        |
+| B2  | `tests/limits.test.ts`       | `protects its own entry, whatever the operator listed`                                                                                                                                                                               |
+| B3  | `tests/limits.test.ts`       | `adds only what the catalog offers, and only with options that validate` / `refuses options that the entry's own validator rejects`                                                                                                  |
+| B4  | `tests/limits.test.ts`       | `offers the model no tool that changes the catalog, the protection, the stubs or the host` / `leaves the composer in error when the operator's own options are wrong`                                                                |
+| C1  | `tests/consequences.test.ts` | `leaves dependents pending with their missing deps named, and restores them in the same turn`                                                                                                                                        |
+| C2  | `tests/consequences.test.ts` | `is in the session as a tool call and its result, so a replay shows what changed`                                                                                                                                                    |
+| C3  | `tests/consequences.test.ts` | `leaves the client as it was when a reconcile fails, and the turn carries on`                                                                                                                                                        |
+| C4  | `tests/consequences.test.ts` | `offers a plugin it added from the next turn: its tools, its prompt and its context`                                                                                                                                                 |
+| D1  | `tests/code.test.ts`         | `starts written source, and its tool and prompt section arrive in the next turn`                                                                                                                                                     |
+| D2  | `tests/code.test.ts`         | `starts written source, …` / `validates a written tool's arguments against the schema it declared`                                                                                                                                   |
+| D3  | `tests/code.test.ts`         | `runs the previous code's cleanups on a rewrite, …` / `refuses to rewrite source it has not read back in this session` / `refuses a rewrite when the source moved since it was read`                                                 |
+| D4  | `tests/code.test.ts`         | `carries the checker diagnostics and leaves the entry exactly as it was` / `carries a failure to start in the same shape as a failure to check` / `puts the entry in error when the first call into it throws, and the turn goes on` |
+| D5  | `tests/code.test.ts`         | `starts written source, and its tool and prompt section arrive in the next turn`                                                                                                                                                     |
+| D6  | `tests/code.test.ts`         | `reads and rewrites only what it wrote itself` / `removes a written entry, leaving no resources and no tools behind`                                                                                                                 |
+| D7  | `tests/code.test.ts`         | `carries the checker diagnostics and leaves the entry exactly as it was` — the checker itself is its own package                                                                                                                     |
+| D8  | `tests/code.test.ts`         | `hands the model the declarations of exactly the stubs the entry was granted`                                                                                                                                                        |
+| D9  | `tests/code.test.ts`         | `starts source unchecked when no checker is provided, and checked when one is`                                                                                                                                                       |
+| E1  | `tests/self-editing.test.ts` | `lists, disables, re-enables, adds, writes, corrects, uses and removes its own plugins`                                                                                                                                              |
 
 ### Notes on coverage
 
