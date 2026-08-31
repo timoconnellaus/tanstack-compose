@@ -143,6 +143,9 @@ importers:
       '@tanstack/compose':
         specifier: workspace:*
         version: link:../compose
+      '@tanstack/compose-agent':
+        specifier: workspace:*
+        version: link:../compose-agent
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
@@ -150,9 +153,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^5.20260830.1
         version: 5.20260830.1
-      '@tanstack/compose-agent':
+      '@tanstack/compose-agent-openai':
         specifier: workspace:*
-        version: link:../compose-agent
+        version: link:../compose-agent-openai
 
   packages/compose-devtools:
     dependencies:

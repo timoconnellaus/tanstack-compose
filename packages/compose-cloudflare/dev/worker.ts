@@ -3,13 +3,37 @@
  * whole of what a consumer writes: a binding in `wrangler.jsonc`, this one
  * re-export, and a client whose `hosts` names the host.
  *
+ * It also serves the two things a Workers AI **model provider** is for: an
+ * agent that runs here, on the binding, and a chat-completions route a browser
+ * client's provider can be pointed at.
+ *
  * ```sh
  * pnpm --filter @tanstack/compose-cloudflare exec wrangler dev
  * curl 'http://localhost:8787/?a=2&b=3'
+ * curl 'http://localhost:8787/ask?q=say+pong'
+ * curl -X POST http://localhost:8787/ai/chat/completions \
+ *   -H 'content-type: application/json' \
+ *   -d '{"messages":[{"role":"user","content":"say pong"}],"stream":true}'
  * ```
+ *
+ * Inference always runs on Cloudflare, including under `wrangler dev`, so both
+ * AI routes need a logged-in account and spend the account's allocation.
  */
 import { createClient, createStub } from '@tanstack/compose'
-import { createCloudflareHost } from '../src/index'
+import {
+  agentKey,
+  loopPlugin,
+  modelsPlugin,
+  promptPlugin,
+  sessionKey,
+  sessionPlugin,
+  toolsPlugin,
+} from '@tanstack/compose-agent'
+import {
+  createCloudflareHost,
+  handleChatCompletions,
+  workersAiModelPlugin,
+} from '../src/index'
 
 export { ComposeStubLoopback } from '../src/index'
 
@@ -27,11 +51,50 @@ export async function add({ a, b }) {
 
 interface Env {
   LOADER: WorkerLoader
+  AI: Ai
+}
+
+/** One turn of an agent whose model is the binding this Worker was given. */
+const ask = async (env: Env, text: string): Promise<Response> => {
+  const client = createClient({
+    plugins: [
+      { id: 'session', plugin: sessionPlugin },
+      { id: 'tools', plugin: toolsPlugin },
+      { id: 'prompt', plugin: promptPlugin },
+      { id: 'models', plugin: modelsPlugin },
+      {
+        id: 'model',
+        plugin: workersAiModelPlugin,
+        options: { binding: env.AI },
+      },
+      { id: 'loop', plugin: loopPlugin },
+    ],
+  })
+  await client.settled()
+
+  const agent = client.getContext(agentKey)!
+  const session = client.getContext(sessionKey)!
+  agent.send(text)
+  await agent.idle()
+  const answer = session.messages().at(-1)
+  await client.destroy()
+
+  return Response.json({ answer })
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    // The route a browser client's OpenAI-compatible provider talks to. The
+    // binding never leaves this Worker.
+    if (url.pathname === '/ai/chat/completions') {
+      return await handleChatCompletions(request, env.AI)
+    }
+    if (url.pathname === '/ask') {
+      return await ask(env, url.searchParams.get('q') ?? 'say pong')
+    }
+
     const logged: Array<string> = []
     let add: ((input: unknown) => Promise<unknown>) | undefined
 
