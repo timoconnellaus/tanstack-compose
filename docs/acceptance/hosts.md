@@ -1,9 +1,12 @@
 # Hosts acceptance criteria
 
-Slice 6 lets a plugin's code run somewhere other than the client's own process.
-It is done when every criterion below holds and is covered by the test suite.
-Terms are as defined in [CONTEXT.md](../../CONTEXT.md); earlier slices' criteria
-continue to hold.
+Hosts let a plugin's code run somewhere other than the client's own process.
+Section A — the contract and the in-process host — is delivered with
+self-modification (slice 3), because an agent that writes plugins needs it
+first. Sections B–E are delivered per host package, each in its own slice. A
+host is done when every criterion below holds for it and is covered by the test
+suite. Terms are as defined in [CONTEXT.md](../../CONTEXT.md); earlier slices'
+criteria continue to hold.
 
 ## A. The host contract (core)
 

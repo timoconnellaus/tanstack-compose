@@ -136,6 +136,9 @@ _Avoid_: locked, pinned, system plugin, core plugin
 The environment a plugin's code executes in. The in-process host is the default; a remote host runs a plugin in isolation and represents it to the client as an ordinary instance.
 _Avoid_: sandbox, runtime, isolate, executor, loader
 
+**Plugin source**:
+A plugin as code in a string, started by a host rather than imported; a plugin the agent writes exists only as source.
+
 **Hosted plugin**:
 A plugin whose code runs in a host other than the in-process one; the client sees an ordinary instance backed by a proxy.
 _Avoid_: remote plugin, sandboxed plugin, isolate plugin
