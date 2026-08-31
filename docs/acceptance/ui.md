@@ -40,6 +40,7 @@ earlier slices' criteria continue to hold.
 - **E2** The follow is resilient: the browser reconnects and reconverges after a dropped connection, and never runs a view whose content hash the server does not currently list.
 - **E3** A view calls its plugin's server handlers through a stub that crosses the connection; the calling instance id is attached by the shell, not by the view, and middleware on the server sees it.
 - **E4** The follow reports back: the browser client's status for each followed entry (including a view that failed to load or render) is visible on the server, so the composer's results and `list_plugins` show the agent whether the UI it added is actually on the page.
+- **E5** A person acting on a view is a human step: pressing a button or submitting an input that a fill rendered is recorded in the session as a human tool call and its result, so the model sees what the operator did with the UI it wrote, and middleware applies to it as to any tool call.
 
 ## F. Served on Cloudflare (5b)
 
