@@ -2,11 +2,13 @@ import { createClient } from '@tanstack/compose'
 import {
   agentKey,
   createTool,
+  credentialsPlugin,
   loopPlugin,
   modelsPlugin,
   promptPlugin,
   sessionKey,
   sessionPlugin,
+  staticCredentials,
   toolsPlugin,
 } from '@tanstack/compose-agent'
 import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
@@ -71,10 +73,21 @@ const browserAgent = async () => {
       { id: 'tools', plugin: toolsPlugin, options: { tools: [search] } },
       { id: 'prompt', plugin: promptPlugin },
       { id: 'models', plugin: modelsPlugin },
+      // The page holds no credential: the source is empty, and the provider
+      // says the endpoint needs none.
+      {
+        id: 'credentials',
+        plugin: credentialsPlugin,
+        options: { source: staticCredentials({}) },
+      },
       {
         id: 'model',
         plugin: openaiModelPlugin,
-        options: { model: 'workers-ai', baseUrl: 'https://page.example/ai' },
+        options: {
+          model: 'workers-ai',
+          baseUrl: 'https://page.example/ai',
+          credential: null,
+        },
       },
       { id: 'loop', plugin: loopPlugin },
     ],
