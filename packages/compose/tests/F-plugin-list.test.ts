@@ -183,4 +183,25 @@ describe('F. Plugin list', () => {
       ['helper', true],
     ])
   })
+
+  it('settles an edit a plugin makes once it is running, so it can report what it did', async () => {
+    let edit: ((id: string) => Promise<Array<string>>) | undefined
+    const helper = makePlugin('helper', [])
+    const editor = createPlugin({
+      name: 'editor',
+      setup(instance) {
+        // Not from setup: from an ordinary call, after the instance is active.
+        edit = async (id: string) => {
+          await instance.client.addPlugin({ id, plugin: helper })
+          return instance.client.inspect().map((one) => one.id)
+        }
+      },
+    })
+
+    const client = createClient({ plugins: [{ id: 'editor', plugin: editor }] })
+    await client.settled()
+
+    // The edit is applied by the time it resolves, so the caller can see it.
+    await expect(edit!('helper')).resolves.toEqual(['editor', 'helper'])
+  })
 })

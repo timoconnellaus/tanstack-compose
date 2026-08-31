@@ -79,6 +79,8 @@ interface InstanceRecord {
   phase: 'idle' | 'setup' | 'removing'
   error?: unknown
   resources: Array<Resource>
+  /** The client view this instance edits through; built on first use (F5). */
+  view?: Client
   provisions: Array<AnyContextKey>
   parent?: InstanceRecord
   fromEntry: boolean
@@ -151,7 +153,6 @@ class ClientImpl implements Client {
   #outstanding = 0
   #nextPass: Promise<void> | undefined
   #onError: ((report: ClientErrorReport) => void) | undefined
-  #view: Client | undefined
 
   constructor(options?: {
     plugins?: Array<PluginEntry>
@@ -714,29 +715,36 @@ class ClientImpl implements Client {
   // -------------------------------------------------------- the instance handle
 
   /**
-   * The view of the client a plugin gets. Its edits resolve as soon as they
-   * are recorded, because the caller is already inside the pass that would
-   * apply them: awaiting full settlement from in there would deadlock (F5).
+   * The view of the client one instance gets. While that instance's own code is
+   * running inside a pass — its `setup` or one of its cleanups, which is what
+   * `phase` names — an edit resolves as soon as it is recorded: the caller is
+   * already inside the pass that would apply it, and awaiting full settlement
+   * from in there would deadlock (F5). At any other time the instance is an
+   * ordinary caller — a tool call, a listener, a timer — and its edit resolves
+   * when the client has settled, so it can report what its edit did.
    */
-  #pluginView(): Client {
-    this.#view ??= {
+  #pluginView(record: InstanceRecord): Client {
+    /** Await the edit unless this instance is the pass that would apply it. */
+    const edit = (): Promise<void> =>
+      record.phase === 'idle' ? this.#editDone() : Promise.resolve()
+    record.view ??= {
       pluginList: this.pluginList,
       instances: this.instances,
       context: this.context,
       errors: this.errors,
       setPluginList: (next: Array<PluginEntry>) => {
         this.pluginList.setState(() => next)
-        return Promise.resolve()
+        return edit()
       },
       addPlugin: <TPlugin extends AnyPlugin>(entry: PluginEntry<TPlugin>) => {
         this.pluginList.setState((list) => [...list, entry as PluginEntry])
-        return Promise.resolve()
+        return edit()
       },
       removePlugin: (id: string) => {
         this.pluginList.setState((list) =>
           list.filter((entry) => entry.id !== id),
         )
-        return Promise.resolve()
+        return edit()
       },
       setEnabled: (id: string, enabled: boolean) => {
         this.pluginList.setState((list) =>
@@ -744,12 +752,14 @@ class ClientImpl implements Client {
             entry.id === id ? { ...entry, enabled } : entry,
           ),
         )
-        return Promise.resolve()
+        return edit()
       },
       setOptions: async (id: string, options: unknown) => {
         await this.#dispatch(optionsUpdateAction, { id, options })
+        await edit()
       },
-      settled: () => Promise.resolve(),
+      settled: () =>
+        record.phase === 'idle' ? this.settled() : Promise.resolve(),
       destroy: () => this.destroy(),
       dispatch: (action, input) => this.#dispatch(action, input),
       emit: ((event: AnyEvent, payload: unknown) =>
@@ -771,13 +781,15 @@ class ClientImpl implements Client {
       resources: (instanceId: string) => this.resources(instanceId),
       getContext: (key) => this.getContext(key),
     }
-    return this.#view
+    return record.view
   }
 
   #makeInstance(
     record: InstanceRecord,
     values: Map<AnyContextKey, unknown>,
   ): Instance<any, any> {
+    // Named, because `client` is a getter and `this` inside it is the instance.
+    const owner = this
     const guard = () => {
       if (record.phase === 'removing' || record.status === 'removed') {
         throw new Error(
@@ -797,7 +809,9 @@ class ClientImpl implements Client {
 
     return {
       id: record.id,
-      client: this.#pluginView(),
+      get client(): Client {
+        return owner.#pluginView(record)
+      },
       context: {
         get: (key: AnyContextKey) => this.#published.get(key),
         peek: (key: AnyContextKey) => this.#published.get(key),
