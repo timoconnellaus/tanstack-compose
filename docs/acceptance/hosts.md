@@ -33,9 +33,12 @@ criteria continue to hold.
 
 ## D. `@tanstack/compose-cloudflare`
 
-- **D1** A hosted plugin runs in a Dynamic Worker with outbound network disabled by default; stubs are passed as RPC handles; the same suite passes under `wrangler dev` and in CI.
-- **D2** Each hosted instance is keyed by plugin identity and content hash, so re-adding an unchanged plugin does not create a new isolate and a changed plugin does.
-- **D3** Calls into a hosted plugin carry a wall-clock timeout on the client side, independent of any limit the platform enforces.
+- **D1** A hosted plugin runs in a Dynamic Worker with outbound network disabled unconditionally; the same suite passes under `wrangler dev` and in CI.
+- **D2** Each hosted instance is keyed by plugin identity and content hash, so re-adding an unchanged plugin does not create a new isolate and a changed plugin does; a test asserts both.
+- **D3** Calls into a hosted plugin carry a wall-clock timeout on the client side, independent of any limit the platform enforces, and every load sets the platform's CPU and subrequest limits.
+- **D4** Stubs reach the hosted plugin only as loopback entrypoints whose props carry the calling instance id and stub name; the plugin's `env` holds nothing else, and the plugin cannot reach the loader Worker's other exports. A test passes forged identity as stub input and observes the real id on the client side.
+- **D5** The client and kernel run in the loader Worker; only the written module runs in the Dynamic Worker. Plugin source that runs in the in-process host runs unchanged here, with the same `stubs` shape.
+- **D6** The host's own module wrapper is not observable to plugin code beyond the `stubs` object: it exposes no reference to `env`, `ctx` or the loader.
 
 ## E. End-to-end
 
