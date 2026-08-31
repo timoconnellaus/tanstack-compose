@@ -7,7 +7,7 @@ earlier slices' criteria continue to hold.
 
 ## A. Slots
 
-- **A1** A slot is created like a context key, typed by the props it passes to its fills; a plugin fills a slot with an order and a renderer, and the fill is gone when the plugin's cleanup runs.
+- **A1** A slot is created like a context key, typed by the props it passes to its fills, and declares how many fills it takes: a list rendered in order, a single fill where the latest wins, or fills keyed by a value the slot's props carry. A plugin fills a slot with an order and a renderer, and the fill is gone when the plugin's cleanup runs.
 - **A2** The slot registry is a context key provided by one plugin for the life of the client; its state is observable, so a renderer re-renders when a fill is added or removed without anything restarting.
 - **A3** A slot's fills render in order; the plugin that renders the slot decides layout; a fill may itself render a slot.
 - **A4** Rendering a slot no plugin fills renders nothing and is not an error.
@@ -27,7 +27,8 @@ earlier slices' criteria continue to hold.
 
 ## D. Views
 
-- **D1** A plugin may have a view: a module with the written-plugin shape whose stubs are UI-facing — `slots` to fill slots, `server` to call its own plugin's named exports, and reads of the session and agent state. A view runs in the browser client's in-process host.
+- **D1** A plugin may have a view: a module with the written-plugin shape whose stubs are UI-facing — `slots` to fill slots, `server` to call its own plugin's named exports, and reads of the session and agent state. A view runs in the browser client's in-process host. Which slots a view may fill is part of its grant, so a written view cannot fill a slot it was not given.
+- **D1a** A view that throws while rendering leaves its instance in `error` with the message, and the rest of the page keeps rendering; a fill that fails is removed from its slot, not left blank in place.
 - **D2** A written plugin may include view source; it is type-checked against view declarations derived from its granted UI stubs and from the plugin's own named exports, so a view calling a handler the plugin does not export is a diagnostic, not a runtime error.
 - **D3** Adding a plugin with a view fills its slots in the same page without reload; removing or rewriting it empties or replaces them; nothing the old view registered survives.
 - **D4** In-page views have the trust of the in-process host: the operator's own code, or an agent the operator trusts. Isolating written views is a host concern and is not claimed here.
@@ -38,6 +39,7 @@ earlier slices' criteria continue to hold.
 - **E1** A browser client follows a server client: for every active server entry with a view it holds one entry with that view's source, keyed by content hash; entries without views and browser-only shell entries are unaffected. Changes to the server's plugin list arrive as a plugin-list edit in the browser and reconcile with the kernel's semantics.
 - **E2** The follow is resilient: the browser reconnects and reconverges after a dropped connection, and never runs a view whose content hash the server does not currently list.
 - **E3** A view calls its plugin's server handlers through a stub that crosses the connection; the calling instance id is attached by the shell, not by the view, and middleware on the server sees it.
+- **E4** The follow reports back: the browser client's status for each followed entry (including a view that failed to load or render) is visible on the server, so the composer's results and `list_plugins` show the agent whether the UI it added is actually on the page.
 
 ## F. Served on Cloudflare (5b)
 
