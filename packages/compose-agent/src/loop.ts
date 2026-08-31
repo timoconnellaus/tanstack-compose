@@ -114,6 +114,8 @@ export const loopPlugin = createPlugin({
     const detached = new AbortController()
 
     let turn = highestTurn(session.snapshot())
+    /** How many **human steps** this instance has issued; their call ids. */
+    let humanCalls = 0
     /** The open turn's world, or `undefined` between turns. */
     let world: TurnWorld | undefined
     let controller: AbortController | undefined
@@ -179,8 +181,14 @@ export const loopPlugin = createPlugin({
 
     instance.defineAction(
       toolCallAction,
-      async ({ call }): Promise<ToolOutcome> => {
-        const tool = world?.tools.find((each) => each.name === call.name)
+      async ({ call, origin }): Promise<ToolOutcome> => {
+        // A **human step** runs outside the turn, so it runs against the tools
+        // registered right now; the turn's world is the model's, and C4 is
+        // about what the model was offered when its turn opened.
+        const human = origin === 'human'
+        const tool = human
+          ? tools.get(call.name)
+          : world?.tools.find((each) => each.name === call.name)
         if (!tool) return { ok: false, error: `unknown tool "${call.name}"` }
         // Offered for the whole turn, but refused once it is gone (C4).
         if (!tools.list().includes(tool)) {
@@ -194,7 +202,9 @@ export const loopPlugin = createPlugin({
         try {
           const value: unknown = await tool.execute(validated.value, {
             call,
-            signal: signal(),
+            // A person's call is not the turn's, so cancelling the turn does
+            // not cancel it; it lives as long as the loop instance does.
+            signal: human ? detached.signal : signal(),
           })
           return { ok: true, value }
         } catch (error) {
@@ -446,6 +456,36 @@ export const loopPlugin = createPlugin({
         queued.length = 0
         controller?.abort(new Error('the turn was cancelled'))
         await running
+      },
+      invoke: async (name: string, args?: unknown): Promise<ToolOutcome> => {
+        if (stopped) {
+          return { ok: false, error: 'the agent has been removed' }
+        }
+        humanCalls += 1
+        const call: ToolCall = { id: `h${humanCalls}`, name, args }
+        // The turn a person's call belongs beside: the one that is open, or the
+        // last one that closed. `0` before the agent has ever run.
+        const beside = turn
+        append({ kind: 'human-tool-call', turn: beside, call })
+        let outcome: ToolOutcome
+        try {
+          outcome = await instance.dispatch(toolCallAction, {
+            call,
+            turn: beside,
+            step: 0,
+            origin: 'human',
+          })
+        } catch (error) {
+          outcome = { ok: false, error: messageOf(error) }
+        }
+        append({
+          kind: 'human-tool-result',
+          turn: beside,
+          callId: call.id,
+          name,
+          outcome,
+        })
+        return outcome
       },
       idle: () =>
         status.state === 'idle'

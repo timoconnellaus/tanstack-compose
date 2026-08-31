@@ -3,7 +3,8 @@
  * every adapter would share.
  *
  * It exposes a **client** to React through a provider, a hook per client store,
- * a hook that reads a **context key**, and a `Slot` component. It knows nothing
+ * a hook that reads a **context key**, a `Slot` component, and the renderer
+ * that turns a **view**'s declarative tree into a **fill**. It knows nothing
  * about agents, chat, or anything a plugin might do with a slot (B1).
  *
  * Terms are the ones in `CONTEXT.md`; the design is in `DESIGN.md` next to this
@@ -39,5 +40,8 @@ export type {
   SlotRegistry,
   SlotsState,
 } from './slots'
+
+export { createViewRenderer } from './views'
+export type { ViewCallback, ViewNode, ViewRenderer, ViewTone } from './views'
 
 export { useStore } from '@tanstack/react-store'

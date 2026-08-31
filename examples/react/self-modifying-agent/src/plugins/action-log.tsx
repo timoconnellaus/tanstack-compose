@@ -10,8 +10,8 @@ import type { ReactNode } from 'react'
  * One **middleware** plugin, to show that a click and a **tool** call are the
  * same kind of thing (C4). It wraps the send and cancel actions and every tool
  * call, and writes a line for each: pressing Send, pressing Stop, the model
- * calling a tool, and the plugin panel calling one all arrive here through the
- * one mechanism.
+ * calling a tool, and a person calling one from the panel — the **human step**
+ * — all arrive here through the one mechanism.
  *
  * It registers `{ first: true }`, so it is the outermost wrapper and sees a call
  * before anything can refuse it.
@@ -49,7 +49,7 @@ export const actionLogPlugin = createPlugin({
       toolCallAction,
       ({ input, next }) => {
         write(
-          `${input.turn === 0 ? 'panel' : `turn ${input.turn}`} calls ${input.call.name}`,
+          `${input.origin === 'human' ? 'a person' : `turn ${input.turn}`} calls ${input.call.name}`,
         )
         return next(input)
       },

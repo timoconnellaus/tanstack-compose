@@ -107,6 +107,7 @@ export type {
   SessionLog,
   ToolCall,
   ToolCallInput,
+  ToolCallOrigin,
   ToolConcurrency,
   ToolContext,
   ToolDefinition,

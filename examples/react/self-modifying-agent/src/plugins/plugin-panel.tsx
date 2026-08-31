@@ -1,11 +1,11 @@
 import { createPlugin } from '@tanstack/compose'
+import { agentKey } from '@tanstack/compose-agent'
 import {
   slotsKey,
   useContextKey,
   useInstances,
   usePluginList,
 } from '@tanstack/react-compose'
-import { uiToolsKey } from '../actions'
 import { chatSideSlot } from '../slots'
 import type { ReactNode } from 'react'
 
@@ -13,20 +13,20 @@ import type { ReactNode } from 'react'
  * The plugin panel: the **plugin list** with each entry's **status**, live.
  *
  * Every edit it makes goes through the composer's own **tools** —
- * `enable_plugin`, `disable_plugin`, `remove_plugin` — dispatched as a tool
- * call, so a person's edit and the model's edit take one path and both land in
- * the **session** (C3). The panel never writes to the plugin list itself, which
- * is also why a **protected entry** refuses a person exactly as it refuses the
- * model.
+ * `enable_plugin`, `disable_plugin`, `remove_plugin` — run as a **human step**
+ * through `agent.invoke`, so a person's edit and the model's edit take one path
+ * and both land in the **session** (C3). The panel never writes to the plugin
+ * list itself, which is also why a **protected entry** refuses a person exactly
+ * as it refuses the model.
  *
- * It reads `uiToolsKey` with the adapter's context hook rather than through its
- * own `deps`, so that disabling the plugin that provides it leaves the panel on
- * the page with its buttons inert, instead of taking the panel with it (B2).
+ * It reads the **agent** with the adapter's context hook rather than through
+ * its own `deps`, so that disabling the loop leaves the panel on the page with
+ * its buttons inert, instead of taking the panel with it (B2).
  */
 function PluginPanel(): ReactNode {
   const entries = usePluginList()
   const instances = useInstances()
-  const tools = useContextKey(uiToolsKey)
+  const agent = useContextKey(agentKey)
   const statusOf = (id: string): string => {
     const entry = entries.find((one) => one.id === id)
     if (entry?.enabled === false) return 'disabled'
@@ -46,9 +46,9 @@ function PluginPanel(): ReactNode {
               <span className={`status status-${status}`}>{status}</span>
               <button
                 type="button"
-                disabled={!tools}
+                disabled={!agent}
                 onClick={() =>
-                  void tools?.call(
+                  void agent?.invoke(
                     enabled ? 'disable_plugin' : 'enable_plugin',
                     { id: entry.id },
                   )
@@ -58,9 +58,9 @@ function PluginPanel(): ReactNode {
               </button>
               <button
                 type="button"
-                disabled={!tools}
+                disabled={!agent}
                 onClick={() =>
-                  void tools?.call('remove_plugin', { id: entry.id })
+                  void agent?.invoke('remove_plugin', { id: entry.id })
                 }
               >
                 Remove

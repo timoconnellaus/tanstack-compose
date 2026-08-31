@@ -54,7 +54,7 @@ describe('the stop button', () => {
 })
 
 describe('an edit a person makes in the plugin panel', () => {
-  test('reaches the session as a tool call with its result', async () => {
+  test('reaches the session as a human step with its result', async () => {
     app = await startApp()
 
     await pressInPanel('action-log', 'Disable')
@@ -64,7 +64,7 @@ describe('an edit a person makes in the plugin panel', () => {
       expect(
         entries.some(
           (entry) =>
-            entry.kind === 'tool-call' &&
+            entry.kind === 'human-tool-call' &&
             entry.call.name === 'disable_plugin' &&
             (entry.call.args as { id: string }).id === 'action-log',
         ),
@@ -72,7 +72,7 @@ describe('an edit a person makes in the plugin panel', () => {
       expect(
         entries.some(
           (entry) =>
-            entry.kind === 'tool-result' &&
+            entry.kind === 'human-tool-result' &&
             entry.name === 'disable_plugin' &&
             entry.outcome.ok,
         ),
@@ -119,13 +119,13 @@ describe('middleware wrapped around the page', () => {
     )
   })
 
-  test('sees a tool call the panel made and one the model made alike', async () => {
+  test('sees a tool call a person made and one the model made alike', async () => {
     app = await startApp()
 
     await pressInPanel('model-picker', 'Disable')
     await waitFor(() =>
       expect(screen.getByTestId('action-log').textContent).toContain(
-        'panel calls disable_plugin',
+        'a person calls disable_plugin',
       ),
     )
 

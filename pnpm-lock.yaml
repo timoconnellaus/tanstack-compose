@@ -65,6 +65,9 @@ importers:
       '@tanstack/compose-agent-openai':
         specifier: ^0.1.0
         version: link:../../../packages/compose-agent-openai
+      '@tanstack/compose-typescript':
+        specifier: ^0.1.0
+        version: link:../../../packages/compose-typescript
       '@tanstack/react-compose':
         specifier: ^0.1.0
         version: link:../../../packages/react-compose

@@ -86,6 +86,8 @@ interface Agent {
   send: (text: string) => void
   cancel: () => Promise<void>
   idle: () => Promise<void>
+  /** The **human step**: a person runs one tool, outside any turn. */
+  invoke: (name: string, args?: unknown) => Promise<ToolOutcome>
 }
 ```
 
@@ -133,6 +135,14 @@ export type SessionEntry =
       name: string
       outcome: ToolOutcome
     } & SessionEntryFields)
+  // A **human step**: one tool call a person issued, outside any turn.
+  | ({ kind: 'human-tool-call'; call: ToolCall } & SessionEntryFields)
+  | ({
+      kind: 'human-tool-result'
+      callId: string
+      name: string
+      outcome: ToolOutcome
+    } & SessionEntryFields)
   | ({
       kind: 'error'
       step?: number
@@ -153,15 +163,17 @@ log assigns both, so ids are the log's own and nothing else can forge one.
 tested and reused (B2). It is the only way messages are produced; the loop keeps
 no message array of its own.
 
-| Entry           | Message                                                         |
-| --------------- | --------------------------------------------------------------- |
-| `input`         | `{ role: 'user', content: text }`                               |
-| `assistant`     | `{ role: 'assistant', content: text, toolCalls }`               |
-| `tool-result`   | `{ role: 'tool', callId, name, content, isError: !outcome.ok }` |
-| everything else | nothing                                                         |
+| Entry               | Message                                                         |
+| ------------------- | --------------------------------------------------------------- |
+| `input`             | `{ role: 'user', content: text }`                               |
+| `assistant`         | `{ role: 'assistant', content: text, toolCalls }`               |
+| `tool-result`       | `{ role: 'tool', callId, name, content, isError: !outcome.ok }` |
+| `human-tool-result` | `{ role: 'user', content: 'The operator ran the tool …' }`      |
+| everything else     | nothing                                                         |
 
 `chunk` entries are deliberately _not_ derived: they are the streaming trace of
-the `assistant` entry that follows them, which carries the complete text. So the
+the `assistant` entry that follows them, which carries the complete text; nor is
+`human-tool-call`, which is the trace of the `human-tool-result` after it. So the
 fold is total and idempotent — deriving twice from the same log gives deep-equal
 messages (B2), and a fresh client seeded with the same entries derives the same
 messages (B3).
@@ -261,9 +273,11 @@ interface ModelResponse {
 }
 
 interface ToolCallInput {
-  call: ToolCall // `call.args` are the model's raw, unvalidated arguments
+  call: ToolCall // `call.args` are the raw, unvalidated arguments
   turn: number
   step: number
+  /** Absent means the model; `human` is a **human step** (see below). */
+  origin?: 'model' | 'human'
 }
 type ToolOutcome<TResult = unknown> =
   { ok: true; value: TResult } | { ok: false; error: string }
@@ -275,7 +289,8 @@ type ToolOutcome<TResult = unknown> =
   `system`, `messages`, `tools` or `options`, or veto the step by returning a
   `ModelResponse` without calling `next` (D1). Neither the loop nor the provider
   can tell which happened: the loop only ever sees a `ModelResponse`.
-- **`toolCallAction`** — the `ToolCall` as the model issued it. Middleware may
+- **`toolCallAction`** — the `ToolCall` as it was issued, by the model or by a
+  person (`origin`). Middleware may
   rewrite `call.args`, replace the outcome, or refuse with
   `{ ok: false, error }` — which the model sees as a tool error, exactly like a
   thrown tool (D2). Because middleware sees the _raw_ arguments and validation
@@ -335,6 +350,82 @@ produces the usual error outcome.
 - **`send` is `void`.** C7 asks for a way to await the agent becoming idle, and
   `idle()` is that way; making `send` awaitable as well would give two answers
   to one question. `idle()` resolves immediately when the agent is already idle.
+
+### The human step: a person runs a tool
+
+A **turn** is the model's. But a page has buttons — a plugin panel that
+disables an entry, a model picker that swaps providers — and those press the
+agent's own **tools**. That is a **human step**: one tool call, issued by a
+person, outside any turn.
+
+```ts
+interface Agent {
+  // …
+  invoke: (name: string, args?: unknown) => Promise<ToolOutcome>
+}
+
+interface ToolCallInput {
+  call: ToolCall
+  turn: number
+  step: number
+  /** Absent means `model`. */
+  origin?: 'model' | 'human'
+}
+```
+
+**One action, not two.** `invoke` dispatches `toolCallAction` — the same action
+the loop dispatches for the model — with `origin: 'human'`. Every middleware
+wrapping tool calls therefore sees a person's click exactly as it sees the
+model's call, and can rewrite the arguments, replace the outcome or refuse it,
+with the tool none the wiser (C4, ui.md C4). A separate `humanToolCallAction`
+would have doubled the surface every policy plugin has to wrap, which is the
+opposite of what C4 asks for.
+
+**What `origin` changes in the handler.** Exactly two things:
+
+- The tool is looked up in the **live registry** rather than in the turn's
+  world. There is no turn open when someone clicks, and C4 is a statement about
+  what the _model_ was offered when its turn opened — the world is the model's.
+- The tool is handed the loop's detached signal rather than the turn's, so
+  cancelling a turn does not cancel a person's call. It ends when the loop
+  instance is removed, like anything else the loop holds.
+
+Everything else — validation against the tool's own validator, outcomes as
+values, unexpected throws caught — is the one handler, unchanged.
+
+**Two session entry kinds.**
+
+```ts
+| ({ kind: 'human-tool-call'; call: ToolCall } & SessionEntryFields)
+| ({ kind: 'human-tool-result'
+     callId: string
+     name: string
+     outcome: ToolOutcome } & SessionEntryFields)
+```
+
+They carry no `step`, because a person's call is not part of one. Their `turn`
+is the turn they happened beside — the open one, or the last one that closed,
+and `0` before the agent has ever run — so a replayed log puts them back where
+they were without inventing a turn that never opened.
+
+**How the model is told (B1, B2).** A `tool` message quoting a call no
+assistant message asked for is not a transcript any provider will accept, so
+the fold does not produce one. Instead `human-tool-result` derives one `user`
+message in the person's voice:
+
+```
+The operator ran the tool "disable_plugin" with {"id":"action-log"} — result: {"ok":true,…}
+```
+
+`human-tool-call` derives nothing: it is the trace of the result that follows
+it, exactly as `chunk` is the trace of its `assistant` entry. The fold keeps a
+map of the human calls it has passed so the note can quote what was asked for,
+which leaves it pure and total — deriving twice from the same log still gives
+deep-equal messages (B2), and a replayed log still derives the same ones (B3).
+
+So a person's edit is in the session as it happens, shows up in a UI that
+renders the session, and reaches the model as a plain fact at its next request
+(ui.md C3) — and there is never an orphan tool result in what the model sees.
 
 ### Cancellation (C5, C6)
 
@@ -919,8 +1010,10 @@ that export through `StubCall.call`, so the renderer only has to attach them.
 The React implementation lives in the example app, next to
 `@tanstack/react-compose`. The **slot registry** is read the same way, through
 `slotRegistryKey` and a structural `SlotRegistry` (`slot(name)`, `fill(slot, …)`)
-that `@tanstack/react-compose`'s registry satisfies: a page providing its
-registry under this key as well is the whole of the glue.
+whose `render` is `unknown`, because nothing here may name a component type. A
+React page adapts its own registry to it in one small plugin — twenty lines,
+one narrowing of `unknown` back to `ComponentType`, and the operator's, since
+which slots exist is the operator's decision anyway.
 
 **Which slots, as part of the grant (D1).** The operator names them
 (`options.viewSlots`); `grantView` rebuilds the `slots` grant with that list, so
@@ -992,7 +1085,12 @@ until the model has written one.
 - **`cancel()` clears the queue.** See cancellation.
 - **`send` after the loop is removed is ignored, not an error.** A UI holding
   a stale agent handle should not throw; the loop is gone and there is nothing
-  left to run.
+  left to run. `invoke` answers the same handle with
+  `{ ok: false, error: 'the agent has been removed' }`, because it has an
+  outcome to give and a caller that is waiting for one.
+- **A human step reads to the model as a note, not as a tool message.** See
+  above: a tool result with no assistant call before it is not a transcript a
+  provider accepts, and B1 wants the fact in the log all the same.
 - **`maxSteps` exists.** See the state machine.
 - **Tool results are stringified for the model** with `JSON.stringify`, except a
   string result which is passed through. The session keeps the real value in
@@ -1096,8 +1194,9 @@ about carrying its diagnostics and its absence.
 
 ### `docs/acceptance/ui.md` §D
 
-D5 is the whole-app test and belongs to the example app; the rows below are what
-this package proves about views without a browser.
+D5 is the whole-app test and belongs to the example app
+(`examples/react/self-modifying-agent/tests/views.test.tsx`); the rows below are
+what this package proves about views without a browser.
 
 | Id  | Test file                                   | `it()` title                                                                                                                                          |
 | --- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
