@@ -100,6 +100,22 @@ importers:
       '@tanstack/compose':
         specifier: workspace:*
         version: link:../compose
+      '@tanstack/store':
+        specifier: ^0.11.1
+        version: 0.11.1
+    devDependencies:
+      '@cloudflare/vitest-pool-workers':
+        specifier: ^0.22.0
+        version: 0.22.0(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11)
+
+  packages/compose-agent-openai:
+    dependencies:
+      '@tanstack/compose':
+        specifier: workspace:*
+        version: link:../compose
+      '@tanstack/compose-agent':
+        specifier: workspace:*
+        version: link:../compose-agent
 
   packages/compose-devtools:
     dependencies:

@@ -1,28 +1,63 @@
 /**
- * `@tanstack/compose-agent` — the agent vocabulary, built entirely on the kernel.
+ * `@tanstack/compose-agent` — the agent layer, built entirely out of kernel
+ * primitives. An **agent** is an ordinary **client**: the model provider, the
+ * tool registry, the prompt registry, the session log and the loop are each
+ * plugins, every **request** and **tool** call is an **action** other plugins
+ * can wrap, and the **session** is the source of truth everything the model
+ * sees is derived from.
  *
- * Scaffold only. See `ROADMAP.md` (slice 4) for when it gets built and
- * `CONTEXT.md` for the terms it has to use. This package exists to show that a whole agent
- * product is "just plugins", with no privileged core to patch. It will hold the
- * capability *seams* — a definition that owns the key and its vocabulary types,
- * shipped alongside a default provider, with every consumer naming only the key:
- *
- * - **model** — a model-adapter registry. Swapping the provider swaps the backend
- *   for everything downstream, with no forks.
- * - **tools** — a tool registry whose `register()` returns an undo owned by the
- *   *calling* instance, so unloading a tool plugin unregisters its tools.
- * - **prompt** — a prompt-section registry, ordered and scoped, assembled per turn.
- * - **session** — the session/transcript log, plus the turn loop itself as a plugin.
- *
- * The loop is intercepted, never imported: pre-request rewriting, tool pre/execute/post
- * wrapping, turn-stop decisions and approval policy are all waterfall or serial events,
- * so a policy plugin vetoes by declining to delegate.
- *
- * Per-agent worlds come from scoped runtime views: each live agent gets its own view,
- * and tools, prompt sections and listeners registered through it are visible only to
- * that agent and die with it.
+ * Terms are the ones in `CONTEXT.md`; the design is in `DESIGN.md` next to this
+ * file, and the contract it meets is `docs/acceptance/agent.md`.
  */
 
-export const AGENT_VOCABULARY = ['model', 'tools', 'prompt', 'session'] as const
+export {
+  agentKey,
+  modelKey,
+  promptKey,
+  requestAction,
+  sessionAppendedEvent,
+  sessionKey,
+  toolCallAction,
+  toolsKey,
+} from './keys'
 
-export type AgentCapability = (typeof AGENT_VOCABULARY)[number]
+export { deriveMessages, sessionPlugin } from './session'
+export {
+  createTool,
+  toolMiddleware,
+  toolsPlugin,
+  toolsetPlugin,
+  validateArgs,
+} from './tools'
+export { promptPlugin, promptSectionPlugin } from './prompt'
+export { loopPlugin } from './loop'
+export { scriptedModelPlugin } from './scripted'
+export type { ScriptedResponse } from './scripted'
+
+export type {
+  Agent,
+  AgentStatus,
+  AnyTool,
+  ArgsOf,
+  CloseReason,
+  Message,
+  ModelChunk,
+  ModelProvider,
+  ModelRequest,
+  ModelResponse,
+  PromptRegistry,
+  PromptSection,
+  ResultOfTool,
+  SessionEntry,
+  SessionEntryFields,
+  SessionEntryInput,
+  SessionLog,
+  ToolCall,
+  ToolCallInput,
+  ToolConcurrency,
+  ToolContext,
+  ToolDefinition,
+  ToolOutcome,
+  ToolRegistry,
+  ToolSchema,
+} from './types'

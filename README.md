@@ -24,12 +24,13 @@ is [ROADMAP.md](./ROADMAP.md).
 
 ## Packages
 
-| Package                                                     | Description                                                                     |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [`@tanstack/compose`](./packages/compose)                   | The framework-agnostic kernel: runtime, services, effects, events, composition. |
-| [`@tanstack/react-compose`](./packages/react-compose)       | React adapter — provider and hooks.                                             |
-| [`@tanstack/compose-devtools`](./packages/compose-devtools) | Devtools panels: instance states, unmet requirements, effect tree, event trace. |
-| [`@tanstack/compose-agent`](./packages/compose-agent)       | Agent vocabulary and seam plugins: model, tools, prompt, session.               |
+| Package                                                             | Description                                                                     |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [`@tanstack/compose`](./packages/compose)                           | The framework-agnostic kernel: runtime, services, effects, events, composition. |
+| [`@tanstack/react-compose`](./packages/react-compose)               | React adapter — provider and hooks.                                             |
+| [`@tanstack/compose-devtools`](./packages/compose-devtools)         | Devtools panels: instance states, unmet requirements, effect tree, event trace. |
+| [`@tanstack/compose-agent`](./packages/compose-agent)               | The agent layer: model, tools, prompt, session and the loop, all as plugins.    |
+| [`@tanstack/compose-agent-openai`](./packages/compose-agent-openai) | An OpenAI-compatible chat-completions model provider, over `fetch`.             |
 
 ## Examples
 

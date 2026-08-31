@@ -1,9 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    "packages/compose-agent": {
-      "ignoreDependencies": ["@tanstack/compose"]
-    },
     "packages/react-compose": {
       "ignoreDependencies": ["react-dom", "@types/react-dom"]
     }
