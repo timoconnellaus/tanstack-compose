@@ -184,7 +184,7 @@ export const AgentTenant = createComposeDurableObject<AgentEnv>({
       self,
       loader: env.LOADER,
       ai: env.AI,
-      compatibilityDate: '2026-09-01',
+      compatibilityDate: '2026-05-01',
       callTimeoutMs: 1_000,
       limits: { cpuMs: 1_000 },
     }),

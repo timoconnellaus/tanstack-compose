@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tanstack-compose-agent",
   "main": "./src/server.ts",
-  "compatibility_date": "2026-09-01",
+  "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat"],
   "worker_loaders": [{ "binding": "LOADER" }],
   "ai": { "binding": "AI", "remote": true },
