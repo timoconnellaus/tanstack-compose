@@ -25,10 +25,24 @@ interface DurableObjectConstructor<TEnv> {
   new (ctx: DurableObjectState, env: TEnv): object
 }
 
+/** What a re-entered loopback call names: the host, the instance, the stub. */
+export interface StubCallProps {
+  hostId: string
+  instanceId: string
+  stub: string
+}
+
+const isStubCallProps = (value: unknown): value is StubCallProps =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as StubCallProps).hostId === 'string' &&
+  typeof (value as StubCallProps).instanceId === 'string' &&
+  typeof (value as StubCallProps).stub === 'string'
+
 interface ComposeDurableObjectHost extends Host {
   alarm: () => Promise<void>
   schedule: (operation: unknown) => Promise<void>
-  stubCall?: (props: unknown, input: unknown) => Promise<unknown>
+  stubCall?: (props: StubCallProps, input: unknown) => Promise<unknown>
 }
 
 /** RPC and WebSocket surface owned by one tenant/app Durable Object. */
@@ -48,6 +62,11 @@ export interface ComposeDurableObject {
     input?: unknown
   }) => Promise<unknown>
   dispatch: (request: ComposeDispatch) => Promise<unknown>
+  /**
+   * Accept a follower WebSocket upgrade. Connect with `stub.fetch(request)`:
+   * a 101 response carrying a socket cannot cross the RPC boundary.
+   */
+  fetch: (request: Request) => Promise<Response>
   follow: () => Promise<Response>
   browserStatus: () => Promise<Array<BrowserStatusReport>>
   webSocketMessage: (
@@ -243,6 +262,9 @@ export function createComposeDurableObject<TEnv>(
         throw new Error(
           '@tanstack/start-compose: this host does not re-enter loopback calls',
         )
+      }
+      if (!isStubCallProps(props)) {
+        throw new Error('@tanstack/start-compose: malformed stub call props')
       }
       return await this.#host.stubCall(props, input)
     }
@@ -463,6 +485,19 @@ export function createComposeDurableObject<TEnv>(
       this.ctx.acceptWebSocket(server)
       server.send(JSON.stringify(this.#published))
       return new Response(null, { status: 101, webSocket: client })
+    }
+
+    /**
+     * The object's HTTP surface: only the follower upgrade. Everything else is
+     * an RPC method; a socket-bearing 101 has to be returned from `fetch`.
+     */
+    async fetch(request: Request): Promise<Response> {
+      if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+        return new Response('@tanstack/start-compose: upgrade required', {
+          status: 426,
+        })
+      }
+      return await this.follow()
     }
 
     /** Current, connection-scoped render reports from browser followers. */

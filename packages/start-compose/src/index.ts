@@ -23,4 +23,5 @@ export type {
   ComposeDurableObject,
   ComposeDurableObjectClass,
   ComposeDurableObjectOptions,
+  StubCallProps,
 } from './durable-object'

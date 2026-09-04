@@ -26,3 +26,32 @@ export const tenantForApp = (id: AppId): ComposeDurableObject => {
   const objectId = bindings.TENANT.idFromName(`${tenantId()}:${id}`)
   return bindings.TENANT.get(objectId) as unknown as ComposeDurableObject
 }
+
+/** The tenant id carried by a raw request's cookie, outside Start's context. */
+const tenantIdOf = (request: Request): string | undefined =>
+  request.headers
+    .get('cookie')
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('compose-tenant='))
+    ?.slice('compose-tenant='.length)
+
+/**
+ * Upgrade a follower socket straight from the Worker's fetch: a WebSocket
+ * upgrade must reach the Durable Object untouched, and Start's request
+ * pipeline is for pages and server functions.
+ */
+export async function followTenant(request: Request): Promise<Response> {
+  const url = new URL(request.url)
+  const app = url.searchParams.get('app')
+  const tenant = tenantIdOf(request)
+  if (app !== 'table' && app !== 'todo' && app !== 'hostile') {
+    return new Response('unknown app', { status: 400 })
+  }
+  if (tenant === undefined) return new Response('no tenant', { status: 401 })
+  const bindings = env as unknown as ShowcaseEnv
+  const object = bindings.TENANT.get(
+    bindings.TENANT.idFromName(`${tenant}:${app}`),
+  ) as unknown as ComposeDurableObject
+  return await object.fetch(request)
+}
