@@ -15,6 +15,7 @@ import type { ReactNode } from 'react'
 export const inputBoxPlugin = createPlugin({
   name: 'input-box',
   deps: [slotsKey, agentKey],
+  provides: [sendAction],
   setup(instance) {
     const slots = instance.context.get(slotsKey)
     const agent = instance.context.get(agentKey)

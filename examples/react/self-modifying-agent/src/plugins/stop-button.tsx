@@ -17,6 +17,7 @@ import type { ReactNode } from 'react'
 export const stopButtonPlugin = createPlugin({
   name: 'stop-button',
   deps: [agentKey, slotsKey],
+  provides: [cancelAction],
   setup(instance) {
     const agent = instance.context.get(agentKey)
     const slots = instance.context.get(slotsKey)
