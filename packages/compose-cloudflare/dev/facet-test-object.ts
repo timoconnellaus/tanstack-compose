@@ -54,7 +54,8 @@ export class FacetTestObject extends DurableObject<Env> {
       },
       serviceBindings: {
         currency: {
-          fetch(request: Request) {
+          fetch(input: RequestInfo | URL, init?: RequestInit) {
+            const request = new Request(input, init)
             return Promise.resolve(
               Response.json({
                 authorized:

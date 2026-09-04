@@ -367,7 +367,7 @@ each operation traverses its loopback and therefore `stubCallAction` before a
 binding is used. HTTP policy maps a service name to one origin and an optional
 `{ header, value }` credential. A path may not change the origin, and the
 configured header overrides source-supplied headers. AI runs
-`@cf/meta/llama-3.1-8b-instruct-fp8` and returns response text.
+`@cf/zai-org/glm-5.3-flash` and returns response text.
 
 Files use R2 with `${entryId}/` prepended in the host. `get` materializes the
 body as an `ArrayBuffer`; `list` follows every cursor page. Removing an entry

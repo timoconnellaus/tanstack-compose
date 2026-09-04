@@ -130,7 +130,7 @@ type ScheduleCall =
 
 const schedulePrefix = '\0compose:schedule:'
 
-const textModel = '@cf/meta/llama-3.1-8b-instruct-fp8' as const
+const textModel = '@cf/zai-org/glm-5.3-flash' as const
 
 const string = (value: unknown, what: string): string => {
   if (typeof value !== 'string') {
@@ -160,9 +160,10 @@ const httpFetch = async (
   }
   const init = { ...request, headers }
   const binding = bindings[name]
+  const outgoing = new Request(url, init)
   const response = binding
-    ? await binding.fetch(url, init)
-    : await fetch(url, init)
+    ? await binding.fetch(outgoing)
+    : await fetch(outgoing)
   return {
     status: response.status,
     ok: response.ok,
