@@ -219,14 +219,15 @@ export interface SourceChecker {
    * of source be described to another — a **view** checked against the named
    * exports of its plugin's server half, say — without core knowing what either
    * of them is for. A checker that cannot recover exports omits it, and
-   * whatever asked falls back to what it would have declared anyway.
+   * whatever asked falls back to what it would have declared anyway. Recovery
+   * may be asynchronous when the checker loads its compiler lazily.
    */
   exports?: (request: {
     /** The source to read the exports of, as written. */
     source: string
     /** The declarations that source itself compiles against, in grant order. */
     grants: ReadonlyArray<{ name: string; declarations: string }>
-  }) => ReadonlyArray<SourceExport>
+  }) => ReadonlyArray<SourceExport> | Promise<ReadonlyArray<SourceExport>>
 }
 
 /** One named export of plugin source, as a {@link SourceChecker} recovered it. */

@@ -367,8 +367,10 @@ export const composerPlugin = createPlugin({
      * travel on the entry, so the client checks the view against the same text
      * whenever it restarts it (D2).
      */
-    const viewGrantsFor = (source: string): Array<AnyStubGrant> => {
-      const exported = client.checker?.exports?.({
+    const viewGrantsFor = async (
+      source: string,
+    ): Promise<Array<AnyStubGrant>> => {
+      const exported = await client.checker?.exports?.({
         source,
         grants: grantsOf(options.stubs),
       })
@@ -800,7 +802,7 @@ export const composerPlugin = createPlugin({
           })
         }
         const viewGrants =
-          wanted === undefined ? undefined : viewGrantsFor(source)
+          wanted === undefined ? undefined : await viewGrantsFor(source)
         const viewDeclarations =
           viewGrants === undefined ? undefined : declarationsFor(viewGrants)
         if (wanted !== undefined && viewGrants !== undefined) {

@@ -22,7 +22,7 @@
     "generate:lib": "node scripts/generate-lib.mjs",
     "test:eslint": "eslint ./src ./tests",
     "test:types": "tsc",
-    "test:lib": "vitest && vitest --config vitest.jsdom.config.ts",
+    "test:lib": "vitest && vitest --config vitest.jsdom.config.ts && vitest --config vitest.workerd.config.ts",
     "test:lib:dev": "vitest --watch",
     "test:build": "publint --strict",
     "build": "tsdown --tsconfig tsconfig.build.json"
@@ -51,6 +51,7 @@
     "typescript": "6.0.2"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@tanstack/compose-agent": "workspace:*",
     "rolldown": "^1.2.6"
   }

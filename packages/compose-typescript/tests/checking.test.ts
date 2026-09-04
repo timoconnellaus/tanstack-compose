@@ -4,14 +4,14 @@ import { logStub, outcome, toolsStub, write } from './helpers/entry'
 import type { SourceDiagnostic } from '@tanstack/compose'
 
 /** Check one source outside a client, with the tools stub granted. */
-const check = (source: string): Array<SourceDiagnostic> =>
+const check = async (source: string): Promise<Array<SourceDiagnostic>> =>
   (
-    createTypeScriptChecker().check({
+    (await createTypeScriptChecker().check({
       instanceId: 'draft',
       source,
       declarations: toolsStub.declarations,
       grants: [{ name: 'tools', declarations: toolsStub.declarations }],
-    }) as { diagnostics?: Array<SourceDiagnostic> }
+    })) as { diagnostics?: Array<SourceDiagnostic> }
   ).diagnostics ?? []
 
 describe('source that does not type-check', () => {
@@ -39,8 +39,8 @@ describe('source that does not type-check', () => {
     )
   })
 
-  it('reports a misuse of a granted stub at the line and column it is on', () => {
-    const diagnostics = check(
+  it('reports a misuse of a granted stub at the line and column it is on', async () => {
+    const diagnostics = await check(
       [
         'const setup: Setup = async ({ stubs }) => {',
         "  await stubs.tools({ name: 'add' })",
@@ -55,8 +55,8 @@ describe('source that does not type-check', () => {
     expect(diagnostics[0]?.message).toContain("'handler' is missing")
   })
 
-  it('is a type error to name a stub the entry was not granted', () => {
-    const diagnostics = check(
+  it('is a type error to name a stub the entry was not granted', async () => {
+    const diagnostics = await check(
       [
         'const setup: Setup = async ({ stubs }) => {',
         "  await stubs.log('hello')",
@@ -88,8 +88,8 @@ describe('source that does not type-check', () => {
     ).toBe('active')
   })
 
-  it('is a type error to reach a granted stub as a bare global', () => {
-    const diagnostics = check(
+  it('is a type error to reach a granted stub as a bare global', async () => {
+    const diagnostics = await check(
       [
         'const setup: Setup = async () => {',
         "  await tools({ name: 'add', handler: 'add' })",
@@ -108,9 +108,9 @@ describe('source that does not type-check', () => {
     ])
   })
 
-  it('leaves a local of the same name alone', () => {
+  it('leaves a local of the same name alone', async () => {
     expect(
-      check(
+      await check(
         [
           'const setup: Setup = async ({ stubs }) => {',
           '  const tools = stubs.tools',
@@ -122,8 +122,8 @@ describe('source that does not type-check', () => {
     ).toEqual([])
   })
 
-  it('is a type error to use a DOM global', () => {
-    const diagnostics = check(
+  it('is a type error to use a DOM global', async () => {
+    const diagnostics = await check(
       [
         'const setup: Setup = () => {',
         '  document.title = "hello"',
@@ -138,8 +138,8 @@ describe('source that does not type-check', () => {
     expect(diagnostics[0]?.message).toContain("Cannot find name 'document'")
   })
 
-  it('is a type error to import anything', () => {
-    const diagnostics = check(
+  it('is a type error to import anything', async () => {
+    const diagnostics = await check(
       [
         "import { readFile } from 'node:fs'",
         'const setup: Setup = () => {',
@@ -164,8 +164,8 @@ describe('source that does not type-check', () => {
     expect(detail?.diagnostics?.[0]?.message).toBeTruthy()
   })
 
-  it('orders diagnostics by position', () => {
-    const diagnostics = check(
+  it('orders diagnostics by position', async () => {
+    const diagnostics = await check(
       [
         'const setup: Setup = async ({ stubs }) => {',
         '  const first: string = 1',
@@ -181,23 +181,23 @@ describe('source that does not type-check', () => {
 })
 
 describe('the module shape the declarations describe', () => {
-  it('requires a default export, and says so when there is none', () => {
-    const diagnostics = check('export async function add() { return 1 }')
+  it('requires a default export, and says so when there is none', async () => {
+    const diagnostics = await check('export async function add() { return 1 }')
 
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.message).toContain('default')
   })
 
-  it('requires the default export to be a setup function', () => {
-    const diagnostics = check('export default 42')
+  it('requires the default export to be a setup function', async () => {
+    const diagnostics = await check('export default 42')
 
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]?.line).toBe(1)
     expect(diagnostics[0]?.message).toContain("type 'Setup'")
   })
 
-  it('requires every named export to be a callable handler', () => {
-    const diagnostics = check(
+  it('requires every named export to be a callable handler', async () => {
+    const diagnostics = await check(
       [
         'const setup: Setup = () => {}',
         'export default setup',

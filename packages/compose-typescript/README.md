@@ -132,15 +132,15 @@ const baseDeclarations: string
 ```
 
 `createTypeScriptChecker()` also implements the seam's optional
-`exports({ source, grants })`, which returns a module's named exports with the
-type of each where it can be recovered. That is how a **view** is checked
+`exports({ source, grants })`, which asynchronously returns a module's named
+exports with the type of each where it can be recovered. That is how a **view** is checked
 against the named exports of the plugin it belongs to: the caller turns the
 result into declarations, so nothing here knows what a view is.
 
 ## Where it runs, and what it costs
 
-The suite runs under Node and again under jsdom in CI; the checker was also
-run by hand under Bun 1.3, with the same results and the same latency.
+The suite runs under Node, jsdom, and workerd in CI; the checker was also run by
+hand under Bun 1.3, with the same results and the same latency.
 
 |                                                            |             |
 | ---------------------------------------------------------- | ----------- |
@@ -150,11 +150,12 @@ run by hand under Bun 1.3, with the same results and the same latency.
 
 Measured by `tests/budget.test.ts`, which fails if either drifts.
 
-**It is not viable on workerd**, and this package does not try: the bundle is
-far past a Worker's script-size limit, and the in-process host cannot evaluate a
-module built from a string there in any case. A client on workerd that wants
-checked source should check it where it can and start the result — the seam
-allows exactly that, because `check` is the compiler as well as the checker.
+Importing or creating the checker does not evaluate TypeScript. The compiler is
+loaded as a separate chunk on the first check, keeping its roughly 9 MB of
+module evaluation out of a Worker's startup CPU budget. Under `nodejs_compat`,
+the package supplies the two CommonJS path globals TypeScript expects while its
+Node system initializes; checking itself uses only the package's in-memory host
+and generated declaration library.
 
 `typescript` is a regular dependency of this package, and of this package only.
 Core has no compiler and must not gain one.

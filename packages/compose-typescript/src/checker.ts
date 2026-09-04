@@ -1,6 +1,8 @@
-import ts from 'typescript'
 import { declarationLibrary, declarationLibraryEntry } from './generated/lib'
 import { pluginDeclarations } from './declarations'
+import { loadTypeScript } from './load-typescript'
+import type { TypeScript } from './load-typescript'
+import type ts from 'typescript'
 import type {
   SourceCheckResult,
   SourceChecker,
@@ -22,34 +24,40 @@ const shapeFile = '/shape.ts'
  * `types: []` with the library below is what makes "there is nothing to import
  * and nothing ambient" true.
  */
-const compilerOptions: ts.CompilerOptions = {
-  allowJs: false,
-  alwaysStrict: true,
-  isolatedModules: true,
-  lib: [declarationLibraryEntry],
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
-  noEmit: true,
-  noFallthroughCasesInSwitch: true,
-  noImplicitOverride: true,
-  noUncheckedIndexedAccess: true,
-  skipLibCheck: true,
-  strict: true,
-  target: ts.ScriptTarget.ES2022,
-  types: [],
+interface Compiler {
+  readonly ts: TypeScript
+  readonly options: ts.CompilerOptions
+  readonly documentRegistry: ts.DocumentRegistry
+  clock: number
 }
 
-/** Parsed once and shared by every language service the checker opens. */
-const documentRegistry = ts.createDocumentRegistry()
+let compilerLoad: Promise<Compiler> | undefined
 
-/**
- * Script versions come from here rather than from a per-file counter. The
- * document registry is shared, and it keys a parsed file by path _and version_:
- * two services that both call their source `/plugin.ts` version 1 would be
- * handed each other's syntax tree. A number that only ever goes up means a
- * given path never reuses a version for different text.
- */
-let clock = 0
+/** Load and initialise the compiler once, on the first operation that needs it. */
+function loadCompiler(): Promise<Compiler> {
+  compilerLoad ??= loadTypeScript().then((loaded) => ({
+    ts: loaded,
+    options: {
+      allowJs: false,
+      alwaysStrict: true,
+      isolatedModules: true,
+      lib: [declarationLibraryEntry],
+      module: loaded.ModuleKind.ESNext,
+      moduleResolution: loaded.ModuleResolutionKind.Bundler,
+      noEmit: true,
+      noFallthroughCasesInSwitch: true,
+      noImplicitOverride: true,
+      noUncheckedIndexedAccess: true,
+      skipLibCheck: true,
+      strict: true,
+      target: loaded.ScriptTarget.ES2022,
+      types: [],
+    },
+    documentRegistry: loaded.createDocumentRegistry(),
+    clock: 0,
+  }))
+  return compilerLoad
+}
 
 /** How many declaration environments stay warm at once. */
 const sessionLimit = 8
@@ -89,16 +97,22 @@ export function createTypeScriptChecker(): SourceChecker {
   const sessions = new Map<string, Session>()
 
   return {
-    check(request): SourceCheckResult {
+    async check(request): Promise<SourceCheckResult> {
+      const compiler = await loadCompiler()
       const declarations = pluginDeclarations(request.grants)
-      const session = sessionFor(sessions, declarations)
-      const diagnostics = diagnose(session, request.source)
+      const session = sessionFor(compiler, sessions, declarations)
+      const diagnostics = diagnose(compiler, session, request.source)
       if (diagnostics.length > 0) return { diagnostics }
-      return { code: transpile(request.source) }
+      return { code: transpile(compiler, request.source) }
     },
-    exports(request): Array<SourceExport> {
-      const session = sessionFor(sessions, pluginDeclarations(request.grants))
-      return exportedTypes(session, request.source)
+    async exports(request): Promise<Array<SourceExport>> {
+      const compiler = await loadCompiler()
+      const session = sessionFor(
+        compiler,
+        sessions,
+        pluginDeclarations(request.grants),
+      )
+      return exportedTypes(compiler, session, request.source)
     },
     // The same producer `check` compiles against, so a composer that shows this
     // shows the model exactly what its source is checked against (D8).
@@ -116,16 +130,21 @@ export function createTypeScriptChecker(): SourceChecker {
  * rather than printed: the name means nothing in the file the other module is
  * compiled against, and a dangling name would read as a mistake in the view.
  */
-function exportedTypes(session: Session, source: string): Array<SourceExport> {
-  write(session, pluginFile, source)
-  write(session, shapeFile, '')
+function exportedTypes(
+  compiler: Compiler,
+  session: Session,
+  source: string,
+): Array<SourceExport> {
+  const { ts } = compiler
+  write(compiler, session, pluginFile, source)
+  write(compiler, session, shapeFile, '')
   const program = session.service.getProgram()!
   const file = program.getSourceFile(pluginFile)
   if (!file) return []
   const checker = program.getTypeChecker()
   const module = checker.getSymbolAtLocation(file)
   if (!module) return []
-  const local = localTypeNames(file)
+  const local = localTypeNames(compiler, file)
 
   const found: Array<SourceExport> = []
   for (const symbol of checker.getExportsOfModule(module)) {
@@ -149,7 +168,11 @@ function exportedTypes(session: Session, source: string): Array<SourceExport> {
 }
 
 /** The type names the module declares itself, which only mean anything in it. */
-function localTypeNames(file: ts.SourceFile): Array<string> {
+function localTypeNames(
+  compiler: Compiler,
+  file: ts.SourceFile,
+): Array<string> {
+  const { ts } = compiler
   const names: Array<string> = []
   for (const statement of file.statements) {
     if (
@@ -166,10 +189,11 @@ function localTypeNames(file: ts.SourceFile): Array<string> {
 }
 
 /** Strip the types. One file, no program: the program already had its say. */
-function transpile(source: string): string {
+function transpile(compiler: Compiler, source: string): string {
+  const { ts } = compiler
   return ts.transpileModule(source, {
     fileName: pluginFile,
-    compilerOptions: { ...compilerOptions, noEmit: false },
+    compilerOptions: { ...compiler.options, noEmit: false },
   }).outputText
 }
 
@@ -179,9 +203,11 @@ function transpile(source: string): string {
  * grants share one, and an entry whose grants change gets its own.
  */
 function sessionFor(
+  compiler: Compiler,
   sessions: Map<string, Session>,
   declarations: string,
 ): Session {
+  const { ts } = compiler
   const existing = sessions.get(declarations)
   if (existing) {
     // Least-recently-used: re-inserting moves it to the end of the map.
@@ -191,12 +217,12 @@ function sessionFor(
   }
 
   const files = new Map<string, { text: string; version: number }>([
-    [declarationsFile, { text: declarations, version: (clock += 1) }],
-    [pluginFile, { text: '', version: (clock += 1) }],
-    [shapeFile, { text: '', version: (clock += 1) }],
+    [declarationsFile, { text: declarations, version: (compiler.clock += 1) }],
+    [pluginFile, { text: '', version: (compiler.clock += 1) }],
+    [shapeFile, { text: '', version: (compiler.clock += 1) }],
   ])
   const host: ts.LanguageServiceHost = {
-    getCompilationSettings: () => compilerOptions,
+    getCompilationSettings: () => compiler.options,
     getScriptFileNames: () => [declarationsFile, pluginFile, shapeFile],
     getScriptVersion: (fileName) => `${files.get(fileName)?.version ?? 0}`,
     getScriptSnapshot: (fileName) => {
@@ -228,7 +254,7 @@ function sessionFor(
   }
 
   const session: Session = {
-    service: ts.createLanguageService(host, documentRegistry),
+    service: ts.createLanguageService(host, compiler.documentRegistry),
     files,
   }
   sessions.set(declarations, session)
@@ -251,11 +277,16 @@ function read(
 }
 
 /** Put a file's text in place, bumping its version only when it changed. */
-function write(session: Session, fileName: string, text: string): void {
+function write(
+  compiler: Compiler,
+  session: Session,
+  fileName: string,
+  text: string,
+): void {
   const file = session.files.get(fileName)!
   if (file.text === text) return
   file.text = text
-  file.version = clock += 1
+  file.version = compiler.clock += 1
 }
 
 /**
@@ -263,8 +294,13 @@ function write(session: Session, fileName: string, text: string): void {
  * syntactic and semantic diagnostics, the module-shape assertions, and the
  * stubs the source reached for as bare globals.
  */
-function diagnose(session: Session, source: string): Array<SourceDiagnostic> {
-  write(session, pluginFile, source)
+function diagnose(
+  compiler: Compiler,
+  session: Session,
+  source: string,
+): Array<SourceDiagnostic> {
+  const { ts } = compiler
+  write(compiler, session, pluginFile, source)
   const parsed = ts.createSourceFile(
     pluginFile,
     source,
@@ -272,9 +308,9 @@ function diagnose(session: Session, source: string): Array<SourceDiagnostic> {
     true,
     ts.ScriptKind.TS,
   )
-  const exported = exportsOf(parsed)
+  const exported = exportsOf(compiler, parsed)
   const shape = shapeAssertions(exported)
-  write(session, shapeFile, shape.text)
+  write(compiler, session, shapeFile, shape.text)
 
   const program = session.service.getProgram()!
   const file = program.getSourceFile(pluginFile)!
@@ -282,7 +318,7 @@ function diagnose(session: Session, source: string): Array<SourceDiagnostic> {
   const declarations = session.service.getSyntacticDiagnostics(declarationsFile)
   if (declarations.length > 0) {
     return declarations.map((diagnostic) => ({
-      message: `the declarations for this entry are not valid TypeScript: ${message(diagnostic)}`,
+      message: `the declarations for this entry are not valid TypeScript: ${message(compiler, diagnostic)}`,
     }))
   }
 
@@ -291,7 +327,7 @@ function diagnose(session: Session, source: string): Array<SourceDiagnostic> {
     ...session.service.getSemanticDiagnostics(pluginFile),
   ].map((diagnostic) => ({
     position: diagnostic.start ?? 0,
-    message: message(diagnostic),
+    message: message(compiler, diagnostic),
   }))
 
   // Anything wrong with the source itself comes first and alone: the shape
@@ -304,9 +340,9 @@ function diagnose(session: Session, source: string): Array<SourceDiagnostic> {
       : [
           ...session.service.getSemanticDiagnostics(shapeFile).map((one) => ({
             position: shape.positions.get(lineOf(one)) ?? 0,
-            message: message(one),
+            message: message(compiler, one),
           })),
-          ...reachedStubs(program, file),
+          ...reachedStubs(compiler, program, file),
         ]
 
   const found = [...own, ...extra]
@@ -318,7 +354,8 @@ function diagnose(session: Session, source: string): Array<SourceDiagnostic> {
 }
 
 /** TypeScript's own sentence, never the code number alone. */
-function message(diagnostic: ts.Diagnostic): string {
+function message(compiler: Compiler, diagnostic: ts.Diagnostic): string {
+  const { ts } = compiler
   return ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')
 }
 
@@ -353,7 +390,11 @@ function shapeAssertions(exported: ReadonlyArray<ExportedName>): {
 }
 
 /** The runtime exports of the written module, and where each is written. */
-function exportsOf(file: ts.SourceFile): Array<ExportedName> {
+function exportsOf(
+  compiler: Compiler,
+  file: ts.SourceFile,
+): Array<ExportedName> {
+  const { ts } = compiler
   const found: Array<ExportedName> = []
   const has = (node: ts.Node, kind: ts.SyntaxKind): boolean =>
     ts.canHaveModifiers(node) &&
@@ -408,14 +449,16 @@ function exportsOf(file: ts.SourceFile): Array<ExportedName> {
  * rather than matching text means a local of the same name is left alone.
  */
 function reachedStubs(
+  compiler: Compiler,
   program: ts.Program,
   file: ts.SourceFile,
 ): Array<{ position: number; message: string }> {
+  const { ts } = compiler
   const checker = program.getTypeChecker()
   const found: Array<{ position: number; message: string }> = []
 
   const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && isValuePosition(node)) {
+    if (ts.isIdentifier(node) && isValuePosition(compiler, node)) {
       const symbol = checker.getSymbolAtLocation(node)
       const declaredInDeclarations =
         symbol?.declarations?.some(
@@ -440,7 +483,8 @@ function reachedStubs(
 }
 
 /** Whether this identifier is a use of a value rather than a property name. */
-function isValuePosition(node: ts.Identifier): boolean {
+function isValuePosition(compiler: Compiler, node: ts.Identifier): boolean {
+  const { ts } = compiler
   const parent = node.parent as ts.Node | undefined
   if (!parent) return false
   if (ts.isPropertyAccessExpression(parent) && parent.name === node)
