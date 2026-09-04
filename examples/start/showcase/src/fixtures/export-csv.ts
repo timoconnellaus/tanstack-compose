@@ -13,7 +13,7 @@ const cell = (value: string | number): string =>
   '"' + String(value).replaceAll('"', '""') + '"'
 
 export async function csv(_input: undefined): Promise<string> {
-  const rows = await api.data({ operation: 'rows' })
+  const rows = await api.data.rows()
   return [
     'id,name,city,amount,due',
     ...rows.map((row) =>

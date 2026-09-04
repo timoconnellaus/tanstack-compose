@@ -12,3 +12,9 @@ export const BrowserTodoApp = unavailable
 
 /** Unreachable production placeholder selected instead of the S1 client. */
 export const BrowserHostileApp = unavailable
+
+/** Unreachable production placeholder selected instead of the S1 client. */
+export const BrowserPairApp = unavailable
+
+/** Unreachable production placeholder selected instead of the S1 client. */
+export const BrowserUpgradeApp = unavailable

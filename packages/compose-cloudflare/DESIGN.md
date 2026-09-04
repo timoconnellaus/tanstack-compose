@@ -168,6 +168,16 @@ wrapper methods that this package itself generated.
 
 ## The wrapper module
 
+Method-shaped grants are additive metadata on the same loopback seam. The host
+passes each granted stub's optional method names into the generated wrapper;
+the wrapper exposes either the existing callable or a frozen null-prototype
+object with one function per declared method. A method function sends
+`{ method, args }` through the same loopback, so identity, limits, revocation,
+re-entry, and error handling remain unchanged. No `Proxy` or extra binding is
+introduced, and `storage` and `schedule` retain their host-local implementations.
+`tests/loopback.test.ts` exercises that generated method object in a Dynamic
+Worker; the showcase workerd suite exercises the same shape through a facet.
+
 Generated per instance from the granted stub names, loaded as the isolate's
 `mainModule` beside the written module as `plugin.js`. It is the only code in
 the isolate the plugin author did not write, and it does three things.

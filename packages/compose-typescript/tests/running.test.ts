@@ -25,6 +25,7 @@ describe('source that type-checks', () => {
 
   it('hands the host plain JavaScript, not the TypeScript it was given', async () => {
     const result = await createTypeScriptChecker().check({
+      baseVersion: 'test',
       instanceId: 'written',
       source: adder,
       declarations: toolsStub.declarations,

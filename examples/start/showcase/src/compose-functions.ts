@@ -11,7 +11,15 @@ type AppId = ShowcaseApp['id']
 
 /** Validate a route or server-function app id. */
 export const parseAppId = (value: unknown): AppId => {
-  if (value === 'table' || value === 'todo' || value === 'hostile') return value
+  if (
+    value === 'table' ||
+    value === 'todo' ||
+    value === 'hostile' ||
+    value === 'upgrade' ||
+    value === 'pair'
+  ) {
+    return value
+  }
   throw new Error('showcase: invalid app id')
 }
 
@@ -23,9 +31,11 @@ export const ensureTenant = createServerFn().handler(async () =>
 /** Load the full snapshot used for both SSR and hydration. */
 export const getComposeSnapshot = createServerFn()
   .validator(parseAppId)
-  .handler(async ({ data }) =>
-    (await import('./compose.server')).tenantForApp(data).snapshot(data),
-  )
+  .handler(async ({ data }) => {
+    const server = await import('./compose.server')
+    const boot = data === 'upgrade' ? `${data}:${server.selectedBase()}` : data
+    return server.tenantForApp(data).snapshot(boot)
+  })
 
 /** Apply one plugin-list edit and return the settled generation. */
 export const editCompose = createServerFn({ method: 'POST' })
@@ -35,6 +45,25 @@ export const editCompose = createServerFn({ method: 'POST' })
       .tenantForApp(parseAppId(data.app))
       .edit(data.operation),
   )
+
+/** Append and apply a copy of one earlier generation. */
+export const revertCompose = createServerFn({ method: 'POST' })
+  .validator((value: { app: AppId; generation: number }) => value)
+  .handler(async ({ data }) =>
+    (await import('./compose.server'))
+      .tenantForApp(parseAppId(data.app))
+      .revert(data.generation),
+  )
+
+/** Set the Upgrade cookie and rebuild that tenant client against the base. */
+export const switchComposeBase = createServerFn({ method: 'POST' })
+  .validator((value: 'v1' | 'v2') => value)
+  .handler(async ({ data }) => {
+    if (data !== 'v1' && data !== 'v2') throw new Error('invalid base version')
+    const server = await import('./compose.server')
+    server.selectBase(data)
+    return server.tenantForApp('upgrade').reset(`upgrade:${data}`)
+  })
 
 /** Dispatch one named ordinary base action in the authoritative client. */
 export const dispatchCompose = createServerFn({ method: 'POST' })

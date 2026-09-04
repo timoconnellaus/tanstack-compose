@@ -62,6 +62,7 @@ export type {
   Host,
   HostInstance,
   HostStartRequest,
+  HostStub,
   SourceCheckResult,
   SourceChecker,
   SourceDiagnostic,

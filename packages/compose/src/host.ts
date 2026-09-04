@@ -27,7 +27,13 @@ export interface HostStartRequest {
   /** The instance's validated options; structured-clone-safe. */
   readonly options: unknown
   /** The stubs the operator granted, already bound to this instance. */
-  readonly stubs: Readonly<Record<string, (input: unknown) => Promise<unknown>>>
+  readonly stubs: Readonly<Record<string, HostStub>>
+}
+
+/** One instance-bound stub callable, with optional method-shape metadata. */
+export interface HostStub {
+  (input: unknown): Promise<unknown>
+  readonly methods?: ReadonlyArray<string>
 }
 
 /** One started hosted plugin, as the client sees it. */
@@ -72,6 +78,8 @@ export interface StubGrant<TInput = any, TOutput = any> {
   readonly name: string
   /** The declarations a plugin holding this stub is checked against and shown. */
   readonly declarations: string
+  /** Method names a host exposes as a plain object instead of one callable. */
+  readonly methods?: ReadonlyArray<string>
   /** Context keys the handler needs; they become the hosted entry's deps. */
   readonly deps: ReadonlyArray<AnyContextKey>
   /** Context keys the handler may provide through `call.instance.provide`. */
@@ -189,6 +197,8 @@ export interface SourceCheckResult {
  */
 export interface SourceChecker {
   check: (request: {
+    /** Content hash of the generated base declarations for this check. */
+    baseVersion: string
     /** The entry whose source this is. */
     instanceId: string
     /** The source as written. */
@@ -408,7 +418,7 @@ export const inProcessHost: Host = {
     const stubs: Record<string, unknown> = {}
     for (const [name, stub] of Object.entries(request.stubs)) {
       if (name === storageStub.name || name === scheduleStub.name) continue
-      stubs[name] = async (input: unknown) => {
+      const call = async (input: unknown) => {
         if (stopped) {
           throw new Error(
             `@tanstack/compose: stub "${name}" was revoked when instance "${request.instanceId}" stopped`,
@@ -417,6 +427,19 @@ export const inProcessHost: Host = {
         const result = await stub(transfer(input, `stub "${name}" input`))
         return transfer(result, `stub "${name}" result`)
       }
+      stubs[name] = stub.methods
+        ? Object.freeze(
+            Object.assign(
+              Object.create(null) as Record<string, unknown>,
+              Object.fromEntries(
+                stub.methods.map((method) => [
+                  method,
+                  (...args: Array<unknown>) => call({ method, args }),
+                ]),
+              ),
+            ),
+          )
+        : call
     }
 
     const stateful =

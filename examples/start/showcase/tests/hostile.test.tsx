@@ -99,6 +99,7 @@ describe('the hostile gallery', () => {
       (one) => one.id === 'reaches-outside',
     )!
     const checkedOutside = await page.client.checker?.check({
+      baseVersion: page.client.baseVersion,
       instanceId: outsideFixture.id,
       source: outsideFixture.source,
       declarations: stubDeclarations(outsideFixture.stubs),

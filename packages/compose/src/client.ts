@@ -6,7 +6,13 @@ import {
   stubCallAction,
   stubDeclarations,
 } from './host'
-import type { AnyStubGrant, Host, HostInstance, SourceChecker } from './host'
+import type {
+  AnyStubGrant,
+  Host,
+  HostInstance,
+  HostStub,
+  SourceChecker,
+} from './host'
 import type {
   ActionDefinition,
   ActionHandler,
@@ -133,6 +139,7 @@ const sameOptions = (a: unknown, b: unknown): boolean => {
 }
 
 class ClientImpl implements Client {
+  readonly baseVersion: string
   readonly checker: SourceChecker | undefined
   readonly pluginList: Store<Array<PluginEntry>>
   readonly instances: Store<Array<InstanceSnapshot>>
@@ -157,12 +164,14 @@ class ClientImpl implements Client {
   #errorLimit: number
 
   constructor(options?: {
+    baseVersion?: string
     plugins?: Array<PluginEntry>
     hosts?: Record<string, Host>
     checker?: SourceChecker
     onError?: (report: ClientErrorReport) => void
     errorLimit?: number
   }) {
+    this.baseVersion = options?.baseVersion ?? ''
     this.checker = options?.checker
     this.#onError = options?.onError
     this.#errorLimit = options?.errorLimit ?? 200
@@ -493,6 +502,7 @@ class ClientImpl implements Client {
     const checker = this.checker
     if (checker) {
       const checked = await checker.check({
+        baseVersion: this.baseVersion,
         instanceId: instance.id,
         source: code,
         declarations: stubDeclarations(grants),
@@ -535,16 +545,20 @@ class ClientImpl implements Client {
       this.#hosted.delete(instance.id)
     }, 'stubs')
 
-    const stubs: Record<string, (input: unknown) => Promise<unknown>> = {}
+    const stubs: Record<string, HostStub> = {}
     for (const grant of grants) {
       // The instance id is in the closure, not in an argument: the plugin holds
       // the callable and can neither read nor forge who it is calling as.
-      stubs[grant.name] = (input: unknown) =>
+      const stub: HostStub = (input: unknown) =>
         this.#dispatch(stubCallAction, {
           stub: grant.name,
           instanceId: instance.id,
           input,
         })
+      if (grant.methods) {
+        Object.defineProperty(stub, 'methods', { value: grant.methods })
+      }
+      stubs[grant.name] = stub
     }
 
     hosted.hosted = await host.start({
@@ -810,6 +824,7 @@ class ClientImpl implements Client {
     const edit = (): Promise<void> =>
       record.phase === 'idle' ? this.#editDone() : Promise.resolve()
     record.view ??= {
+      baseVersion: this.baseVersion,
       checker: this.checker,
       pluginList: this.pluginList,
       instances: this.instances,
@@ -1274,6 +1289,8 @@ class ClientImpl implements Client {
  * ```
  */
 export function createClient(options?: {
+  /** Content hash of the generated base declarations. Defaults to empty. */
+  baseVersion?: string
   /** The initial plugin list. */
   plugins?: Array<PluginEntry>
   /** The source checker to apply to every source entry, regardless of order. */

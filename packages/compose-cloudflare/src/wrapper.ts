@@ -42,20 +42,34 @@ export interface WrapperResult {
  * the loader and the wrapper's own state are all closed over in this module and
  * never passed across (D6).
  */
-export function wrapperSource(stubNames: ReadonlyArray<string>): string {
+export function wrapperSource(
+  stubNames: ReadonlyArray<string>,
+  stubMethods: Readonly<Record<string, ReadonlyArray<string>>> = {},
+): string {
   return `import { WorkerEntrypoint } from 'cloudflare:workers'
 
 const stubNames = ${JSON.stringify([...stubNames])}
+const stubMethods = ${JSON.stringify(stubMethods)}
 
 /** One capability object, built from the loopbacks and nothing else. */
 function stubsFrom(env) {
   const stubs = Object.create(null)
   for (const name of stubNames) {
     const loopback = env[name]
-    stubs[name] = async (input) => {
+    const call = async (input) => {
       const answer = await loopback.stubCall(input)
       if (!answer.ok) throw new Error(answer.message)
       return answer.value
+    }
+    const methods = stubMethods[name]
+    if (methods) {
+      const shaped = Object.create(null)
+      for (const method of methods) {
+        shaped[method] = (...args) => call({ method, args })
+      }
+      stubs[name] = Object.freeze(shaped)
+    } else {
+      stubs[name] = call
     }
   }
   return Object.freeze(stubs)
@@ -170,10 +184,14 @@ export class ${wrapperEntrypoint} extends WorkerEntrypoint {
  * The Dynamic Worker module used for a Durable Object facet. Storage is local
  * to the facet; every other granted stub is a loopback to the parent object.
  */
-export function facetWrapperSource(stubNames: ReadonlyArray<string>): string {
+export function facetWrapperSource(
+  stubNames: ReadonlyArray<string>,
+  stubMethods: Readonly<Record<string, ReadonlyArray<string>>> = {},
+): string {
   return `import { DurableObject } from 'cloudflare:workers'
 
 const stubNames = ${JSON.stringify([...stubNames])}
+const stubMethods = ${JSON.stringify(stubMethods)}
 const dataPrefix = '\\0compose:data:'
 
 const failed = (phase, error) => ({
@@ -200,10 +218,20 @@ function stubsFrom(ctx, env) {
   for (const name of stubNames) {
     if (name === 'storage' || name === 'schedule') continue
     const loopback = env[name]
-    stubs[name] = async (input) => {
+    const call = async (input) => {
       const answer = await loopback.stubCall(input)
       if (!answer.ok) throw new Error(answer.message)
       return answer.value
+    }
+    const methods = stubMethods[name]
+    if (methods) {
+      const shaped = Object.create(null)
+      for (const method of methods) {
+        shaped[method] = (...args) => call({ method, args })
+      }
+      stubs[name] = Object.freeze(shaped)
+    } else {
+      stubs[name] = call
     }
   }
   if (stubNames.includes('storage')) {

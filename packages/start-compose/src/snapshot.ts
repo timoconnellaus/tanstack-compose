@@ -2,6 +2,7 @@ import { batch } from '@tanstack/store'
 import { createSlot, createViewRenderer } from '@tanstack/react-compose'
 import { Component, createElement } from 'react'
 import type { Cleanup, InstanceSnapshot } from '@tanstack/compose'
+import type { GenerationOutcome } from '@tanstack/compose/generations'
 import type {
   SlotRegistry,
   ViewCallback,
@@ -49,6 +50,9 @@ export interface SerializedFill {
 /** Everything the browser needs for its first render and later convergence. */
 export interface ComposeSnapshot {
   generation: number
+  baseVersion: string
+  outcome: GenerationOutcome
+  lastKnownGood?: number
   pluginList: Array<SnapshotEntry>
   instances: Array<
     Omit<InstanceSnapshot, 'error'> & { error?: { message: string } }

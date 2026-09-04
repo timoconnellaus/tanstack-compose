@@ -1,4 +1,10 @@
 import { createClient, sourceErrorOf } from '@tanstack/compose'
+import {
+  appendGeneration,
+  lastKnownGood,
+  recordOutcome,
+  revertTo,
+} from '@tanstack/compose/generations'
 import { slotsKey } from '@tanstack/react-compose'
 import { serializeFills } from './snapshot'
 import type {
@@ -11,6 +17,7 @@ import type {
   PluginEntry,
   SourceChecker,
 } from '@tanstack/compose'
+import type { Generation } from '@tanstack/compose/generations'
 import type { SlotRegistry, ViewNode } from '@tanstack/react-compose'
 import type {
   BrowserStatusReport,
@@ -55,6 +62,12 @@ export interface ComposeDurableObject {
   alarm: () => Promise<void>
   snapshot: (appId?: string) => Promise<ComposeSnapshot>
   edit: (operation: ComposeEdit) => Promise<ComposeSnapshot>
+  /** Return the persisted append-only generation log. */
+  generations: () => Promise<Array<Generation<SerializedEntry>>>
+  /** Append and settle a copy of an earlier generation's entries. */
+  revert: (n: number) => Promise<ComposeSnapshot>
+  /** Rebuild the in-memory client while retaining its generation log. */
+  reset: (appId?: string) => Promise<ComposeSnapshot>
   press: (request: ComposePress) => Promise<unknown>
   callSource: (request: {
     id: string
@@ -109,6 +122,7 @@ export interface ComposeDurableObjectOptions<TEnv> {
       entries: ReadonlyArray<SerializedEntry>
       grants: Readonly<Record<string, AnyStubGrant>>
       checker: SourceChecker | undefined
+      baseVersion: string
     },
   ) => Promise<ReadonlyArray<AnyStubGrant>>
   /** Base actions the browser shell may dispatch, keyed by public name. */
@@ -121,17 +135,28 @@ export interface ComposeDurableObjectOptions<TEnv> {
     env: TEnv
     self: () => DurableObjectStub
   }) => ComposeDurableObjectHost
+  /** Current generated declaration hash, fixed or selected from the boot id. */
+  baseVersion: string | ((appId?: string) => string)
   checker?: SourceChecker
+  /** Select a checker carrying the declarations for a dynamic base version. */
+  createChecker?: (baseVersion: string) => SourceChecker
   hostName?: string
 }
 
-const listKey = 'compose:plugin-list'
-const generationKey = 'compose:generation'
+const generationsKey = 'compose:generations'
 
 const cloneEntries = (entries: ReadonlyArray<SerializedEntry>) =>
   entries.map((entry) => ({
     ...entry,
     stubs: [...entry.stubs],
+  }))
+
+const cloneGenerations = (
+  log: ReadonlyArray<Generation<SerializedEntry>>,
+): Array<Generation<SerializedEntry>> =>
+  log.map((generation) => ({
+    ...generation,
+    entries: cloneEntries(generation.entries),
   }))
 
 const publicEntries = (
@@ -187,9 +212,11 @@ export function createComposeDurableObject<TEnv>(
     readonly env: TEnv
     #ready?: Promise<void>
     #client!: Client
+    #checker: SourceChecker | undefined
     #registry!: SlotRegistry
     #entries: Array<SerializedEntry> = []
-    #generation = 0
+    #log: Array<Generation<SerializedEntry>> = []
+    #baseVersion = ''
     #published!: ComposeSnapshot
     #publishing?: Promise<ComposeSnapshot>
     #publishQueued = false
@@ -210,7 +237,10 @@ export function createComposeDurableObject<TEnv>(
     }
 
     async #initialize(appId?: string): Promise<void> {
-      const stored = await this.ctx.storage.get<Array<SerializedEntry>>(listKey)
+      const stored =
+        await this.ctx.storage.get<Array<Generation<SerializedEntry>>>(
+          generationsKey,
+        )
       if (
         stored === undefined &&
         typeof options.initialPluginList === 'function' &&
@@ -220,16 +250,32 @@ export function createComposeDurableObject<TEnv>(
           '@tanstack/start-compose: this Durable Object needs its app id on the first snapshot',
         )
       }
-      this.#entries =
-        stored ??
-        cloneEntries(
-          typeof options.initialPluginList === 'function'
-            ? options.initialPluginList(appId!)
-            : options.initialPluginList,
-        )
-      this.#generation =
-        (await this.ctx.storage.get<number>(generationKey)) ?? 0
-      await this.ctx.storage.put(listKey, this.#entries)
+      this.#baseVersion =
+        typeof options.baseVersion === 'function'
+          ? appId === undefined && stored?.at(-1)
+            ? stored.at(-1)!.baseVersion
+            : options.baseVersion(appId)
+          : options.baseVersion
+      this.#checker =
+        options.createChecker?.(this.#baseVersion) ?? options.checker
+      this.#log = stored ? cloneGenerations(stored) : []
+      if (this.#log.length === 0) {
+        this.#log = appendGeneration(this.#log, {
+          baseVersion: this.#baseVersion,
+          entries: cloneEntries(
+            typeof options.initialPluginList === 'function'
+              ? options.initialPluginList(appId!)
+              : options.initialPluginList,
+          ),
+        })
+      } else if (this.#log.at(-1)!.baseVersion !== this.#baseVersion) {
+        this.#log = appendGeneration(this.#log, {
+          baseVersion: this.#baseVersion,
+          entries: this.#log.at(-1)!.entries,
+        })
+      }
+      this.#entries = cloneEntries(this.#log.at(-1)!.entries)
+      await this.#persistLog()
       const input = { ctx: this.ctx, env: this.env }
       this.#host = options.createHost({
         ...input,
@@ -237,11 +283,13 @@ export function createComposeDurableObject<TEnv>(
       })
       this.#hostName = options.hostName ?? this.#host.name
       this.#client = createClient({
-        checker: options.checker,
+        baseVersion: this.#baseVersion,
+        checker: this.#checker,
         hosts: { [this.#hostName]: this.#host },
         plugins: await this.#materialize(this.#entries),
       })
       await this.#client.settled()
+      await this.#recordHead()
       const registry = this.#client.getContext(slotsKey)
       if (!registry) {
         throw new Error(
@@ -251,7 +299,7 @@ export function createComposeDurableObject<TEnv>(
       this.#registry = registry
       this.#client.instances.subscribe(() => this.#schedulePublish())
       this.#registry.state.subscribe(() => this.#schedulePublish())
-      await this.#publishNow()
+      this.#publishNow()
     }
 
     /** Dispatch a loopback call after RPC re-enters this object. */
@@ -300,7 +348,8 @@ export function createComposeDurableObject<TEnv>(
       const context = {
         entries,
         grants: options.grants,
-        checker: options.checker,
+        checker: this.#checker,
+        baseVersion: this.#baseVersion,
       }
       return await Promise.all(
         entries.map(async (entry): Promise<PluginEntry> => {
@@ -332,8 +381,13 @@ export function createComposeDurableObject<TEnv>(
     }
 
     #snapshot(): ComposeSnapshot {
+      const head = this.#log.at(-1)!
+      const knownGood = lastKnownGood(this.#log)
       return {
-        generation: this.#generation,
+        generation: head.n,
+        baseVersion: head.baseVersion,
+        outcome: head.outcome,
+        ...(knownGood === undefined ? {} : { lastKnownGood: knownGood.n }),
         pluginList: publicEntries(this.#entries),
         instances: serialInstances(this.#client.inspect()),
         fills: serializeFills(this.#registry),
@@ -344,11 +398,11 @@ export function createComposeDurableObject<TEnv>(
       this.#publishQueued = true
       if (this.#publishing || this.#reconciling) return
       this.#publishing = Promise.resolve()
-        .then(async () => {
+        .then(() => {
           let latest = this.#published
           while (this.#publishQueued && !this.#reconciling) {
             this.#publishQueued = false
-            latest = await this.#publishNow()
+            latest = this.#publishNow()
           }
           return latest
         })
@@ -361,9 +415,7 @@ export function createComposeDurableObject<TEnv>(
       this.ctx.waitUntil(this.#publishing)
     }
 
-    async #publishNow(): Promise<ComposeSnapshot> {
-      this.#generation += 1
-      await this.ctx.storage.put(generationKey, this.#generation)
+    #publishNow(): ComposeSnapshot {
       this.#published = this.#snapshot()
       const message = JSON.stringify(this.#published)
       for (const socket of this.ctx.getWebSockets()) socket.send(message)
@@ -410,15 +462,74 @@ export function createComposeDurableObject<TEnv>(
           )
           break
       }
-      await this.ctx.storage.put(listKey, this.#entries)
+      this.#log = appendGeneration(this.#log, {
+        entries: this.#entries,
+        baseVersion: this.#baseVersion,
+      })
+      await this.#persistLog()
       this.#reconciling = true
       try {
         await this.#client.setPluginList(await this.#materialize(this.#entries))
       } finally {
         this.#reconciling = false
+        await this.#recordHead()
       }
       this.#schedulePublish()
       return await this.#publishing!
+    }
+
+    async #persistLog(): Promise<void> {
+      await this.ctx.storage.put(generationsKey, this.#log)
+    }
+
+    async #recordHead(): Promise<void> {
+      const head = this.#log.at(-1)
+      if (!head || head.outcome !== 'pending') return
+      this.#log = recordOutcome(this.#log, head.n, this.#client.inspect())
+      await this.#persistLog()
+    }
+
+    /** The complete persisted generation history, with no live values. */
+    async generations(): Promise<Array<Generation<SerializedEntry>>> {
+      await this.#ensure()
+      return cloneGenerations(this.#log)
+    }
+
+    /** Reconcile an earlier list as a new generation under the current base. */
+    async revert(n: number): Promise<ComposeSnapshot> {
+      await this.#ensure()
+      const next = revertTo(this.#log, n)
+      if (next.length === this.#log.length) {
+        throw new Error(`@tanstack/start-compose: there is no generation ${n}`)
+      }
+      this.#log = next
+      this.#entries = cloneEntries(this.#log.at(-1)!.entries)
+      await this.#persistLog()
+      this.#reconciling = true
+      try {
+        await this.#client.setPluginList(await this.#materialize(this.#entries))
+      } finally {
+        this.#reconciling = false
+        await this.#recordHead()
+      }
+      this.#schedulePublish()
+      return await this.#publishing!
+    }
+
+    /** Destroy and reconstruct only the in-memory client, retaining history. */
+    async reset(appId?: string): Promise<ComposeSnapshot> {
+      await this.#ensure(appId)
+      this.#reconciling = true
+      try {
+        await this.#client.destroy()
+      } finally {
+        this.#reconciling = false
+      }
+      this.#ready = undefined
+      this.#publishing = undefined
+      this.#publishQueued = false
+      await this.#ensure(appId)
+      return this.#published
     }
 
     /** Call only a handler named by a fill owned by this view instance. */

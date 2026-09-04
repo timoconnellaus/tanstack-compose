@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HostileRouteImport } from './routes/hostile'
+import { Route as PairRouteImport } from './routes/pair'
 import { Route as TableRouteImport } from './routes/table'
 import { Route as TodoRouteImport } from './routes/todo'
+import { Route as UpgradeRouteImport } from './routes/upgrade'
 import { Route as ApiComposeFollowRouteImport } from './routes/api.compose.follow'
 
 const IndexRoute = IndexRouteImport.update({
@@ -25,6 +27,11 @@ const HostileRoute = HostileRouteImport.update({
   path: '/hostile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PairRoute = PairRouteImport.update({
+  id: '/pair',
+  path: '/pair',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TableRoute = TableRouteImport.update({
   id: '/table',
   path: '/table',
@@ -33,6 +40,11 @@ const TableRoute = TableRouteImport.update({
 const TodoRoute = TodoRouteImport.update({
   id: '/todo',
   path: '/todo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UpgradeRoute = UpgradeRouteImport.update({
+  id: '/upgrade',
+  path: '/upgrade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiComposeFollowRoute = ApiComposeFollowRouteImport.update({
@@ -44,38 +56,68 @@ const ApiComposeFollowRoute = ApiComposeFollowRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/hostile': typeof HostileRoute
+  '/pair': typeof PairRoute
   '/table': typeof TableRoute
   '/todo': typeof TodoRoute
+  '/upgrade': typeof UpgradeRoute
   '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/hostile': typeof HostileRoute
+  '/pair': typeof PairRoute
   '/table': typeof TableRoute
   '/todo': typeof TodoRoute
+  '/upgrade': typeof UpgradeRoute
   '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/hostile': typeof HostileRoute
+  '/pair': typeof PairRoute
   '/table': typeof TableRoute
   '/todo': typeof TodoRoute
+  '/upgrade': typeof UpgradeRoute
   '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
+  fullPaths:
+    | '/'
+    | '/hostile'
+    | '/pair'
+    | '/table'
+    | '/todo'
+    | '/upgrade'
+    | '/api/compose/follow'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
-  id: '__root__' | '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
+  to:
+    | '/'
+    | '/hostile'
+    | '/pair'
+    | '/table'
+    | '/todo'
+    | '/upgrade'
+    | '/api/compose/follow'
+  id:
+    | '__root__'
+    | '/'
+    | '/hostile'
+    | '/pair'
+    | '/table'
+    | '/todo'
+    | '/upgrade'
+    | '/api/compose/follow'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HostileRoute: typeof HostileRoute
+  PairRoute: typeof PairRoute
   TableRoute: typeof TableRoute
   TodoRoute: typeof TodoRoute
+  UpgradeRoute: typeof UpgradeRoute
   ApiComposeFollowRoute: typeof ApiComposeFollowRoute
 }
 
@@ -95,6 +137,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HostileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pair': {
+      id: '/pair'
+      path: '/pair'
+      fullPath: '/pair'
+      preLoaderRoute: typeof PairRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/table': {
       id: '/table'
       path: '/table'
@@ -107,6 +156,13 @@ declare module '@tanstack/react-router' {
       path: '/todo'
       fullPath: '/todo'
       preLoaderRoute: typeof TodoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/upgrade': {
+      id: '/upgrade'
+      path: '/upgrade'
+      fullPath: '/upgrade'
+      preLoaderRoute: typeof UpgradeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/compose/follow': {
@@ -122,8 +178,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HostileRoute: HostileRoute,
+  PairRoute: PairRoute,
   TableRoute: TableRoute,
   TodoRoute: TodoRoute,
+  UpgradeRoute: UpgradeRoute,
   ApiComposeFollowRoute: ApiComposeFollowRoute,
 }
 export const routeTree = rootRouteImport

@@ -2,6 +2,8 @@ import { slotsPlugin, viewsPlugin } from '@tanstack/react-compose'
 import {
   actionsStub,
   dataStub,
+  depsStub,
+  exportsStub,
   notifications,
   pageSide,
   serverStub,
@@ -19,7 +21,7 @@ import type { AnyStubGrant, PluginEntry } from '@tanstack/compose'
  * shared between apps but the base module they draw from.
  */
 export interface ShowcaseApp {
-  id: 'table' | 'todo' | 'hostile'
+  id: 'table' | 'todo' | 'hostile' | 'upgrade' | 'pair'
   title: string
   eyebrow: string
   /** The trusted entries this app's client starts with. */
@@ -53,7 +55,12 @@ export const todoApp: ShowcaseApp = {
   title: 'Todos',
   eyebrow: 'Page 2 · change behaviour',
   plugins: [...shell, { id: 'todo', plugin: todoPlugin }],
-  grants: { actions: actionsStub, slots: slotsStub, server: serverStub },
+  grants: {
+    actions: actionsStub,
+    data: dataStub,
+    slots: slotsStub,
+    server: serverStub,
+  },
   viewSlots: [todoActions.name, ...frameSlots],
 }
 
@@ -68,9 +75,29 @@ export const hostileApp: ShowcaseApp = {
   viewSlots: [tableActions.name, ...frameSlots],
 }
 
+export const upgradeApp: ShowcaseApp = {
+  id: 'upgrade',
+  title: 'Base upgrade',
+  eyebrow: 'Page 7 · versioned declarations',
+  plugins: [...shell, { id: 'todo', plugin: todoPlugin }],
+  grants: { actions: actionsStub, data: dataStub },
+  viewSlots: frameSlots,
+}
+
+export const pairApp: ShowcaseApp = {
+  id: 'pair',
+  title: 'Written pair',
+  eyebrow: 'Page 8 · dependency graph',
+  plugins: shell,
+  grants: { exports: exportsStub, deps: depsStub },
+  viewSlots: frameSlots,
+}
+
 /** Resolve the app id persisted beside one tenant's client. */
 export function appById(id: string): ShowcaseApp {
-  const app = [tableApp, todoApp, hostileApp].find((one) => one.id === id)
+  const app = [tableApp, todoApp, hostileApp, upgradeApp, pairApp].find(
+    (one) => one.id === id,
+  )
   if (!app) throw new Error(`showcase: unknown app "${id}"`)
   return app
 }

@@ -777,3 +777,47 @@ checker that proves it.
 the dependency graph, the errors store became bounded, and the in-process `storage`/`schedule` grants arrived. The
 budget is 7 kB for now; slice 8 moves every grant declaration and in-process implementation to the
 `@tanstack/compose/grants` subpath, which is not part of the kernel's budget, and the budget returns to 6 kB.
+
+## Typed bases and generations (slice 9)
+
+Slice 9 adds two deliberately separate subpath modules. Neither is re-exported
+from the kernel entry, so an application that only creates a client pays for
+neither and the 6 kB hot-path budget is unchanged.
+
+`@tanstack/compose/base` owns `defineGrant` and `defineBase`. A method-shaped
+grant keeps its method names as runtime data and its method functions as a
+phantom type surface. `defineGrant` compiles the methods to the existing
+`createStub` seam: the host sends `{ method, args }`, the handler appends the
+trusted `StubCall` context and invokes that method, and an unknown method throws
+`"<grant>" has no method "<method>"`. Methods may have zero or more authored
+arguments; the final handler argument is always the trusted context and is the
+one declaration generation removes. This is the smallest generalisation that
+makes both `data.rows()` and `actions.wrap(name, options)` ordinary calls while
+retaining one wire shape.
+
+The bound callable in `HostStartRequest.stubs` carries the optional method-name
+array. Each host builds a frozen, null-prototype object with one function per
+name; each function sends the same `{ method, args }` through the bound callable.
+It is metadata on the existing stub seam, not a second host operation, and no
+`Proxy` is used.
+
+`defineBase` preserves the exact inferred records supplied as `keys`, `actions`,
+`slots`, `grants`, and `plugins`, and exposes `plugins` again as `catalog` for
+plugin-list resolution. The duplicate reference is intentional: the base is a
+typed inventory, not a registry with its own lifecycle.
+
+`@tanstack/compose/generations` is a pure reducer over a generic generation log.
+A generation stores a full entry list, `n`, `parent`, `at`, `baseVersion`, and a
+one-way outcome (`pending` to `good` or `bad`). Finalising the single pending
+head replaces that value in the returned immutable array; settled history is
+never changed. A revert appends a new pending generation containing a copied
+earlier list but the head's current base version, so reverting source cannot
+pretend to revert the deployed base. `lastKnownGood` searches newest-first.
+
+The client itself only gains `baseVersion` as immutable checker infrastructure.
+Every source check receives it. Generation persistence remains outside the
+kernel, in the owner of the durable plugin list.
+
+Slice 9's method dispatch and inferred catalog are covered by
+`tests/K-base.test.ts`; the append, outcome, last-known-good, and revert reducer
+behavior is covered by `tests/L-generations.test.ts`.

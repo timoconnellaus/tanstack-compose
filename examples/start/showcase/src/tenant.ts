@@ -1,6 +1,8 @@
 import { DurableObject } from 'cloudflare:workers'
 import { createFacetHost } from '@tanstack/compose-cloudflare'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
+import declarationsV1 from 'compose:declarations'
+import declarationsV2 from 'compose:declarations-v2'
 import {
   createServerStub,
   createSlotsStub,
@@ -14,10 +16,13 @@ import { createComposeDurableObject } from '@tanstack/start-compose'
 import {
   actionsStub,
   dataStub,
+  depsStub,
+  exportsStub,
   grantableActions,
   tablePlugin,
   todoPlugin,
 } from './base'
+import { dataV2Stub } from './base-v2'
 import { appById, hostileApp, tableApp, todoApp } from './apps'
 import type { SerializedEntry } from '@tanstack/start-compose'
 
@@ -30,7 +35,7 @@ export interface ShowcaseEnv {
 class TenantBase extends DurableObject<ShowcaseEnv> {}
 
 const initialEntries = (appId: string): Array<SerializedEntry> => {
-  const app = appById(appId)
+  const app = appById(appId.split(':')[0]!)
   return app.plugins.map((entry) => {
     if (!entry.plugin) throw new Error('showcase: base entries are catalogued')
     return {
@@ -46,6 +51,8 @@ const initialEntries = (appId: string): Array<SerializedEntry> => {
 const grants = {
   actions: actionsStub,
   data: dataStub,
+  deps: depsStub,
+  exports: exportsStub,
   server: createServerStub(),
   'table.slots': createSlotsStub({ slots: tableApp.viewSlots }),
   'todo.slots': createSlotsStub({ slots: todoApp.viewSlots }),
@@ -74,6 +81,9 @@ const resolveStubs: NonNullable<
     !('source' in server.plugin)
   ) {
     return entry.stubs.map((name) => {
+      if (name === 'data' && context.baseVersion === declarationsV2.version) {
+        return dataV2Stub
+      }
       const grant = context.grants[name]
       if (!grant) throw new Error(`showcase: no grant named "${name}"`)
       return grant
@@ -106,7 +116,16 @@ export const ShowcaseTenant = createComposeDurableObject<ShowcaseEnv>({
   grants,
   resolveStubs,
   actions: grantableActions,
-  checker: createTypeScriptChecker(),
+  baseVersion: (appId) =>
+    appId?.endsWith(':v2') ? declarationsV2.version : declarationsV1.version,
+  createChecker: (version) => {
+    const declarations =
+      version === declarationsV2.version ? declarationsV2 : declarationsV1
+    return createTypeScriptChecker({
+      baseDeclarations: declarations.text,
+      baseVersion: declarations.version,
+    })
+  },
   hostName: 'cloudflare',
   self: ({ ctx, env }) => env.TENANT.get(ctx.id),
   createHost: ({ ctx, env, self }) =>

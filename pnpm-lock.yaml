@@ -294,6 +294,9 @@ importers:
       rolldown:
         specifier: ^1.2.6
         version: 1.2.6
+      vite:
+        specifier: ^8.0.8
+        version: 8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
 
   packages/react-compose:
     dependencies:
