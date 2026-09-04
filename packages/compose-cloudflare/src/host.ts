@@ -808,6 +808,18 @@ export function createFacetHost(options: FacetHostOptions): FacetHost {
         return unwrap(answer)
       }
 
+      // A facet from an earlier life of this object may still be running, with
+      // its setup already done against a slot registry and subscriptions this
+      // object no longer holds. Start it afresh so its setup runs again here.
+      try {
+        options.ctx.facets.abort(
+          request.instanceId,
+          `instance "${request.instanceId}" restarted with its object`,
+        )
+      } catch {
+        // No facet to abort: the ordinary first start.
+      }
+
       let stopped = false
       try {
         await ask('setup', facet().setup())

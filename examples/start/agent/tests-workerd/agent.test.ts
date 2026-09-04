@@ -1,12 +1,12 @@
-import { env } from 'cloudflare:test'
+import { env, runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import type { ComposeDurableObject } from '@tanstack/start-compose'
 import type { AgentEnv } from '../src/tenant'
 
-const tenant = (): ComposeDurableObject => {
+const tenant = (name = 'integration:agent'): ComposeDurableObject => {
   const namespace = (env as unknown as AgentEnv).TENANT
   return namespace.get(
-    namespace.idFromName('integration:agent'),
+    namespace.idFromName(name),
   ) as unknown as ComposeDurableObject
 }
 
@@ -49,5 +49,35 @@ describe('the agent in its tenant object', () => {
     expect(removed.fills).not.toContainEqual(
       expect.objectContaining({ instanceId: 'facet-button' }),
     )
+  })
+
+  it('keeps a written plugin and its fill across an object restart', async () => {
+    const object = tenant('integration:restart')
+    await object.snapshot('agent')
+    await object.dispatch({ action: 'send', input: { text: 'Add the button' } })
+    expect(
+      (await object.snapshot()).pluginList.map((entry) => entry.id),
+    ).toContain('facet-button')
+
+    // Eviction: the next call reaches a fresh instance that must rebuild
+    // everything from storage.
+    await runInDurableObject(
+      object as unknown as DurableObjectStub,
+      (_instance, state) => {
+        state.abort()
+      },
+    ).catch(() => {})
+
+    // The old stub may still answer for the aborted instance once; a fresh
+    // stub reaches the rebuilt one.
+    const restarted = tenant('integration:restart')
+    const after = await restarted.snapshot()
+    expect(after.pluginList.map((entry) => entry.id)).toContain('facet-button')
+    expect(after.fills).toContainEqual(
+      expect.objectContaining({ instanceId: 'facet-button' }),
+    )
+    await expect(
+      restarted.press({ viewInstanceId: 'facet-button', handler: 'press' }),
+    ).resolves.toBe('hello from the isolated facet')
   })
 })

@@ -42,6 +42,16 @@ describe('the Durable Object facet host', () => {
     await object.stopClient()
   }, 15000)
 
+  it('runs setup again when the object restarts around a facet that survived', async () => {
+    const object = testObject('facet-outlives-host')
+    await expect(object.facetOutlivesHost()).resolves.toEqual([
+      'setup ran',
+      'setup ran',
+      'status:active',
+    ])
+    await object.stopClient()
+  })
+
   it('applies HTTP middleware to the calling instance only', async () => {
     const object = testObject('http-middleware')
     await expect(object.httpMiddlewareIsolation()).resolves.toEqual({
