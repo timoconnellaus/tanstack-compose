@@ -2,7 +2,7 @@ import { Slot, useContextKey, usePluginList } from '@tanstack/react-compose'
 import { useMemo, useState } from 'react'
 import { demoRows, tableActions, tableKey } from '../base'
 import { exportCsvFixture } from '../fixtures'
-import { useAppOperations } from './app-frame'
+import { useComposeWriter } from './app-frame'
 import { useDeclareSlots } from './slots'
 import type { ReactNode } from 'react'
 
@@ -13,7 +13,7 @@ const messageOf = (error: unknown): string =>
 
 /** Page 1: add a server half and a view that fills the table toolbar. */
 export function TablePage(): ReactNode {
-  const operations = useAppOperations()
+  const writer = useComposeWriter()
   const table = useContextKey(tableKey)
   const entries = usePluginList()
   const declared = useMemo(() => [tableActions], [])
@@ -35,7 +35,7 @@ export function TablePage(): ReactNode {
           disabled={present}
           onClick={() => {
             setProblem(undefined)
-            void operations
+            void writer
               .add(exportCsvFixture)
               .catch((error) => setProblem(messageOf(error)))
           }}

@@ -1,7 +1,7 @@
 import { useInstances, usePluginList } from '@tanstack/react-compose'
 import { useMemo, useState } from 'react'
 import { selectedStubs } from '../written'
-import { useApp, useAppOperations } from './app-frame'
+import { useApp, useComposeWriter } from './app-frame'
 import type { ReactNode } from 'react'
 
 const messageOf = (error: unknown): string =>
@@ -12,7 +12,7 @@ const messageOf = (error: unknown): string =>
 /** The shell panel for inspecting and editing the running plugin list. */
 export function PluginPanel(): ReactNode {
   const app = useApp()
-  const operations = useAppOperations()
+  const writer = useComposeWriter()
   const entries = usePluginList()
   const instances = useInstances()
   const snapshots = useMemo(
@@ -70,7 +70,7 @@ export function PluginPanel(): ReactNode {
                   type="button"
                   disabled={enabled}
                   onClick={() =>
-                    void run(() => operations.setEnabled(entry.id, true))
+                    void run(() => writer.setEnabled(entry.id, true))
                   }
                 >
                   Enable
@@ -79,14 +79,14 @@ export function PluginPanel(): ReactNode {
                   type="button"
                   disabled={!enabled}
                   onClick={() =>
-                    void run(() => operations.setEnabled(entry.id, false))
+                    void run(() => writer.setEnabled(entry.id, false))
                   }
                 >
                   Disable
                 </button>
                 <button
                   type="button"
-                  onClick={() => void run(() => operations.remove(entry.id))}
+                  onClick={() => void run(() => writer.remove(entry.id))}
                 >
                   Remove
                 </button>
@@ -103,7 +103,7 @@ export function PluginPanel(): ReactNode {
           void run(async () => {
             if (id.trim() === '') throw new Error('an id is required')
             if (source.trim() === '') throw new Error('source is required')
-            await operations.add({
+            await writer.add({
               id: id.trim(),
               source,
               ...(view.trim() === '' ? {} : { view }),

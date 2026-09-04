@@ -1,12 +1,22 @@
-import { createContextKey } from '@tanstack/compose'
+import { createClient, createContextKey } from '@tanstack/compose'
 import { assertType, describe, expectTypeOf, test } from 'vitest'
 import {
+  ComposeProvider,
   Slot,
   createSlot,
   createSlotRegistry,
+  isClient,
+  useComposeView,
   useContextKey,
 } from '../src/index'
-import type { AnySlot, Fill, PropsOf, SlotRegistry } from '../src/index'
+import type { Client } from '@tanstack/compose'
+import type {
+  AnySlot,
+  ComposeView,
+  Fill,
+  PropsOf,
+  SlotRegistry,
+} from '../src/index'
 
 interface Entry {
   kind: 'note' | 'warning'
@@ -107,5 +117,16 @@ describe('reading a context key', () => {
     expectTypeOf(useContextKey(clock, { suspend: true })).toEqualTypeOf<{
       label: string
     }>()
+  })
+})
+
+describe('the provider view', () => {
+  test('is structurally satisfied by a client and narrows back to one', () => {
+    const client: Client = createClient()
+    const view: ComposeView = client
+
+    assertType(<ComposeProvider client={view} />)
+    expectTypeOf(useComposeView()).toEqualTypeOf<ComposeView>()
+    if (isClient(view)) expectTypeOf(view).toEqualTypeOf<Client>()
   })
 })

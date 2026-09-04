@@ -6,12 +6,14 @@ import {
   ComposeProvider,
   useClient,
   useClientErrors,
+  useComposeView,
   useContextKey,
   useInstances,
   usePluginList,
   useStore,
 } from '../src/index'
 import type { Client } from '@tanstack/compose'
+import type { ComposeView } from '../src/index'
 import type { ReactNode } from 'react'
 
 interface Clock {
@@ -36,9 +38,18 @@ afterEach(async () => {
   client = undefined
 })
 
-const show = (ui: ReactNode, on: Client): void => {
+const show = (ui: ReactNode, on: ComposeView): void => {
   render(<ComposeProvider client={on}>{ui}</ComposeProvider>)
 }
+
+const viewOf = (on: Client): ComposeView => ({
+  pluginList: on.pluginList,
+  instances: on.instances,
+  context: on.context,
+  errors: on.errors,
+  getContext: on.getContext,
+  inspect: on.inspect,
+})
 
 function Label(): ReactNode {
   const clock = useContextKey(clockKey)
@@ -113,6 +124,28 @@ describe('reading the client from the page', () => {
     show(<Reader />, client)
 
     expect(seen).toBe(client)
+  })
+
+  test('distinguishes a read-only view from a mutating client', async () => {
+    client = createClient()
+    await client.settled()
+    const view = viewOf(client)
+    let seen: ComposeView | undefined
+
+    function ViewReader(): ReactNode {
+      seen = useComposeView()
+      return null
+    }
+    show(<ViewReader />, view)
+    expect(seen).toBe(view)
+
+    function ClientReader(): ReactNode {
+      useClient()
+      return null
+    }
+    expect(() => show(<ClientReader />, view)).toThrow(
+      /useClient\(\) requires a Client.*read-only ComposeView/,
+    )
   })
 })
 

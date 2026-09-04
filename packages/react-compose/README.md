@@ -120,7 +120,8 @@ renders the slot. Pass a render prop to wrap each one:
 
 | Hook                                    | What it reads                                                    |
 | --------------------------------------- | ---------------------------------------------------------------- |
-| `useClient()`                           | The client the provider was handed                               |
+| `useComposeView()`                      | The read-only client view the provider was handed                |
+| `useClient()`                           | The mutating client, or throws when given only a view            |
 | `useContextKey(key)`                    | A **context key**, `undefined` while nothing provides it         |
 | `useContextKey(key, { suspend: true })` | The same, suspending until it is provided                        |
 | `usePluginList()`                       | The **plugin list**, re-read on every edit                       |

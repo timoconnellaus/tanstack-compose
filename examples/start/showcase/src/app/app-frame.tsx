@@ -16,7 +16,7 @@ import type { ReactNode } from 'react'
 
 const AppContext = createContext<ShowcaseApp | undefined>(undefined)
 
-interface AppOperations {
+interface ComposeWriter {
   deployed: boolean
   add: (fixture: ShowcaseFixture) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -24,7 +24,7 @@ interface AppOperations {
   revert: (keep: ReadonlySet<string>) => Promise<void>
 }
 
-const OperationsContext = createContext<AppOperations | undefined>(undefined)
+const WriterContext = createContext<ComposeWriter | undefined>(undefined)
 
 /** The app the current page belongs to. */
 export function useApp(): ShowcaseApp {
@@ -35,11 +35,11 @@ export function useApp(): ShowcaseApp {
   return app
 }
 
-/** The edit path shared by fixture buttons and the plugin panel. */
-export function useAppOperations(): AppOperations {
-  const operations = useContext(OperationsContext)
-  if (!operations) throw new Error('showcase: no app operations provider')
-  return operations
+/** The edit path shared by both deployed and browser-only shapes. */
+export function useComposeWriter(): ComposeWriter {
+  const writer = useContext(WriterContext)
+  if (!writer) throw new Error('showcase: no compose writer provider')
+  return writer
 }
 
 /**
@@ -72,7 +72,7 @@ function DirectOperations(properties: {
   client: Client
   children: ReactNode
 }): ReactNode {
-  const operations = useMemo<AppOperations>(
+  const writer = useMemo<ComposeWriter>(
     () => ({
       deployed: false,
       add: (fixture) => addWritten(properties.client, fixture, properties.app),
@@ -89,9 +89,9 @@ function DirectOperations(properties: {
     [properties.app, properties.client],
   )
   return (
-    <OperationsContext value={operations}>
+    <WriterContext value={writer}>
       <Frame app={properties.app}>{properties.children}</Frame>
-    </OperationsContext>
+    </WriterContext>
   )
 }
 
@@ -101,7 +101,7 @@ function FollowerOperations(properties: {
 }): ReactNode {
   const edit = useComposeEdit()
   const snapshot = useComposeSnapshot()
-  const operations = useMemo<AppOperations>(
+  const writer = useMemo<ComposeWriter>(
     () => ({
       deployed: true,
       add: async (fixture) => {
@@ -129,9 +129,9 @@ function FollowerOperations(properties: {
     [edit, properties.app, snapshot.pluginList],
   )
   return (
-    <OperationsContext value={operations}>
+    <WriterContext value={writer}>
       <Frame app={properties.app}>{properties.children}</Frame>
-    </OperationsContext>
+    </WriterContext>
   )
 }
 

@@ -101,9 +101,23 @@ page depends on it.
 
 ### `ComposeProvider`
 
-Puts the client on React context. It does **not** create or destroy the client:
-the client's lifetime is the caller's, so a re-mount never restarts the
-application, and a test can drive the client before and after rendering.
+Puts a `ComposeView` on React context. `ComposeView` is the read surface the
+adapter actually needs: readable `pluginList`, `instances`, `context`, and
+`errors` stores, `getContext`, `inspect`, and optional `dispatch` and
+`callSource`. Its plugin-list entries expose only `id`, `options`, and
+`enabled`, so both an authoritative `Client` and a browser-safe snapshot can
+satisfy the interface without pretending to hold the other's plugin value.
+
+`useComposeView()` returns that read surface. `useClient()` remains the hook
+for code that genuinely needs plugin-list mutation, middleware, events, or
+lifecycle control. It checks structurally for `setPluginList` and throws a
+specific error when the provider holds only a view. The store and context hooks
+use `useComposeView()`, as do `Slot` and the view renderer transitively; none of
+them require a mutating client.
+
+The provider does **not** create or destroy what it is handed: its lifetime is
+the caller's, so a re-mount never restarts an application, and a test can drive
+a client before and after rendering.
 
 ### `useContextKey(key, { suspend? })`
 
@@ -135,9 +149,9 @@ with no registry above it at all, render nothing (A4).
 `props` is required exactly when the slot passes props, through a conditional on
 `undefined extends TProps`.
 
-### Hooks over the client's stores
+### Hooks over the view's stores
 
-`usePluginList`, `useInstances` and `useClientErrors` are one hook per client
+`usePluginList`, `useInstances` and `useClientErrors` are one hook per view
 store, and `useStore` is re-exported from `@tanstack/react-store` for the stores
 plugins publish themselves — an agent's status, a session log. The adapter adds
 nothing to it.

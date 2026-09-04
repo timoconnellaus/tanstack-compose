@@ -1,9 +1,13 @@
 import { stubCallAction } from '@tanstack/compose'
-import { useClient, useInstances, usePluginList } from '@tanstack/react-compose'
+import {
+  isClient,
+  useComposeView,
+  useInstances,
+  usePluginList,
+} from '@tanstack/react-compose'
 import { useEffect, useState } from 'react'
 import { hostileFixtures } from '../fixtures'
-import { useAppOperations } from './app-frame'
-import type { PluginEntry } from '@tanstack/compose'
+import { useComposeWriter } from './app-frame'
 import type { HostileFixture } from '../fixtures'
 import type { ReactNode } from 'react'
 
@@ -14,18 +18,15 @@ const messageOf = (error: unknown): string =>
 
 /** Page 3: show exactly what the in-process host does and does not enforce. */
 export function HostilePage(): ReactNode {
-  const client = useClient()
-  const operations = useAppOperations()
+  const view = useComposeView()
+  const writer = useComposeWriter()
   const entries = usePluginList()
   const instances = useInstances()
-  const [lastGood, setLastGood] = useState<Array<PluginEntry>>(
-    client.pluginList.state,
-  )
   const [observed, setObserved] = useState<ReadonlyMap<string, string>>(
     new Map(),
   )
   const [lastGoodIds, setLastGoodIds] = useState<ReadonlySet<string>>(
-    new Set(client.pluginList.state.map((entry) => entry.id)),
+    new Set(view.pluginList.state.map((entry) => entry.id)),
   )
 
   useEffect(() => {
@@ -39,7 +40,6 @@ export function HostilePage(): ReactNode {
           'active',
       )
     ) {
-      setLastGood(entries)
       setLastGoodIds(new Set(entries.map((entry) => entry.id)))
     }
   }, [entries, instances])
@@ -47,22 +47,29 @@ export function HostilePage(): ReactNode {
   const add = async (fixture: HostileFixture): Promise<void> => {
     let actualId: string | undefined
     let claimedId: string | undefined
-    const unobserve = client.use(stubCallAction, async ({ input, next }) => {
-      if (input.instanceId === fixture.id) {
-        actualId = input.instanceId
-        const payload = input.input as { claimedInstanceId?: unknown } | null
-        if (typeof payload?.claimedInstanceId === 'string') {
-          claimedId = payload.claimedInstanceId
-        }
-      }
-      return next(input)
-    })
+    const unobserve = isClient(view)
+      ? view.use(stubCallAction, async ({ input, next }) => {
+          if (input.instanceId === fixture.id) {
+            actualId = input.instanceId
+            const payload = input.input as {
+              claimedInstanceId?: unknown
+            } | null
+            if (typeof payload?.claimedInstanceId === 'string') {
+              claimedId = payload.claimedInstanceId
+            }
+          }
+          return next(input)
+        })
+      : () => undefined
     try {
-      await operations.add(fixture)
+      await writer.add(fixture)
       let result: unknown
       if (fixture.call !== undefined) {
         try {
-          result = await client.callSource(fixture.id, fixture.call)
+          if (!view.callSource) {
+            throw new Error('showcase: this ComposeView cannot call source')
+          }
+          result = await view.callSource(fixture.id, fixture.call)
         } catch {
           // The instance status and attached SourceError are the proof.
         }
@@ -80,7 +87,7 @@ export function HostilePage(): ReactNode {
         setObserved((current) =>
           new Map(current).set(
             fixture.id,
-            operations.deployed
+            writer.deployed
               ? (fixture.deployedExpected ?? fixture.expected)
               : fixture.expected,
           ),
@@ -101,14 +108,7 @@ export function HostilePage(): ReactNode {
           <h2>Hostile gallery</h2>
           <p>These are real source entries running beside the server client.</p>
         </div>
-        <button
-          type="button"
-          onClick={() =>
-            void (operations.deployed
-              ? operations.revert(lastGoodIds)
-              : client.setPluginList(lastGood))
-          }
-        >
+        <button type="button" onClick={() => void writer.revert(lastGoodIds)}>
           Revert to last good
         </button>
       </div>
@@ -121,18 +121,18 @@ export function HostilePage(): ReactNode {
             <article data-testid={`hostile-${fixture.id}`} key={fixture.id}>
               <h3>{fixture.label}</h3>
               <p>
-                {operations.deployed
+                {writer.deployed
                   ? (fixture.deployedExpected ?? fixture.expected)
                   : fixture.expected}
               </p>
               <button
                 type="button"
                 disabled={
-                  (fixture.disabled === true && !operations.deployed) || present
+                  (fixture.disabled === true && !writer.deployed) || present
                 }
                 onClick={() => void add(fixture)}
               >
-                {fixture.disabled && !operations.deployed
+                {fixture.disabled && !writer.deployed
                   ? 'Requires isolating host'
                   : `Run: ${fixture.label}`}
               </button>

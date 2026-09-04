@@ -15,12 +15,19 @@ id; the showcase uses `idFromName(`${tenantId}:${app.id}`)`, so each object owns
 exactly one client and one plugin list. This package does not multiplex apps
 inside a client.
 
-The browser has a deliberately shallow client-shaped **follower**. It contains
-the mirrored `pluginList` and `instances` stores and the slot registry expected
-by `ComposeProvider`; it has no host and never starts either a trusted plugin or
-plugin source. `dispatch` and `callSource` are transport calls to the server,
-and every plugin-list mutation goes through `useComposeEdit()`. This preserves
-the existing shell components without creating a second authority.
+The browser holds a `ComposeView`, not a client-shaped fake. The follower
+contains the mirrored `pluginList` and `instances` stores, the context and error
+stores required by the React adapter, and the slot registry expected by the
+shell. Its plugin-list store holds `SnapshotEntry` values unchanged: catalog
+references remain catalog references and written entries remain
+`{ written: true }`; it never fabricates plugin source or a plugin object.
+
+The follower has no host and never starts either a trusted plugin or plugin
+source. Its only optional write-like view capabilities are `dispatch` and
+`callSource`, which are transport calls to the server. It has none of a
+`Client`'s mutation, lifecycle, event, or middleware methods, so `useClient()`
+under `ComposeStart` fails clearly instead of granting no-op methods. Every
+plugin-list mutation goes through `useComposeEdit()`.
 
 Server halves and view modules both run through the server client's host. A
 view module contributes a plain `ViewNode` tree through its `slots` grant. The
