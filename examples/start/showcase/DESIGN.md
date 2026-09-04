@@ -14,7 +14,7 @@ dataset and `table.export`. `todoPlugin` owns the todo store and the three todo
 actions. The store methods are ordinary base code; a hosted instance can reach
 only the grants on its entry.
 
-The browser constructs one client lazily in `src/client.ts`. Tests use the same
+The browser constructs one client lazily in `src/compose-client.ts`. Tests use the same
 factory to get a fresh real client. The root route owns neither plugin setup nor
 cleanup: it only provides the browser client through `ComposeProvider`. Every
 route has `ssr: false`; server clients, following and server-rendered fills are
@@ -87,3 +87,11 @@ No timeout, size limit or isolation claim is simulated in application code.
 - A source/view id already present is replaced as one list edit. Fixture page
   buttons are disabled while their id is present, preventing accidental
   duplicate ids.
+
+## Why the client module is not `src/client.ts`
+
+TanStack Start reads `src/client.tsx` (or `.ts`) as the application's custom
+**client entry** — the module that hydrates the router. A compose client module
+under that name is imported by Start's dev entry in place of hydration, and the
+page never leaves its "Starting client…" fallback. The module is therefore
+`src/compose-client.ts`, and Start uses its default entry.

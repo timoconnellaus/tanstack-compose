@@ -1,7 +1,7 @@
 import { ComposeProvider } from '@tanstack/react-compose'
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { AppShell } from '../../src/app/shell'
-import { createShowcaseClient } from '../../src/client'
+import { createShowcaseClient } from '../../src/compose-client'
 import type { Client } from '@tanstack/compose'
 import type { ReactNode } from 'react'
 

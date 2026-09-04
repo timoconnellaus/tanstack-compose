@@ -8,7 +8,7 @@ import {
 import { ComposeProvider } from '@tanstack/react-compose'
 import { Suspense } from 'react'
 import { AppShell } from '../app/shell'
-import { getBrowserClient } from '../client'
+import { getBrowserClient } from '../compose-client'
 import styles from '../styles.css?url'
 import type { ReactNode } from 'react'
 
