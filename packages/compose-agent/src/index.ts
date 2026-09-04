@@ -63,7 +63,8 @@ export {
   viewStubs,
   viewSuffix,
 } from './views'
-export { jsonSchemaValidator } from './json-schema'
+export { jsonSchemaValidator, schemaOf } from './json-schema'
+export { optionsSchema } from './options'
 export { loopPlugin } from './loop'
 export { scriptedModelPlugin } from './scripted'
 export type { ScriptedResponse } from './scripted'
@@ -84,7 +85,11 @@ export type {
   ViewSessionEntry,
   ViewTone,
 } from './views'
-export type { JsonSchema, JsonSchemaType } from './json-schema'
+export type {
+  DescribedValidator,
+  JsonSchema,
+  JsonSchemaType,
+} from './json-schema'
 
 export type {
   Agent,

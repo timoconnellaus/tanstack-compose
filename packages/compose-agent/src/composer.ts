@@ -3,7 +3,7 @@ import {
   sourceErrorOf,
   stubDeclarations,
 } from '@tanstack/compose'
-import { jsonSchemaValidator } from './json-schema'
+import { jsonSchemaValidator, schemaOf } from './json-schema'
 import { modelKey, toolsKey } from './keys'
 import { createTool } from './tools'
 import { grantView, pluginIdOf, viewIdOf } from './views'
@@ -40,6 +40,14 @@ export interface ComposerEntry {
   error?: string
   /** The detail of a plugin-source failure. Present when `error` on a source entry. */
   sourceError?: SourceError
+  /** The entry's options as they are now. Present when the entry has any. */
+  options?: unknown
+  /**
+   * What the plugin's options look like, when its validator carries a schema.
+   * Absent on a plugin that takes no options, and on one whose validator
+   * describes nothing.
+   */
+  optionsSchema?: JsonSchema
   /** Whether the agent may read this entry's source back. */
   readable?: boolean
   /**
@@ -67,6 +75,8 @@ export interface ComposerResult {
   effect?: string
   /** The names the plugin catalog offers. */
   catalog?: Array<string>
+  /** The options schema of each catalog plugin whose validator carries one. */
+  catalogOptions?: Record<string, JsonSchema>
   /** The entry's plugin source. */
   source?: string
   /** The source of the entry's view, when it has one. */
@@ -450,6 +460,9 @@ export const composerPlugin = createPlugin({
       }
       if (views.has(id)) row.view = true
       if (kind === 'source') row.readable = written.has(id)
+      if (entry?.options !== undefined) row.options = entry.options
+      const schema = schemaOf(entry?.plugin?.validator)
+      if (schema) row.optionsSchema = schema
       return row
     }
 
@@ -511,7 +524,16 @@ export const composerPlugin = createPlugin({
       value: unknown,
     ): Promise<string | undefined> => {
       const validator = plugin?.validator
-      if (!validator) return undefined
+      if (!validator) {
+        // A plugin with no validator takes no options: accepting some and
+        // silently ignoring them would report a change that never happened.
+        const empty =
+          value === undefined ||
+          (typeof value === 'object' &&
+            value !== null &&
+            Object.keys(value).length === 0)
+        return empty ? undefined : 'this plugin declares no options'
+      }
       const result = await validator['~standard'].validate(value)
       return result.issues ? issuesOf(result.issues) : undefined
     }
@@ -521,7 +543,7 @@ export const composerPlugin = createPlugin({
     const listTool = createTool({
       name: 'list_plugins',
       description:
-        'List the plugin list of this agent: every entry with its status, the deps it is still missing when pending, whether it is protected, the names the plugin catalog offers, and the declarations a plugin written with write_plugin is checked against — and, when this agent may write views, the declarations a view is checked against as well.',
+        'List the plugin list of this agent: every entry with its status, the deps it is still missing when pending, whether it is protected, its current options and the schema of the options it takes when known, the names the plugin catalog offers with their options schemas, and the declarations a plugin written with write_plugin is checked against — and, when this agent may write views, the declarations a view is checked against as well.',
       ...args<Record<string, never>>({ type: 'object', properties: {} }),
       concurrency: 'exclusive',
       execute: (): ComposerResult => ({
@@ -529,6 +551,12 @@ export const composerPlugin = createPlugin({
         message: 'The plugin list, as it runs now.',
         entries: list().map((entry) => report(entry.id)),
         catalog: Object.keys(options.catalog),
+        catalogOptions: Object.fromEntries(
+          Object.entries(options.catalog).flatMap(([name, plugin]) => {
+            const schema = schemaOf(plugin.validator)
+            return schema ? [[name, schema]] : []
+          }),
+        ),
         // The declarations a plugin written here is checked against. They are
         // on the listing because a first write has no entry to read back, and
         // the model has to be able to see them before it writes (D8). A view's
@@ -609,7 +637,7 @@ export const composerPlugin = createPlugin({
     const setOptionsTool = createTool({
       name: 'set_plugin_options',
       description:
-        "Replace a plugin entry's options. The options are validated by that plugin's own validator first; invalid options change nothing. The instance restarts with the new options, so anything it held is released and re-acquired. Protected entries are refused.",
+        "Replace a plugin entry's options. list_plugins shows each entry's current options and, when known, the schema of what it takes; a plugin that declares no options refuses any. The options are validated by that plugin's own validator first; invalid options change nothing. The instance restarts with the new options, so anything it held is released and re-acquired. Protected entries are refused.",
       ...args<{ id: string; options: unknown }>({
         type: 'object',
         properties: {
@@ -650,7 +678,7 @@ export const composerPlugin = createPlugin({
     const addTool = createTool({
       name: 'add_plugin',
       description:
-        "Add a plugin from the plugin catalog by name, under a new entry id. Only catalog names can be added, and the options are validated by that plugin's validator; an unknown name or invalid options change nothing. Takes effect from the next turn.",
+        "Add a plugin from the plugin catalog by name, under a new entry id. Only catalog names can be added (list_plugins names them, with the schema of the options each takes), and the options are validated by that plugin's validator; an unknown name or invalid options change nothing. Takes effect from the next turn.",
       ...args<{ id: string; name: string; options?: unknown }>({
         type: 'object',
         properties: {

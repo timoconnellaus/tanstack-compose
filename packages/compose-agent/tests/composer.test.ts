@@ -1,6 +1,10 @@
 import { createPlugin, reconcileAction } from '@tanstack/compose'
 import { describe, expect, it } from 'vitest'
-import { scriptedModelPlugin, toolCallAction } from '../src/index'
+import {
+  jsonSchemaValidator,
+  scriptedModelPlugin,
+  toolCallAction,
+} from '../src/index'
 import {
   buildComposer,
   clockPlugin,
@@ -134,6 +138,56 @@ describe("the composer's tools", () => {
     })
   })
 
+  it('shows what options an entry has and what its plugin takes', async () => {
+    const described = createPlugin({
+      name: 'banner',
+      validator: jsonSchemaValidator<{ text: string }>({
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+      }),
+      setup() {},
+    })
+    const { agent, session } = await buildComposer({
+      plugins: [{ id: 'banner', plugin: described, options: { text: 'hi' } }],
+      catalog: { banner: described },
+      script: [{ toolCalls: [{ name: 'list_plugins', args: {} }] }, done],
+    })
+
+    agent.send('what are you running?')
+    await agent.idle()
+
+    const result = resultOf(session)!
+    const row = result.entries.find((entry) => entry.id === 'banner')!
+    expect(row.options).toEqual({ text: 'hi' })
+    expect(row.optionsSchema?.properties?.text).toEqual({ type: 'string' })
+    expect(result.catalogOptions?.banner).toBe(row.optionsSchema)
+  })
+
+  it('refuses options for a plugin that declares none', async () => {
+    const { agent, session } = await buildComposer({
+      plugins: [{ id: 'clock-tools', plugin: clockToolsPlugin }],
+      script: [
+        {
+          toolCalls: [
+            {
+              name: 'set_plugin_options',
+              args: { id: 'clock-tools', options: { text: 'OK ALREADY!' } },
+            },
+          ],
+        },
+        done,
+      ],
+    })
+
+    agent.send('change the text')
+    await agent.idle()
+
+    const result = resultOf(session)!
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('declares no options')
+  })
+
   it('adds a plugin from the catalog by name, with its options validated', async () => {
     const { client, agent, session } = await buildComposer({
       catalog: { greeter: greeterPlugin },
@@ -163,6 +217,7 @@ describe("the composer's tools", () => {
         enabled: true,
         protected: false,
         status: 'active',
+        options: { label: 'Hi' },
       },
     ])
     expect(client.pluginList.state.at(-1)?.id).toBe('hello')
