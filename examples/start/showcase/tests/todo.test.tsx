@@ -32,7 +32,7 @@ describe('the todo page', () => {
     await press(screen.getByRole('button', { name: 'Add: block empty titles' }))
     const count = screen.getAllByTestId('todo-item').length
     await press(screen.getByRole('button', { name: 'Add todo' }))
-    expect((await screen.findByRole('alert')).textContent).toContain(
+    expect((await screen.findByRole('alert')).textContent).toBe(
       'a todo needs a title',
     )
     expect(screen.getAllByTestId('todo-item')).toHaveLength(count)

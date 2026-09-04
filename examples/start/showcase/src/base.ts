@@ -3,6 +3,7 @@ import {
   createContextKey,
   createPlugin,
   createStub,
+  sourceErrorOf,
 } from '@tanstack/compose'
 import { createSlot, serverStub, slotsStub } from '@tanstack/react-compose'
 import { Store } from '@tanstack/store'
@@ -180,9 +181,13 @@ declare const actions: (request: {
     const action = grantableActions[input.action]
     instance.use<unknown, unknown>(action, async ({ input: given, next }) => {
       const prepared =
-        input.before === undefined ? given : await call(input.before, given)
+        input.before === undefined
+          ? given
+          : await unwrapped(() => call(input.before!, given))
       const result = await next(prepared)
-      return input.after === undefined ? result : call(input.after, result)
+      return input.after === undefined
+        ? result
+        : unwrapped(() => call(input.after!, result))
     })
   },
 })
@@ -456,3 +461,18 @@ export const todoPlugin = createPlugin({
     })
   },
 })
+
+/**
+ * A written handler that throws is rejecting the action on the product's
+ * behalf — "a todo needs a title" — so the caller sees that message, not the
+ * host's diagnostic wrapper around it. The wrapper stays on `cause`.
+ */
+async function unwrapped<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    const detail = sourceErrorOf(error)
+    if (detail === undefined) throw error
+    throw new Error(detail.message, { cause: error })
+  }
+}
