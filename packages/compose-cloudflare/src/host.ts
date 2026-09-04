@@ -42,7 +42,7 @@ export interface TextAiBinding {
     input: {
       messages: Array<{ role: 'system' | 'user'; content: string }>
     },
-  ) => Promise<{ response?: string }>
+  ) => Promise<unknown>
 }
 
 /** How a client is given a Cloudflare host. */
@@ -200,12 +200,28 @@ const aiText = async (binding: TextAiBinding | undefined, value: unknown) => {
       { role: 'user' as const, content: input.prompt },
     ],
   })
-  if (typeof answer.response !== 'string') {
+  const text = aiAnswerText(answer)
+  if (text === undefined) {
     throw new Error(
       '@tanstack/compose-cloudflare: the AI binding returned no text',
     )
   }
-  return answer.response
+  return text
+}
+
+/**
+ * The text of a Workers AI answer. Older models answer `{ response }`; the
+ * OpenAI-shaped ones, glm-5.3-flash among them, answer
+ * `{ choices: [{ message: { content } }] }`. Both are one string to a plugin.
+ */
+export function aiAnswerText(answer: unknown): string | undefined {
+  const value = answer as {
+    response?: unknown
+    choices?: Array<{ message?: { content?: unknown } }>
+  } | null
+  if (typeof value?.response === 'string') return value.response
+  const content = value?.choices?.[0]?.message?.content
+  return typeof content === 'string' ? content : undefined
 }
 
 const fileKey = (instanceId: string, value: unknown) =>

@@ -66,7 +66,10 @@ export class FacetTestObject extends DurableObject<Env> {
         } as Fetcher,
       },
       ai: {
-        run: () => Promise.resolve({ response: 'model answer' }),
+        run: () =>
+          Promise.resolve({
+            choices: [{ message: { content: 'model answer' } }],
+          }),
       },
       files: this.env.FILES,
     })
@@ -317,6 +320,65 @@ export const run = () => http.fetch('currency', '/rates')
       status: number
     }
     return { blocked, allowed: allowed.status }
+  }
+
+  /** A refused service is an error the plugin can catch, not a hang. */
+  async httpRefusal(): Promise<unknown> {
+    const entry: PluginEntry = {
+      id: 'http-refusal',
+      source: `
+let http
+export default ({ stubs }) => { http = stubs.http }
+export async function run() {
+  try {
+    await http.fetch('bank', '/rates')
+    return 'answered'
+  } catch (error) {
+    return 'refused: ' + error.message
+  }
+}
+`,
+      host: 'cloudflare',
+      stubs: [httpStub],
+    }
+    this.#client = createClient({
+      hosts: { cloudflare: this.#facetHost() },
+      plugins: [entry],
+    })
+    await this.#client.settled()
+    return await this.#client.callSource('http-refusal', 'run')
+  }
+
+  /** The same refusal during setup, while the object awaits that setup. */
+  async httpRefusalInSetup(): Promise<unknown> {
+    const entry: PluginEntry = {
+      id: 'http-refusal-setup',
+      source: `
+let outcome = 'unset'
+export default async ({ stubs }) => {
+  try {
+    await stubs.http.fetch('bank', '/rates')
+    outcome = 'answered'
+  } catch (error) {
+    outcome = 'refused: ' + error.message
+  }
+}
+export const run = () => outcome
+`,
+      host: 'cloudflare',
+      stubs: [httpStub],
+    }
+    this.#client = createClient({
+      hosts: { cloudflare: this.#facetHost() },
+      plugins: [entry],
+    })
+    await this.#client.settled()
+    const status = this.#client.inspect().find((one) => one.id === entry.id)
+    return {
+      status: status?.status,
+      error: status?.error ? String(status.error) : undefined,
+      outcome: await this.#client.callSource('http-refusal-setup', 'run'),
+    }
   }
 
   events(): Array<string> {

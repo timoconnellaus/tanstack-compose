@@ -24,6 +24,24 @@ describe('the Durable Object facet host', () => {
     await object.stopClient()
   })
 
+  it('refuses a service that is not granted with an error the plugin can catch', async () => {
+    const object = testObject('http-refusal')
+    await expect(object.httpRefusal()).resolves.toBe(
+      'refused: no service named "bank" is granted',
+    )
+    await object.stopClient()
+  }, 15000)
+
+  it('refuses a service during setup without wedging the start', async () => {
+    const object = testObject('http-refusal-setup')
+    await expect(object.httpRefusalInSetup()).resolves.toEqual({
+      status: 'active',
+      error: undefined,
+      outcome: 'refused: no service named "bank" is granted',
+    })
+    await object.stopClient()
+  }, 15000)
+
   it('applies HTTP middleware to the calling instance only', async () => {
     const object = testObject('http-middleware')
     await expect(object.httpMiddlewareIsolation()).resolves.toEqual({

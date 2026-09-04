@@ -25,7 +25,7 @@ async function publish(value: { text: string; at: number } | undefined): Promise
 const setup: Setup = async ({ stubs }) => {
   api = stubs
   await publish(await api.storage.get<{ text: string; at: number }>('latest'))
-  await api.schedule.every(1000, 'digest')
+  await api.schedule.every(15000, 'digest')
 }
 export default setup
 

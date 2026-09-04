@@ -23,7 +23,7 @@ describe('the digest page', () => {
 
     expect(screen.queryByTestId('latest-digest')).toBeNull()
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(15000)
     })
     expect(screen.getByTestId('latest-digest').textContent).toContain('Echo:')
 
@@ -32,7 +32,7 @@ describe('the digest page', () => {
     })
     expect(screen.queryByTestId('latest-digest')).toBeNull()
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(15000)
     })
     expect(screen.queryByTestId('latest-digest')).toBeNull()
     await act(async () => {
@@ -44,7 +44,7 @@ describe('the digest page', () => {
     })
     expect(screen.queryByTestId('latest-digest')).toBeNull()
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(15000)
     })
     expect(screen.getByTestId('latest-digest')).toBeTruthy()
   })

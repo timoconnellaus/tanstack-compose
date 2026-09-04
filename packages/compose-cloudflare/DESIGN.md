@@ -377,7 +377,8 @@ each operation traverses its loopback and therefore `stubCallAction` before a
 binding is used. HTTP policy maps a service name to one origin and an optional
 `{ header, value }` credential. A path may not change the origin, and the
 configured header overrides source-supplied headers. AI runs
-`@cf/zai-org/glm-5.3-flash` and returns response text.
+`@cf/zai-org/glm-5.3-flash` and returns the answer's text, whether the model
+answers `{ response }` or, as glm-5.3-flash does, OpenAI-shaped `choices`.
 
 Files use R2 with `${entryId}/` prepended in the host. `get` materializes the
 body as an `ArrayBuffer`; `list` follows every cursor page. Removing an entry
