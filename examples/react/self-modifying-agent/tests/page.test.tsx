@@ -1,7 +1,7 @@
-import { cleanup, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
 import { agentKey } from '@tanstack/compose-agent'
-import { pressInPanel, startApp } from './helpers/app'
+import { press, pressInPanel, sendMessage, startApp } from './helpers/app'
 import type { StartedApp } from './helpers/app'
 
 let app: StartedApp | undefined
@@ -32,6 +32,62 @@ describe('the page as it starts', () => {
     expect(screen.getByTestId('plugin-composer').textContent).toContain(
       'active',
     )
+  })
+})
+
+describe('the conversation', () => {
+  test('renders assistant text as Markdown', async () => {
+    app = await startApp({ script: [{ chunks: ['This is **bold**.'] }] })
+
+    await sendMessage('show me Markdown')
+    await app.client.getContext(agentKey)!.idle()
+
+    const strong = await screen.findByText('bold', { selector: 'strong' })
+    expect(strong.closest('.message-assistant')).not.toBeNull()
+  })
+
+  test('collapses a tool call and its result into one expandable row', async () => {
+    app = await startApp({
+      script: [
+        {
+          chunks: ['Checking.'],
+          toolCalls: [{ name: 'list_plugins', args: {} }],
+        },
+        { chunks: ['Done.'] },
+      ],
+    })
+
+    await sendMessage('what are you made of?')
+    await app.client.getContext(agentKey)!.idle()
+
+    const row = await screen.findByTestId('tool-call-call-1')
+    const toggle = row.querySelector('button')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(row.textContent).toContain('list_plugins')
+    expect(row.textContent).toContain('ok')
+    expect(row.querySelector('.tool-details')).toBeNull()
+
+    await press(toggle)
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(row.querySelector('.tool-details')?.textContent).toContain(
+      'Arguments',
+    )
+    expect(row.querySelector('.tool-details')?.textContent).toContain('Result')
+  })
+
+  test('stops following when the person scrolls up', async () => {
+    app = await startApp()
+    const messages = screen.getByTestId('messages')
+    Object.defineProperties(messages, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 800 },
+    })
+    messages.scrollTop = 100
+
+    fireEvent.scroll(messages)
+
+    expect(screen.getByRole('button', { name: 'Jump to latest' })).toBeDefined()
   })
 })
 
