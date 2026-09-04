@@ -621,17 +621,17 @@ tool set.
 
 ### The tools
 
-| Tool                 | Arguments               | What it does                                                                                                                                |
-| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_plugins`       | —                       | Every entry with status, missing deps, protection; the catalog's names; and the **plugin declarations** a written plugin is checked against |
-| `enable_plugin`      | `{ id }`                | `enabled: true`                                                                                                                             |
-| `disable_plugin`     | `{ id }`                | `enabled: false`, which is equivalent to removal (kernel F2)                                                                                |
-| `set_plugin_options` | `{ id, options }`       | Replace the entry's options; the instance restarts                                                                                          |
-| `add_plugin`         | `{ id, name, options }` | Add a **plugin catalog** entry by name                                                                                                      |
-| `write_plugin`       | `{ id, source }`        | Write **plugin source** as a new entry, or rewrite one the agent wrote                                                                      |
-| `read_plugin`        | `{ id }`                | The source of an entry the agent wrote, and its **plugin declarations**                                                                     |
-| `remove_plugin`      | `{ id }`                | Remove an entry the agent added or wrote                                                                                                    |
-| `select_model`       | `{ name? }`             | `modelKey`'s `select` — no plugin-list edit, nothing restarts                                                                               |
+| Tool                 | Arguments               | What it does                                                                                                                                                                                |
+| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_plugins`       | —                       | Every entry with status, missing deps, protection, current options and options schema; the catalog's names and schemas; and the **plugin declarations** a written plugin is checked against |
+| `enable_plugin`      | `{ id }`                | `enabled: true`                                                                                                                                                                             |
+| `disable_plugin`     | `{ id }`                | `enabled: false`, which is equivalent to removal (kernel F2)                                                                                                                                |
+| `set_plugin_options` | `{ id, options }`       | Replace the entry's options; the instance restarts. A plugin with no validator refuses any                                                                                                  |
+| `add_plugin`         | `{ id, name, options }` | Add a **plugin catalog** entry by name                                                                                                                                                      |
+| `write_plugin`       | `{ id, source }`        | Write **plugin source** as a new entry, or rewrite one the agent wrote                                                                                                                      |
+| `read_plugin`        | `{ id }`                | The source of an entry the agent wrote, and its **plugin declarations**                                                                                                                     |
+| `remove_plugin`      | `{ id }`                | Remove an entry the agent added or wrote                                                                                                                                                    |
+| `select_model`       | `{ name? }`             | `modelKey`'s `select` — no plugin-list edit, nothing restarts                                                                                                                               |
 
 Every one of them is `concurrency: 'exclusive'`: an edit to the plugin list runs
 alone in its step, never alongside another edit or another tool.

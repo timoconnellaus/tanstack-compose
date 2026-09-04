@@ -1,5 +1,5 @@
 import { createPlugin } from '@tanstack/compose'
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey, optionsSchema } from '@tanstack/compose-agent'
 import { slotsKey, useStore } from '@tanstack/react-compose'
 import { chatListTrailerSlot } from '../slots'
 import type { ReactNode } from 'react'
@@ -8,12 +8,25 @@ import type { ReactNode } from 'react'
  * A quiet row at the end of the message list while a **turn** is running and
  * no text is arriving: between tool calls, or while the model is still
  * thinking. It fills the list's trailer slot, so the list knows nothing of it,
- * and it goes when this entry is disabled.
+ * and it goes when this entry is disabled. What it says is an **option**, so
+ * `set_plugin_options` changes the words and the row restarts with them.
  */
 export const workingIndicatorPlugin = createPlugin({
   name: 'working-indicator',
   deps: [agentKey, slotsKey],
-  setup(instance) {
+  validator: optionsSchema<{ text?: string } | undefined, { text: string }>(
+    (value) => ({ text: value?.text ?? 'Agent is working' }),
+    {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'What the row says while the agent is working.',
+        },
+      },
+    },
+  ),
+  setup(instance, options) {
     const agent = instance.context.get(agentKey)
     const slots = instance.context.get(slotsKey)
 
@@ -27,7 +40,7 @@ export const workingIndicatorPlugin = createPlugin({
             <i />
             <i />
           </span>
-          Agent is working
+          {options.text}
         </li>
       )
     }

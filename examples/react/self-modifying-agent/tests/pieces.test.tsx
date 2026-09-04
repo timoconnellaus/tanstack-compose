@@ -45,6 +45,24 @@ describe('the working indicator', () => {
     expect(screen.queryByTestId('agent-working')).toBeNull()
     await app.client.getContext(agentKey)!.idle()
   })
+
+  test('says what its options say', async () => {
+    app = await startApp({ model: slowModel })
+    const agent = app.client.getContext(agentKey)!
+    await agent.invoke('set_plugin_options', {
+      id: 'working-indicator',
+      options: { text: 'OK ALREADY!' },
+    })
+    await app.client.settled()
+
+    await sendMessage('take your time')
+    await waitFor(() =>
+      expect(screen.getByTestId('agent-working').textContent).toContain(
+        'OK ALREADY!',
+      ),
+    )
+    await agent.idle()
+  })
 })
 
 describe('markdown', () => {

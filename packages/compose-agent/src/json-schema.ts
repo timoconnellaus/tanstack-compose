@@ -102,6 +102,24 @@ function check(
 }
 
 /**
+ * A Standard Schema that also carries a {@link JsonSchema} describing what it
+ * accepts. The composer shows the schema to the model, so it knows what options
+ * a plugin takes before it sets them.
+ */
+export interface DescribedValidator<TInput, TOutput> extends StandardSchemaV1<
+  TInput,
+  TOutput
+> {
+  readonly schema: JsonSchema
+}
+
+/** The schema a validator carries, when it carries one. */
+export function schemaOf(validator: unknown): JsonSchema | undefined {
+  const schema = (validator as { schema?: unknown } | undefined)?.schema
+  return typeof schema === 'object' && schema !== null ? schema : undefined
+}
+
+/**
  * A Standard Schema that validates against a {@link JsonSchema}, so one piece of
  * plain data is both the `parameters` the model is shown and the `validator` a
  * tool's arguments are checked with. This is how a **written plugin** declares
@@ -121,8 +139,9 @@ function check(
  */
 export function jsonSchemaValidator<TArgs>(
   schema: JsonSchema,
-): StandardSchemaV1<unknown, TArgs> {
+): DescribedValidator<unknown, TArgs> {
   return {
+    schema,
     '~standard': {
       version: 1,
       vendor: 'compose-agent',
