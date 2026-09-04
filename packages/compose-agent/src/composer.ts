@@ -1,6 +1,5 @@
 import {
   createPlugin,
-  sourceCheckerKey,
   sourceErrorOf,
   stubDeclarations,
 } from '@tanstack/compose'
@@ -346,7 +345,7 @@ export const composerPlugin = createPlugin({
      * checker at all, get the concatenation the kernel would use.
      */
     const declarationsFor = (grants: ReadonlyArray<AnyStubGrant> | undefined) =>
-      instance.context.peek(sourceCheckerKey)?.declarations?.(
+      client.checker?.declarations?.(
         (grants ?? []).map((grant) => ({
           name: grant.name,
           declarations: grant.declarations,
@@ -369,7 +368,7 @@ export const composerPlugin = createPlugin({
      * whenever it restarts it (D2).
      */
     const viewGrantsFor = (source: string): Array<AnyStubGrant> => {
-      const exported = instance.context.peek(sourceCheckerKey)?.exports?.({
+      const exported = client.checker?.exports?.({
         source,
         grants: grantsOf(options.stubs),
       })
@@ -390,7 +389,7 @@ export const composerPlugin = createPlugin({
       source: string,
       grants: ReadonlyArray<AnyStubGrant>,
     ): Promise<Array<SourceDiagnostic> | undefined> => {
-      const checker = instance.context.peek(sourceCheckerKey)
+      const checker = client.checker
       if (!checker) return undefined
       const checked = await checker.check({
         instanceId: id,

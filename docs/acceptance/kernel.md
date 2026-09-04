@@ -7,18 +7,18 @@ package and say nothing about how they are met. Terms are as defined in
 
 ## A. Lifecycle and cleanup
 
-- **A1** Adding a plugin to a running client starts it; removing it leaves no trace: provided context, listeners, middleware, timers, child instances, and any other held resource are all gone.
+- **A1** Adding a plugin to a running client starts it; removing it aborts that activation's signal before cleanup and leaves no trace: provided context, listeners, middleware, timers, and any other held resource are all gone.
 - **A2** Removal does not report complete until every cleanup, including asynchronous ones, has finished. Removing twice is safe; concurrent removals await the same completion.
-- **A3** Removing an instance removes every instance it started, recursively, before it reports done.
+- **A3** _Retired — child instances were removed from the design; a plugin composes only through the plugin list (F5)._
 - **A4** Cleanups of one instance run in reverse order of registration.
 - **A5** Registering anything on an instance that is being removed or already removed throws; it never leaks silently.
-- **A6** A plugin that throws during start ends in `error` status with the original error attached; nothing it half-registered survives; sibling instances are unaffected.
+- **A6** A plugin that throws during start has its activation signal aborted with reason `failed` and ends in `error` status with the original error attached; nothing it half-registered survives; sibling instances are unaffected.
 - **A7** A cleanup that throws is reported and does not prevent the remaining cleanups from running.
 
 ## B. Deps and context
 
 - **B1** An instance whose deps are not all provided stays `pending` and starts the instant the last one is provided, regardless of plugin-list order and of whether the provider was added before or after it.
-- **B2** If a dep stops being provided, the dependent is fully cleaned up (per A) and returns to `pending`; when the dep is provided again it starts fresh.
+- **B2** If a dep stops being provided, the dependent's activation signal is aborted with reason `deactivated`, it is fully cleaned up (per A), and it returns to `pending`; async work from that activation still reads its captured deps through `context.get`, and when the dep is provided again the instance starts with a fresh signal and dep snapshot.
 - **B3** Only a value provided by an `active` instance satisfies a dep; a provider that is `pending`, in `error`, or being removed does not count.
 - **B4** A plugin can read a context key it did not declare as a dep, receiving `undefined` when absent, and keeps running either way.
 - **B5** Providing a key that is already provided in the same client throws for the second provider.
@@ -27,7 +27,7 @@ package and say nothing about how they are met. Terms are as defined in
 ## C. Replacement
 
 - **C1** Removing a provider and adding a different one for the same key results in every dependent running against the new provider, without any dependent having been written to anticipate the swap.
-- **C2** During a swap there is no window in which a dependent is `active` against a removed provider.
+- **C2** During a swap there is no window in which a dependent is `active` against a removed provider; dependents are cleaned up transitively before their providers, so cleanup can still use its captured deps.
 
 ## D. Options
 
@@ -53,7 +53,7 @@ package and say nothing about how they are met. Terms are as defined in
 ## G. Inspection
 
 - **G1** At any time the client can list every instance with `id`, plugin name, status, and — when `pending` — exactly which context keys are missing; when in `error`, the error.
-- **G2** For any instance the client can return the tree of resources it currently holds, with labels, including resources registered by nested registrations.
+- **G2** For any instance the client can return the resources it currently holds, with labels.
 - **G3** Status changes are observable through a store so devtools and adapters render live without polling.
 
 ## H. Types

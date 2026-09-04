@@ -4,10 +4,11 @@
  * page could not do before — the agent putting something on the page by writing
  * it.
  *
- * Both halves are ordinary written plugins, checked by `typescriptCheckerPlugin`
- * against the **plugin declarations** the composer derives from the **stubs**
- * the entry was granted. They are strings here for the same reason the model
- * sends strings: nothing imports them, and what type-checks is what runs.
+ * Both halves are ordinary written plugins, checked by the client's source
+ * checker against the **plugin declarations** the composer derives from the
+ * **stubs** the entry was granted. They are strings here for the same reason
+ * the model sends strings: nothing imports them, and what type-checks is what
+ * runs.
  */
 
 /**

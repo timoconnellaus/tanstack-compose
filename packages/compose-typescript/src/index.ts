@@ -8,7 +8,6 @@
  * of `docs/acceptance/self-modification.md`.
  */
 
-export { typescriptCheckerPlugin } from './plugin'
 export { createTypeScriptChecker } from './checker'
 export { baseDeclarations, pluginDeclarations } from './declarations'
 export type { GrantDeclarations } from './declarations'

@@ -18,14 +18,14 @@ npm install @tanstack/compose @tanstack/compose-typescript
 
 ## Usage
 
-It is one entry in the plugin list, with no options. A client without it starts
-plugin source as written; a client with it checks the same way for every host,
-because the check happens client-side before any host is asked to start
-anything.
+Create it with `createTypeScriptChecker()` and pass it to the client. A client
+without it starts plugin source as written; a client with it checks the same way
+for every host and every plugin-list position, because the check happens
+client-side before any host is asked to start anything.
 
 ```ts
 import { createClient, createStub } from '@tanstack/compose'
-import { typescriptCheckerPlugin } from '@tanstack/compose-typescript'
+import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 
 const toolsStub = createStub({
   name: 'tools',
@@ -41,9 +41,9 @@ declare const tools: (tool: { name: string; handler: string }) => Promise<void>`
 })
 
 const client = createClient({
+  checker: createTypeScriptChecker(),
   plugins: [
     { id: 'tools', plugin: toolsPlugin },
-    { id: 'checker', plugin: typescriptCheckerPlugin },
     { id: 'adder', source, stubs: [toolsStub] },
   ],
 })
@@ -101,7 +101,7 @@ const declarations = pluginDeclarations([
 ])
 ```
 
-The checker publishes the same function as `SourceChecker.declarations`, so a
+The returned checker's `SourceChecker.declarations` is the same function, so a
 composer holding the checker gets this text without importing this package —
 `@tanstack/compose-agent`'s composer shows it on `list_plugins` and
 `read_plugin`, and an agent writing against it is writing against the check.
@@ -122,9 +122,6 @@ in plugin source is a type error here rather than a crash in an isolate later.
 ## API
 
 ```ts
-const typescriptCheckerPlugin: Plugin
-
-// Its `declarations` member is `pluginDeclarations`.
 function createTypeScriptChecker(): SourceChecker
 
 function pluginDeclarations(

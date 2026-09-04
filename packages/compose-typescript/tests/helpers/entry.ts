@@ -5,7 +5,7 @@ import {
   createStub,
   sourceErrorOf,
 } from '@tanstack/compose'
-import { typescriptCheckerPlugin } from '../../src/index'
+import { createTypeScriptChecker } from '../../src/index'
 import type { Client } from '@tanstack/compose'
 
 /** A tool registry a written plugin can register into through its stub. */
@@ -58,9 +58,9 @@ export async function write(
   grants: Array<typeof toolsStub | typeof logStub> = [toolsStub],
 ): Promise<Client> {
   const client = createClient({
+    checker: createTypeScriptChecker(),
     plugins: [
       { id: 'registry', plugin: registryPlugin },
-      { id: 'checker', plugin: typescriptCheckerPlugin },
       { id: 'written', source, stubs: grants },
     ],
   })

@@ -4,7 +4,6 @@ import {
   createContextKey,
   createPlugin,
   createStub,
-  sourceCheckerKey,
   sourceErrorOf,
 } from '../../src/index'
 import type { Client, SourceChecker } from '../../src/index'
@@ -37,22 +36,9 @@ const exposeStub = createStub<{ name: string; handler: string }, void>({
 
 const write = async (source: string, checker?: SourceChecker) => {
   const client = createClient({
+    ...(checker ? { checker } : {}),
     plugins: [
       { id: 'registry', plugin: registry },
-      ...(checker
-        ? [
-            {
-              id: 'checker',
-              plugin: createPlugin({
-                name: 'checker',
-                provides: [sourceCheckerKey],
-                setup(instance) {
-                  instance.provide(sourceCheckerKey, checker)
-                },
-              }),
-            },
-          ]
-        : []),
       { id: 'a', source, stubs: [exposeStub] },
     ],
   })
@@ -235,28 +221,58 @@ describe('the source checker seam', () => {
     ])
   })
 
+  it('checks every source entry regardless of plugin-list position', async () => {
+    const started: Array<string> = []
+    const checkerLater = createPlugin({ name: 'checker-later', setup() {} })
+    const client = createClient({
+      checker: markerChecker,
+      hosts: {
+        recording: {
+          name: 'recording',
+          start(request) {
+            started.push(request.code)
+            return Promise.resolve({
+              call: () => Promise.resolve(undefined),
+              stop: () => Promise.resolve(),
+            })
+          },
+        },
+      },
+      plugins: [
+        {
+          id: 'src',
+          source: 'export default function () {\n  const x = NOPE\n}',
+          host: 'recording',
+        },
+        { id: 'checker', plugin: checkerLater },
+      ],
+    })
+    await client.settled()
+
+    const snapshot = client.inspect().find((one) => one.id === 'src')
+    expect(started).toEqual([])
+    expect(snapshot?.status).toBe('error')
+    expect(sourceErrorOf(snapshot?.error)?.diagnostics).toEqual([
+      { message: "'NOPE' is not assignable", line: 2, column: 3 },
+    ])
+    expect(client.inspect().find((one) => one.id === 'checker')?.status).toBe(
+      'active',
+    )
+  })
+
   it('checks against the declarations of exactly the stubs the entry was granted', async () => {
     const seen: Array<string> = []
     const named: Array<Array<{ name: string; declarations: string }>> = []
     const client = createClient({
+      checker: {
+        check({ declarations, grants, source }) {
+          seen.push(declarations)
+          named.push(grants.map((grant) => ({ ...grant })))
+          return { code: source }
+        },
+      },
       plugins: [
         { id: 'registry', plugin: registry },
-        {
-          id: 'checker',
-          plugin: createPlugin({
-            name: 'checker',
-            provides: [sourceCheckerKey],
-            setup(instance) {
-              instance.provide(sourceCheckerKey, {
-                check({ declarations, grants, source }) {
-                  seen.push(declarations)
-                  named.push(grants.map((grant) => ({ ...grant })))
-                  return { code: source }
-                },
-              })
-            },
-          }),
-        },
         {
           id: 'granted',
           source: 'export default function () {}',

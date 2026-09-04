@@ -253,8 +253,8 @@ host has released it. Source that fails to parse, fails to load, throws in setup
 or throws on the first call leaves the entry in `error`; `sourceErrorOf(error)`
 gives the phase, the message and, where available, the line.
 
-Provide a `SourceChecker` under `sourceCheckerKey` and it is consulted before a
-host is asked to start anything, against the declarations of exactly that
+Pass a `SourceChecker` to `createClient({ checker })` and it is consulted before
+a host is asked to start anything, against the declarations of exactly that
 entry's grants — so it is a type checker and a compiler in one seam. Without it,
 source is started as written. A checker that compiles more than the grant text —
 a base declaration file, a synthesized `stubs` type — publishes what it compiles

@@ -18,7 +18,6 @@ export {
 export {
   createStub,
   inProcessHost,
-  sourceCheckerKey,
   sourceErrorOf,
   stubCallAction,
   stubDeclarations,

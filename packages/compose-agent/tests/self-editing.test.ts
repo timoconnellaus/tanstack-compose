@@ -285,7 +285,6 @@ describe('an agent editing itself end to end', () => {
       'models:active',
       'model:active',
       'loop:active',
-      'checker:active',
       'clock:active',
       'clock-tools:active',
       'composer:active',

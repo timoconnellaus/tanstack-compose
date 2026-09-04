@@ -4,8 +4,9 @@ The source checker for written plugins: it type-checks **plugin source** against
 the **plugin declarations** derived from the entry's granted **stubs**, and
 returns the JavaScript the **host** starts. It meets
 [`docs/acceptance/self-modification.md`](../../docs/acceptance/self-modification.md)
-D7, D8 and D9, and it is a plugin, not part of core — a client without it starts
-source unchecked (D9), a client with it checks the same way for every host.
+D7, D8 and D9. It is client infrastructure outside core — a client without it
+starts source unchecked (D9), while a client created with it checks the same way
+for every host and every plugin-list position.
 
 Core owns the seam ([`compose/DESIGN.md` §The type-check seam](../compose/DESIGN.md));
 this package is one implementation of it. Nothing here changes how a plugin is
@@ -14,11 +15,12 @@ written, and nothing in core knows this package exists.
 ## The one primitive
 
 ```ts
-const typescriptCheckerPlugin: Plugin // provides sourceCheckerKey
+function createTypeScriptChecker(): SourceChecker
 ```
 
-One entry in the plugin list, no options. Everything else this package exports
-exists so a composer can show the model what the checker will check against:
+One factory, passed to `createClient({ checker })`, with no options. Everything
+else this package exports exists so a composer can show the model what the
+checker will check against:
 
 ```ts
 function pluginDeclarations(
@@ -322,7 +324,7 @@ lying about that. Only this package depends on it; core does not, and must not.
 | D7 — source is checked before it is started; a failure leaves the entry as it was, with line and column | `tests/checking.test.ts`                                 |
 | D7 — checked against exactly the granted stubs                                                          | `tests/checking.test.ts` ("a stub that was not granted") |
 | D8 — the declarations shown are the declarations checked                                                | `tests/declarations.test.ts`, `tests/composer.test.ts`   |
-| D9 — a plugin behind a context key; the checked output runs in the in-process host                      | `tests/running.test.ts`                                  |
+| D9 — a client checker; the checked output runs in the in-process host                                   | `tests/running.test.ts`                                  |
 | D4 — a syntax error is a diagnostic, in the same shape as every other failure                           | `tests/checking.test.ts`                                 |
 | The module shape the declarations describe is enforced, not just documented                             | `tests/checking.test.ts`                                 |
 | Budget — size and per-check latency                                                                     | `tests/budget.test.ts`                                   |

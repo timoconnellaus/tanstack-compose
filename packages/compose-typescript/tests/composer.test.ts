@@ -14,7 +14,7 @@ import {
   toolsPlugin,
 } from '@tanstack/compose-agent'
 import { describe, expect, it } from 'vitest'
-import { pluginDeclarations, typescriptCheckerPlugin } from '../src/index'
+import { createTypeScriptChecker, pluginDeclarations } from '../src/index'
 import type { Client } from '@tanstack/compose'
 import type { ComposerResult, SessionLog } from '@tanstack/compose-agent'
 
@@ -92,6 +92,7 @@ const watchLoop = (client: Client) => {
 describe('an agent writing a plugin against the real type checker', () => {
   it('reads the declarations, fails to check, corrects it, uses the tool and removes it', async () => {
     const client = createClient({
+      checker: createTypeScriptChecker(),
       plugins: [
         { id: 'session', plugin: sessionPlugin },
         { id: 'tools', plugin: toolsPlugin },
@@ -131,7 +132,6 @@ describe('an agent writing a plugin against the real type checker', () => {
           },
         },
         { id: 'loop', plugin: loopPlugin },
-        { id: 'checker', plugin: typescriptCheckerPlugin },
         {
           id: 'composer',
           plugin: composerPlugin,

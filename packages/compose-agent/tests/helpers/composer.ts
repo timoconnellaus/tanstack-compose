@@ -1,9 +1,4 @@
-import {
-  createClient,
-  createContextKey,
-  createPlugin,
-  sourceCheckerKey,
-} from '@tanstack/compose'
+import { createClient, createContextKey, createPlugin } from '@tanstack/compose'
 import {
   agentKey,
   agentStubs,
@@ -112,16 +107,6 @@ export const greeterPlugin = createPlugin({
   },
 })
 
-/** A source checker, as a plugin. The real one is its own package (D9). */
-const checkerPlugin = (checker: SourceChecker): AnyPlugin =>
-  createPlugin({
-    name: 'checker',
-    provides: [sourceCheckerKey],
-    setup(instance) {
-      instance.provide(sourceCheckerKey, checker)
-    },
-  })
-
 /**
  * A checker small enough to read: it rejects any line holding `NOPE`, and
  * otherwise strips the type annotations a real one would compile away. It
@@ -203,6 +188,7 @@ export const buildComposer = async (setup: {
 }> => {
   const client = createClient({
     ...(setup.hosts ? { hosts: setup.hosts } : {}),
+    ...(setup.checker ? { checker: setup.checker } : {}),
     plugins: [
       { id: 'session', plugin: sessionPlugin },
       { id: 'tools', plugin: toolsPlugin, options: { tools: setup.tools } },
@@ -224,9 +210,6 @@ export const buildComposer = async (setup: {
         options: { script: setup.script },
       },
       { id: 'loop', plugin: loopPlugin },
-      ...(setup.checker
-        ? [{ id: 'checker', plugin: checkerPlugin(setup.checker) }]
-        : []),
       ...(setup.plugins ?? []),
       {
         id: 'composer',

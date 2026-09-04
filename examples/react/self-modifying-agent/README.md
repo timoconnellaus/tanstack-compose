@@ -3,9 +3,10 @@
 A chat page where **every element is a plugin**. The page frame, the message
 list, the input box, the send **action**, the stop button, the plugin panel, the
 model picker and the action log are each one **plugin entry**, and disabling any
-of them takes it off the page while the rest keeps working. So is the **source
-checker**, and so is the plugin that lets a **view** the agent writes fill a
-**slot** — which is how the agent adds UI to the page it is made of.
+of them takes it off the page while the rest keeps working. The plugin that lets
+a **view** the agent writes fill a **slot** is another entry — which is how the
+agent adds UI to the page it is made of. The **source checker** is client
+infrastructure, so editing the plugin list cannot bypass it.
 
 `main.tsx` is the whole of the wiring:
 
@@ -131,11 +132,11 @@ the turn and step boundaries — renders nothing.
 
 `write_plugin { id, source, view }` writes **two** plugin entries: `summariser`,
 the server half, and `summariser.view`, the part that runs in the browser. Both
-are type-checked by `typescriptCheckerPlugin` before either is started, against
-the **plugin declarations** derived from exactly the **stubs** the entry was
-granted — so a view calling a handler its plugin does not export, or filling a
-slot the operator did not grant it, is a diagnostic in the tool result rather
-than a failure on the page.
+are type-checked by the client's `createTypeScriptChecker()` before either is
+started, against the **plugin declarations** derived from exactly the **stubs**
+the entry was granted — so a view calling a handler its plugin does not export,
+or filling a slot the operator did not grant it, is a diagnostic in the tool
+result rather than a failure on the page.
 
 What this app grants a view, in `src/client.ts`:
 

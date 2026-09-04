@@ -18,6 +18,53 @@ const makeLogger = (kind: string) =>
 const consoleLogger = makeLogger('console')
 const bufferLogger = makeLogger('buffer')
 
+const aKey = createContextKey<{ ping: () => string }>('a')
+const bKey = createContextKey<{ ping: () => string }>('b')
+
+const cleanupChain = (order: Array<string>) => {
+  let aAlive = true
+  const a = createPlugin({
+    name: 'a',
+    provides: [aKey],
+    setup(instance) {
+      instance.provide(aKey, {
+        ping: () => (aAlive ? 'alive' : 'dead'),
+      })
+      instance.cleanup(() => {
+        aAlive = false
+        order.push('a')
+      })
+    },
+  })
+  const b = createPlugin({
+    name: 'b',
+    deps: [aKey],
+    provides: [bKey],
+    setup(instance) {
+      const service = instance.context.get(aKey)
+      instance.provide(bKey, { ping: service.ping })
+      instance.cleanup(() => {
+        order.push(`b:${service.ping()}`)
+      })
+    },
+  })
+  const c = createPlugin({
+    name: 'c',
+    deps: [bKey],
+    setup(instance) {
+      const service = instance.context.get(bKey)
+      instance.cleanup(() => {
+        order.push(`c:${service.ping()}`)
+      })
+    },
+  })
+  return [
+    { id: 'a', plugin: a },
+    { id: 'b', plugin: b },
+    { id: 'c', plugin: c },
+  ]
+}
+
 // Written once, with no knowledge that the provider can be swapped.
 const seenKinds: Array<string> = []
 const dependent = createPlugin({
@@ -95,5 +142,30 @@ describe('C. Replacement', () => {
     expect(
       client.inspect().find((entry) => entry.id === 'dependent')?.status,
     ).toBe('pending')
+  })
+
+  it('cleans up a three-deep dependency chain before its provider', async () => {
+    const order: Array<string> = []
+    const client = createClient({ plugins: cleanupChain(order) })
+    await client.settled()
+
+    await client.removePlugin('a')
+
+    expect(order).toEqual(['c:alive', 'b:alive', 'a'])
+    expect(client.inspect().map((entry) => [entry.id, entry.status])).toEqual([
+      ['b', 'pending'],
+      ['c', 'pending'],
+    ])
+  })
+
+  it('destroys dependents before the providers they still use', async () => {
+    const order: Array<string> = []
+    const client = createClient({ plugins: cleanupChain(order) })
+    await client.settled()
+
+    await client.destroy()
+
+    expect(order).toEqual(['c:alive', 'b:alive', 'a'])
+    expect(client.inspect()).toEqual([])
   })
 })

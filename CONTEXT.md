@@ -11,11 +11,11 @@ The root object that owns a running application: its plugin list, context, and l
 _Avoid_: runtime, container, app, root context
 
 **Plugin**:
-A unit of contribution authored once and started by a client. It may provide context, register middleware and listeners, hold resources, and start other plugins.
+A unit of contribution authored once and started by a client. It may provide context, register middleware and listeners, and hold resources.
 _Avoid_: module, extension, service, feature
 
 **Plugin instance**:
-One started occurrence of a plugin within a client, with its own status, options, and held resources. The same plugin may have several instances.
+One started occurrence of a plugin within a client, with its own status, options, and held resources. A plugin has one instance per plugin entry.
 _Avoid_: fiber, scope, runtime
 
 **Plugin entry**:

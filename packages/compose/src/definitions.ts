@@ -1,5 +1,5 @@
 import type { Store } from '@tanstack/store'
-import type { AnyStubGrant } from './host'
+import type { AnyStubGrant, SourceChecker } from './host'
 import type {
   InferInput,
   InferOutput,
@@ -152,8 +152,8 @@ export type Status = 'pending' | 'active' | 'error' | 'removed'
 export interface ContextView<TDeps extends ReadonlyArray<AnyContextKey>> {
   /**
    * Read a declared dep. Typed from the plugin's `deps`, so reading an
-   * undeclared key is a type error (H1), and the value is always present:
-   * the instance would not be `active` otherwise.
+   * undeclared key is a type error (H1). The value is snapshotted before this
+   * activation starts, so it remains present after a live dep is withdrawn.
    */
   get: <TKey extends TDeps[number]>(key: TKey) => ValueOf<TKey>
   /**
@@ -171,10 +171,15 @@ export interface Instance<
   TDeps extends ReadonlyArray<AnyContextKey> = ReadonlyArray<AnyContextKey>,
   TProvides extends ReadonlyArray<AnyContextKey> = ReadonlyArray<AnyContextKey>,
 > {
-  /** The id of this instance: the plugin entry's id, or a derived id for a child. */
+  /** The id of this instance: the plugin entry's id. */
   readonly id: string
   /** The client this instance runs in; use it to edit the plugin list (F5). */
   readonly client: Client
+  /**
+   * This activation's cancellation signal. It is aborted before cleanup begins,
+   * with reason `deactivated`, `removed`, or `failed`.
+   */
+  readonly signal: AbortSignal
   /** Read context. */
   readonly context: ContextView<TDeps>
   /** Put a value into context under one of the plugin's declared `provides` keys. */
@@ -210,11 +215,6 @@ export interface Instance<
     action: ActionDefinition<TInput, TResult>,
     input: TInput,
   ) => Promise<TResult>
-  /** Start another plugin as a child of this instance; removed with it (A3). */
-  start: <TPlugin extends AnyPlugin>(
-    plugin: TPlugin,
-    options?: OptionsInputOf<TPlugin>,
-  ) => Promise<string>
 }
 
 /** A unit of contribution, authored once and started by a client. */
@@ -323,7 +323,7 @@ export interface PluginEntry<TPlugin extends AnyPlugin = AnyPlugin> {
 
 /** What inspection reports for one instance (G1). */
 export interface InstanceSnapshot {
-  /** The instance id: the entry id, or a derived id for a child instance. */
+  /** The instance id: the plugin entry's id. */
   id: string
   /** The name of the plugin this is an instance of. */
   plugin: string
@@ -332,8 +332,6 @@ export interface InstanceSnapshot {
   missing: Array<string>
   /** The error, when the status is `error`. */
   error?: unknown
-  /** The id of the instance that started this one, for child instances. */
-  parent?: string
 }
 
 /** One node of an instance's held-resource tree (G2). */
@@ -362,6 +360,8 @@ export interface ClientErrorReport {
  * `createClient`.
  */
 export interface Client {
+  /** The source checker configured as client infrastructure, when present. */
+  readonly checker: SourceChecker | undefined
   /** The plugin list. Writing to it reconciles the client (F1, ADR-0002). */
   readonly pluginList: Store<Array<PluginEntry>>
   /** Every instance with its status and unmet deps (G1, G3). */

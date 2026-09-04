@@ -70,8 +70,9 @@ interface ExportedName {
  * source against the declarations derived from the entry's granted stubs and,
  * when it passes, returns the plain ES module the host starts.
  *
- * Prefer {@link typescriptCheckerPlugin}; this is here for a composer that
- * wants to check source without a client, and for tests.
+ * Pass the result to `createClient({ checker })`; the same value can also be
+ * used directly by a composer that checks source before editing the plugin
+ * list.
  *
  * @example
  * ```ts

@@ -17,15 +17,6 @@ describe('A. Lifecycle and cleanup', () => {
     const heard: Array<string> = []
     const cleared = vi.fn()
 
-    const child = createPlugin({
-      name: 'child',
-      setup(instance) {
-        instance.cleanup(() => {
-          heard.push('child cleanup')
-        })
-      },
-    })
-
     const owner = createPlugin({
       name: 'owner',
       provides: [valueKey],
@@ -35,7 +26,6 @@ describe('A. Lifecycle and cleanup', () => {
         instance.defineAction(runAction, (input) => `handled:${input}`)
         instance.use(runAction, ({ input, next }) => next(`wrapped:${input}`))
         instance.cleanup(cleared, 'timer')
-        return instance.start(child).then(() => undefined)
       },
     })
 
@@ -46,18 +36,15 @@ describe('A. Lifecycle and cleanup', () => {
     expect(await client.dispatch(runAction, 'x')).toBe('handled:wrapped:x')
     client.emit(pingEvent, 'hello')
     expect(heard).toEqual(['hello'])
-    expect(client.inspect().map((entry) => entry.id)).toEqual([
-      'owner',
-      'owner/child#0',
-    ])
+    expect(client.inspect().map((entry) => entry.id)).toEqual(['owner'])
 
     await client.removePlugin('owner')
 
     expect(client.getContext(valueKey)).toBeUndefined()
     expect(cleared).toHaveBeenCalledTimes(1)
-    expect(heard).toEqual(['hello', 'child cleanup'])
+    expect(heard).toEqual(['hello'])
     client.emit(pingEvent, 'after')
-    expect(heard).toEqual(['hello', 'child cleanup'])
+    expect(heard).toEqual(['hello'])
     await expect(client.dispatch(runAction, 'x')).rejects.toThrow(
       /no plugin owns/,
     )
@@ -105,44 +92,6 @@ describe('A. Lifecycle and cleanup', () => {
     await expect(client.removePlugin('slow')).resolves.toBeUndefined()
   })
 
-  it('removing an instance removes every instance it started, recursively', async () => {
-    const order: Array<string> = []
-    const grandchild = createPlugin({
-      name: 'grandchild',
-      setup(instance) {
-        instance.cleanup(() => {
-          order.push('grandchild')
-        })
-      },
-    })
-    const child = createPlugin({
-      name: 'child',
-      async setup(instance) {
-        await instance.start(grandchild)
-        instance.cleanup(() => {
-          order.push('child')
-        })
-      },
-    })
-    const parent = createPlugin({
-      name: 'parent',
-      async setup(instance) {
-        await instance.start(child)
-        instance.cleanup(() => {
-          order.push('parent')
-        })
-      },
-    })
-
-    const client = createClient({ plugins: [{ id: 'parent', plugin: parent }] })
-    await client.settled()
-    expect(client.inspect()).toHaveLength(3)
-
-    await client.removePlugin('parent')
-    expect(order).toEqual(['parent', 'child', 'grandchild'])
-    expect(client.inspect()).toEqual([])
-  })
-
   it('cleanups of one instance run in reverse order of registration', async () => {
     const order: Array<string> = []
     const plugin = createPlugin({
@@ -185,15 +134,19 @@ describe('A. Lifecycle and cleanup', () => {
     expect(() => handle?.provide(valueKey, { label: 'x' })).toThrow(
       /being removed/,
     )
+    expect(handle?.signal.aborted).toBe(true)
+    expect(handle?.signal.reason).toBe('removed')
   })
 
   it('a plugin that throws during start ends in error with nothing left behind', async () => {
     const boom = new Error('boom')
     const cleaned = vi.fn()
+    let signal: AbortSignal | undefined
     const broken = createPlugin({
       name: 'broken',
       provides: [valueKey],
       setup(instance) {
+        signal = instance.signal
         instance.provide(valueKey, { label: 'half' })
         instance.cleanup(cleaned)
         throw boom
@@ -218,6 +171,8 @@ describe('A. Lifecycle and cleanup', () => {
     expect(broke?.status).toBe('error')
     expect(broke?.error).toBe(boom)
     expect(cleaned).toHaveBeenCalledTimes(1)
+    expect(signal?.aborted).toBe(true)
+    expect(signal?.reason).toBe('failed')
     expect(client.getContext(valueKey)).toBeUndefined()
     expect(
       client.inspect().find((entry) => entry.id === 'healthy')?.status,

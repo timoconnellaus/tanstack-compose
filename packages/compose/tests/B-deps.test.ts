@@ -56,11 +56,13 @@ describe('B. Deps and context', () => {
   it('losing a dep cleans the dependent up and returns it to pending', async () => {
     const cleaned = vi.fn()
     const starts: Array<number> = []
+    const signals: Array<AbortSignal> = []
     const consumer = createPlugin({
       name: 'consumer',
       deps: [timerKey],
       setup(instance) {
         starts.push(instance.context.get(timerKey).now())
+        signals.push(instance.signal)
         instance.cleanup(cleaned)
       },
     })
@@ -78,12 +80,73 @@ describe('B. Deps and context', () => {
     expect(pending?.status).toBe('pending')
     expect(pending?.missing).toEqual(['timer'])
     expect(cleaned).toHaveBeenCalledTimes(1)
+    expect(signals[0]?.aborted).toBe(true)
+    expect(signals[0]?.reason).toBe('deactivated')
 
     await client.addPlugin({ id: 'timer', plugin: timerPlugin })
     expect(
       client.inspect().find((entry) => entry.id === 'consumer')?.status,
     ).toBe('active')
     expect(starts).toEqual([1, 1])
+    expect(signals[1]).not.toBe(signals[0])
+    expect(signals[1]?.aborted).toBe(false)
+  })
+
+  it('keeps declared deps captured for async work after deactivation', async () => {
+    const timer = { now: () => 42 }
+    const provider = createPlugin({
+      name: 'timer',
+      provides: [timerKey],
+      setup(instance) {
+        instance.provide(timerKey, timer)
+      },
+    })
+    let finish:
+      | ((result: {
+          captured: typeof timer | undefined
+          live: typeof timer | undefined
+          aborted: boolean
+          reason: unknown
+        }) => void)
+      | undefined
+    const fired = new Promise<{
+      captured: typeof timer | undefined
+      live: typeof timer | undefined
+      aborted: boolean
+      reason: unknown
+    }>((resolve) => {
+      finish = resolve
+    })
+    const consumer = createPlugin({
+      name: 'consumer',
+      deps: [timerKey],
+      setup(instance) {
+        setTimeout(() => {
+          finish?.({
+            captured: instance.context.get(timerKey),
+            live: instance.context.peek(timerKey),
+            aborted: instance.signal.aborted,
+            reason: instance.signal.reason,
+          })
+        }, 0)
+      },
+    })
+    const client = createClient({
+      plugins: [
+        { id: 'timer', plugin: provider },
+        { id: 'consumer', plugin: consumer },
+      ],
+    })
+    await client.settled()
+
+    await client.removePlugin('timer')
+
+    await expect(fired).resolves.toEqual({
+      captured: timer,
+      live: undefined,
+      aborted: true,
+      reason: 'deactivated',
+    })
   })
 
   it('only a value provided by an active instance satisfies a dep', async () => {

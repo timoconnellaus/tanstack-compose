@@ -609,8 +609,8 @@ between providers the operator registered still works and restarts nothing.
 ## The composer: the agent edits itself
 
 How the package meets [`docs/acceptance/self-modification.md`](../../docs/acceptance/self-modification.md),
-except §D7–D9, which belong to the source checker — a plugin behind
-`sourceCheckerKey`, in its own package. The host contract and the in-process
+except §D7–D9, which belong to the source checker — client infrastructure with
+an implementation in its own package. The host contract and the in-process
 host are the kernel's ([`compose/DESIGN.md` §Hosts and plugin source](../compose/DESIGN.md)).
 
 The **composer** is one more plugin. It depends on `toolsKey` and `modelKey`,
@@ -846,7 +846,7 @@ which refuses more, never less.
 
 ### Checking before writing (D7, D9)
 
-The kernel checks plugin source through `sourceCheckerKey` when one is provided,
+The kernel checks plugin source through `client.checker` when one is configured,
 and starts it as written when none is. The composer checks it **once more,
 before it touches the plugin list**, for one reason: D7 says source that does
 not type-check leaves the entry as it was. If the composer wrote first, a

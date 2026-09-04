@@ -493,12 +493,12 @@ turns a view's tree into something the page renders. That last one is the
 `viewRendererKey` seam, which is why this package holds no framework dependency;
 provide it, and `slotRegistryKey`, from the page.
 
-### Type checking is optional, and is a plugin
+### Type checking is optional client infrastructure
 
-Provide `sourceCheckerKey` and source is type-checked against the declarations
-of exactly the stubs its entry was granted, before anything starts it; the
-diagnostics reach the model in the tool result. Provide nothing and source
-starts as written. Either way the tools behave the same.
+Pass a `SourceChecker` to `createClient({ checker })` and source is type-checked
+against the declarations of exactly the stubs its entry was granted, before
+anything starts it; the diagnostics reach the model in the tool result. Omit it
+and source starts as written. Either way the tools behave the same.
 
 ## Writing a model provider
 

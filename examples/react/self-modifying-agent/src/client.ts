@@ -13,7 +13,7 @@ import {
   viewStubs,
 } from '@tanstack/compose-agent'
 import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
-import { typescriptCheckerPlugin } from '@tanstack/compose-typescript'
+import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import { slotsPlugin } from '@tanstack/react-compose'
 import { actionLogPlugin } from './plugins/action-log'
 import { inputBoxPlugin } from './plugins/input-box'
@@ -129,6 +129,9 @@ export function createAppClient(options: AppClientOptions = {}): Client {
   const script = options.script ?? cannedConversation
 
   return createClient({
+    // Every plugin the agent writes, and every view, is type-checked against
+    // the declarations of exactly the stubs its entry was granted.
+    checker: createTypeScriptChecker(),
     plugins: [
       // The agent: six entries, exactly as `@tanstack/compose-agent` assembles
       // them outside a browser.
@@ -147,10 +150,6 @@ export function createAppClient(options: AppClientOptions = {}): Client {
         },
       },
       { id: 'models', plugin: modelsPlugin },
-      // The **source checker**: every plugin the agent writes, and every view,
-      // is type-checked against the declarations of exactly the stubs its entry
-      // was granted, before anything starts.
-      { id: 'checker', plugin: typescriptCheckerPlugin },
       // Providers read credentials by name; the page holds none, so the
       // source is empty and a provider that needs one ends in `error`.
       {
@@ -179,7 +178,6 @@ export function createAppClient(options: AppClientOptions = {}): Client {
             'credentials',
             'model',
             'loop',
-            'checker',
             'slots',
             'views',
           ],

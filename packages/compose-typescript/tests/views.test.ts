@@ -16,7 +16,7 @@ import {
   viewStubs,
 } from '@tanstack/compose-agent'
 import { describe, expect, it } from 'vitest'
-import { createTypeScriptChecker, typescriptCheckerPlugin } from '../src/index'
+import { createTypeScriptChecker } from '../src/index'
 import type { Cleanup } from '@tanstack/compose'
 import type {
   ComposerResult,
@@ -143,6 +143,7 @@ describe('a view checked against the plugin it belongs to', () => {
   it('makes a view calling a handler the plugin does not export a diagnostic', async () => {
     const page = buildPage()
     const client = createClient({
+      checker: createTypeScriptChecker(),
       plugins: [
         { id: 'session', plugin: sessionPlugin },
         { id: 'tools', plugin: toolsPlugin },
@@ -162,7 +163,6 @@ describe('a view checked against the plugin it belongs to', () => {
           },
         },
         { id: 'loop', plugin: loopPlugin },
-        { id: 'checker', plugin: typescriptCheckerPlugin },
         { id: 'page', plugin: page.plugin },
         {
           id: 'composer',

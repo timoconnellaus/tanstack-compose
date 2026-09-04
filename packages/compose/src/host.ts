@@ -1,9 +1,8 @@
-import { createAction, createContextKey } from './definitions'
+import { createAction } from './definitions'
 import type {
   ActionDefinition,
   AnyContextKey,
   Cleanup,
-  ContextKey,
   Instance,
 } from './definitions'
 
@@ -155,9 +154,9 @@ export interface SourceCheckResult {
 }
 
 /**
- * Consulted before a host is asked to start plugin source, when one is provided
- * under {@link sourceCheckerKey}. It is both the checker and the compiler: what
- * it returns as `code` is what the host starts.
+ * Client infrastructure consulted before a host is asked to start plugin
+ * source. It is both the checker and the compiler: what it returns as `code`
+ * is what the host starts.
  */
 export interface SourceChecker {
   check: (request: {
@@ -208,14 +207,6 @@ export interface SourceExport {
   /** The printed type, when the checker could recover one. */
   type?: string
 }
-
-/**
- * The context key a source checker is provided under. A client without one
- * starts plugin source as written; a client with one checks it the same way for
- * every host.
- */
-export const sourceCheckerKey: ContextKey<SourceChecker> =
-  createContextKey<SourceChecker>('compose.sourceChecker')
 
 /** What the client knows about a failure to start or call plugin source. */
 export interface SourceError {

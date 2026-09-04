@@ -2,7 +2,6 @@ import { Store, batch, shallow } from '@tanstack/store'
 import { createAction } from './definitions'
 import {
   inProcessHost,
-  sourceCheckerKey,
   sourceError,
   stubCallAction,
   stubDeclarations,
@@ -55,7 +54,6 @@ export const optionsUpdateAction: ActionDefinition<
 interface Resource {
   label: string
   cleanup?: Cleanup
-  child?: InstanceRecord
 }
 
 /** What the client keeps for one hosted instance while it is running. */
@@ -82,10 +80,8 @@ interface InstanceRecord {
   /** The client view this instance edits through; built on first use (F5). */
   view?: Client
   provisions: Array<AnyContextKey>
-  parent?: InstanceRecord
-  fromEntry: boolean
+  controller?: AbortController
   removal?: Promise<void>
-  childCount: number
 }
 
 interface MiddlewareRegistration {
@@ -135,6 +131,7 @@ const sameOptions = (a: unknown, b: unknown): boolean => {
 }
 
 class ClientImpl implements Client {
+  readonly checker: SourceChecker | undefined
   readonly pluginList: Store<Array<PluginEntry>>
   readonly instances: Store<Array<InstanceSnapshot>>
   readonly context: Store<Array<ContextSnapshot>>
@@ -157,8 +154,10 @@ class ClientImpl implements Client {
   constructor(options?: {
     plugins?: Array<PluginEntry>
     hosts?: Record<string, Host>
+    checker?: SourceChecker
     onError?: (report: ClientErrorReport) => void
   }) {
+    this.checker = options?.checker
     this.#onError = options?.onError
     for (const [name, host] of Object.entries(options?.hosts ?? {})) {
       this.#hosts.set(name, host)
@@ -346,7 +345,6 @@ class ClientImpl implements Client {
     )
 
     for (const record of [...this.#records.values()]) {
-      if (!record.fromEntry) continue
       const entry = desired.get(record.id)
       if (
         !entry ||
@@ -395,8 +393,6 @@ class ClientImpl implements Client {
       phase: 'idle',
       resources: [],
       provisions: [],
-      fromEntry: true,
-      childCount: 0,
     }
     this.#records.set(record.id, record)
     await this.#validateOptions(record)
@@ -466,8 +462,7 @@ class ClientImpl implements Client {
     const grants = entry.stubs ?? []
 
     let code = entry.source!
-    const checker = this.#published.get(sourceCheckerKey) as
-      SourceChecker | undefined
+    const checker = this.checker
     if (checker) {
       const checked = await checker.check({
         instanceId: instance.id,
@@ -556,6 +551,7 @@ class ClientImpl implements Client {
       const record = this.#records.get(instanceId)
       if (first && record && record.status === 'active') {
         await this.#fail(record, error)
+        this.#publish()
       }
       throw error
     }
@@ -564,12 +560,14 @@ class ClientImpl implements Client {
   /** Tear an active instance down and leave it in `error`. */
   async #fail(record: InstanceRecord, error: unknown): Promise<void> {
     this.#setPhase(record, 'removing')
+    record.controller?.abort('failed')
+    const dependents = this.#deactivateDependents(record)
+    if (dependents) await dependents
     await this.#release(record)
     record.status = 'error'
     record.error = error
     record.phase = 'idle'
     this.#report({ scope: 'setup', instanceId: record.id, error })
-    this.#publish()
   }
 
   // -------------------------------------------------------------- settle passes
@@ -648,10 +646,16 @@ class ClientImpl implements Client {
 
   async #startRecord(record: InstanceRecord): Promise<void> {
     this.#setPhase(record, 'setup')
+    const deps = new Map<AnyContextKey, unknown>()
+    for (const key of record.plugin.deps) {
+      deps.set(key, this.#published.get(key))
+    }
+    const controller = new AbortController()
+    record.controller = controller
     const values = new Map<AnyContextKey, unknown>()
     try {
       const result = await record.plugin.setup(
-        this.#makeInstance(record, values),
+        this.#makeInstance(record, values, deps, controller.signal),
         record.options,
       )
       if (typeof result === 'function') {
@@ -667,11 +671,7 @@ class ClientImpl implements Client {
       record.error = undefined
       record.phase = 'idle'
     } catch (error) {
-      await this.#release(record)
-      record.status = 'error'
-      record.error = error
-      record.phase = 'idle'
-      this.#report({ scope: 'setup', instanceId: record.id, error })
+      await this.#fail(record, error)
     }
   }
 
@@ -683,22 +683,46 @@ class ClientImpl implements Client {
     for (let index = resources.length - 1; index >= 0; index--) {
       const resource = resources[index]!
       try {
-        if (resource.child) await this.#remove(resource.child)
         if (resource.cleanup) await resource.cleanup()
       } catch (error) {
         this.#report({ scope: 'cleanup', instanceId: record.id, error })
       }
     }
     record.provisions = []
+    record.controller = undefined
   }
 
   #setPhase(record: InstanceRecord, phase: InstanceRecord['phase']): void {
     record.phase = phase
   }
 
+  /** Deactivate every active consumer of this record, deepest first. */
+  #deactivateDependents(record: InstanceRecord): Promise<void> | undefined {
+    if (record.provisions.length === 0) return undefined
+    const provided = new Set(record.provisions)
+    const dependents = [...this.#records.values()].filter(
+      (dependent) =>
+        dependent !== record &&
+        dependent.status === 'active' &&
+        dependent.phase === 'idle' &&
+        dependent.plugin.deps.some((key: AnyContextKey) => provided.has(key)),
+    )
+    if (dependents.length === 0) return undefined
+    return (async () => {
+      for (const dependent of dependents) {
+        if (dependent.status === 'active' && dependent.phase === 'idle') {
+          await this.#deactivate(dependent)
+        }
+      }
+    })()
+  }
+
   /** Full cleanup, keeping the record so it can start again later (B2). */
   async #deactivate(record: InstanceRecord): Promise<void> {
     this.#setPhase(record, 'removing')
+    record.controller?.abort('deactivated')
+    const dependents = this.#deactivateDependents(record)
+    if (dependents) await dependents
     await this.#release(record)
     record.status = 'pending'
     record.error = undefined
@@ -708,6 +732,9 @@ class ClientImpl implements Client {
   #remove(record: InstanceRecord): Promise<void> {
     record.removal ??= (async () => {
       this.#setPhase(record, 'removing')
+      record.controller?.abort('removed')
+      const dependents = this.#deactivateDependents(record)
+      if (dependents) await dependents
       await this.#release(record)
       record.status = 'removed'
       record.phase = 'idle'
@@ -732,6 +759,7 @@ class ClientImpl implements Client {
     const edit = (): Promise<void> =>
       record.phase === 'idle' ? this.#editDone() : Promise.resolve()
     record.view ??= {
+      checker: this.checker,
       pluginList: this.pluginList,
       instances: this.instances,
       context: this.context,
@@ -793,6 +821,8 @@ class ClientImpl implements Client {
   #makeInstance(
     record: InstanceRecord,
     values: Map<AnyContextKey, unknown>,
+    deps: Map<AnyContextKey, unknown>,
+    signal: AbortSignal,
   ): Instance<any, any> {
     // Named, because `client` is a getter and `this` inside it is the instance.
     const owner = this
@@ -815,11 +845,12 @@ class ClientImpl implements Client {
 
     return {
       id: record.id,
+      signal,
       get client(): Client {
         return owner.#pluginView(record)
       },
       context: {
-        get: (key: AnyContextKey) => this.#published.get(key),
+        get: (key: AnyContextKey) => deps.get(key),
         peek: (key: AnyContextKey) => this.#published.get(key),
       },
       provide: (key: AnyContextKey, value: unknown) => {
@@ -885,29 +916,6 @@ class ClientImpl implements Client {
       },
       dispatch: (action: AnyAction, input: unknown) =>
         this.#dispatch(action, input),
-      start: async (plugin: AnyPlugin, options?: unknown) => {
-        guard()
-        const child: InstanceRecord = {
-          id: `${record.id}/${plugin.name}#${record.childCount++}`,
-          plugin,
-          optionsInput: options,
-          options: undefined,
-          status: 'pending',
-          phase: 'idle',
-          resources: [],
-          provisions: [],
-          parent: record,
-          fromEntry: false,
-          childCount: 0,
-        }
-        this.#records.set(child.id, child)
-        record.resources.push({ label: `instance(${plugin.name})`, child })
-        await this.#validateOptions(child)
-        if (child.status === 'pending' && this.#missing(child).length === 0) {
-          await this.#startRecord(child)
-        }
-        return child.id
-      },
     } as Instance<any, any>
   }
 
@@ -1110,15 +1118,13 @@ class ClientImpl implements Client {
   resources(instanceId: string): ResourceNode | undefined {
     const record = this.#records.get(instanceId)
     if (!record) return undefined
-    const node = (current: InstanceRecord): ResourceNode => ({
-      label: `${current.plugin.name} (${current.id})`,
-      children: current.resources.map((resource) =>
-        resource.child
-          ? node(resource.child)
-          : { label: resource.label, children: [] },
-      ),
-    })
-    return node(record)
+    return {
+      label: `${record.plugin.name} (${record.id})`,
+      children: record.resources.map((resource) => ({
+        label: resource.label,
+        children: [],
+      })),
+    }
   }
 
   getContext<TValue>(key: ContextKey<TValue>): TValue | undefined {
@@ -1136,7 +1142,7 @@ class ClientImpl implements Client {
     this.#onError?.(report)
   }
 
-  /** Instances in plugin-list order, each followed by the instances it started. */
+  /** Instances in plugin-list order. */
   #orderedRecords(): Array<InstanceRecord> {
     const ordered: Array<InstanceRecord> = []
     const seen = new Set<InstanceRecord>()
@@ -1144,9 +1150,6 @@ class ClientImpl implements Client {
       if (seen.has(record)) return
       seen.add(record)
       ordered.push(record)
-      for (const resource of record.resources) {
-        if (resource.child) push(resource.child)
-      }
     }
     for (const entry of this.#applied) {
       const record = this.#records.get(entry.id)
@@ -1168,7 +1171,6 @@ class ClientImpl implements Client {
             ? this.#missing(record).map((key) => key.name)
             : [],
         ...(record.error === undefined ? {} : { error: record.error }),
-        ...(record.parent ? { parent: record.parent.id } : {}),
       }),
     )
     const context: Array<ContextSnapshot> = [...this.#claims.entries()]
@@ -1199,6 +1201,8 @@ class ClientImpl implements Client {
 export function createClient(options?: {
   /** The initial plugin list. */
   plugins?: Array<PluginEntry>
+  /** The source checker to apply to every source entry, regardless of order. */
+  checker?: SourceChecker
   /**
    * Hosts an entry may name, by name. The in-process host is always present as
    * `in-process` and is what an entry with no `host` runs in.

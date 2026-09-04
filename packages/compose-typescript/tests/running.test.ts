@@ -20,10 +20,7 @@ describe('source that type-checks', () => {
     await client.removePlugin('written')
 
     expect(client.resources('written')).toBeUndefined()
-    expect(client.inspect().map((one) => one.id)).toEqual([
-      'registry',
-      'checker',
-    ])
+    expect(client.inspect().map((one) => one.id)).toEqual(['registry'])
   })
 
   it('hands the host plain JavaScript, not the TypeScript it was given', () => {

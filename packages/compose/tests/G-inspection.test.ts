@@ -63,25 +63,16 @@ describe('G. Inspection', () => {
     ])
   })
 
-  it('the resource tree of an instance is labelled and includes nested registrations', async () => {
-    const child = createPlugin({
-      name: 'child',
-      provides: [poolKey],
-      setup(instance) {
-        instance.provide(poolKey, { size: 1 })
-        instance.cleanup(() => {}, 'pool socket')
-      },
-    })
+  it('the resource tree of an instance labels every held registration', async () => {
     const parent = createPlugin({
       name: 'parent',
       provides: [configKey],
-      async setup(instance) {
+      setup(instance) {
         instance.provide(configKey, { url: 'https://example.test' })
         instance.defineAction(queryAction, () => 1)
         instance.on(tickEvent, () => {})
         instance.use(queryAction, ({ input, next }) => next(input))
         instance.cleanup(() => {}, 'interval')
-        await instance.start(child)
       },
     })
 
@@ -95,9 +86,6 @@ describe('G. Inspection', () => {
       '  listener(tick)',
       '  middleware(query)',
       '  interval',
-      '  child (parent/child#0)',
-      '    provide(pool)',
-      '    pool socket',
     ])
     expect(client.resources('nope')).toBeUndefined()
 
