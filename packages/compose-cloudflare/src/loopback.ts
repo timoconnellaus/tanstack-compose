@@ -43,6 +43,58 @@ const tooLarge = (value: unknown): StubAnswer | undefined =>
       }
     : undefined
 
+/** How a loopback re-enters the object that owns a host's stubs. */
+export interface StubReentry {
+  composeStubCall: (props: StubProps, input: unknown) => Promise<StubAnswer>
+}
+
+const reentries = new Map<string, () => StubReentry>()
+
+/**
+ * Route every loopback call for `hostId` back into the Durable Object that
+ * owns the host. A loopback runs in the loader Worker's own request; a host
+ * whose handlers touch the object (its facets, its storage) must run them in
+ * a request the object is handling, so the loopback asks the object — through
+ * a stub minted per call — to dispatch on its behalf.
+ */
+export function registerStubReentry(
+  hostId: string,
+  reentry: () => StubReentry,
+): () => void {
+  reentries.set(hostId, reentry)
+  return () => {
+    if (reentries.get(hostId) === reentry) reentries.delete(hostId)
+  }
+}
+
+/**
+ * Dispatch one stub call on the client side, under the instance id the props
+ * carry. Call from inside the object that owns the host (a re-entered RPC) or,
+ * for a host with no object, from the loopback itself.
+ */
+export async function dispatchStubCall(
+  props: StubProps,
+  input: unknown,
+): Promise<StubAnswer> {
+  const stub = resolveStub(props.hostId, props.instanceId, props.stub)
+  if (!stub) {
+    return {
+      ok: false,
+      message: `@tanstack/compose-cloudflare: stub "${props.stub}" was revoked when instance "${props.instanceId}" stopped`,
+    }
+  }
+  try {
+    const value = await stub(input)
+    return tooLarge(value) ?? { ok: true, value }
+  } catch (error) {
+    const message = (error as { message?: unknown } | null)?.message
+    return {
+      ok: false,
+      message: typeof message === 'string' ? message : String(error),
+    }
+  }
+}
+
 /**
  * The one entrypoint a hosted plugin can reach: a stub, arriving as a loopback
  * binding in the Dynamic Worker's `env` (ADR-0005). Re-export it from your
@@ -69,22 +121,8 @@ export class ComposeStubLoopback extends WorkerEntrypoint {
           '@tanstack/compose-cloudflare: a stub loopback was called without props; mint it through the host',
       }
     }
-    const stub = resolveStub(props.hostId, props.instanceId, props.stub)
-    if (!stub) {
-      return {
-        ok: false,
-        message: `@tanstack/compose-cloudflare: stub "${props.stub}" was revoked when instance "${props.instanceId}" stopped`,
-      }
-    }
-    try {
-      const value = await stub(input)
-      return tooLarge(value) ?? { ok: true, value }
-    } catch (error) {
-      const message = (error as { message?: unknown } | null)?.message
-      return {
-        ok: false,
-        message: typeof message === 'string' ? message : String(error),
-      }
-    }
+    const reentry = reentries.get(props.hostId)
+    if (reentry) return await reentry().composeStubCall(props, input)
+    return await dispatchStubCall(props, input)
   }
 }

@@ -28,10 +28,13 @@ interface DurableObjectConstructor<TEnv> {
 interface ComposeDurableObjectHost extends Host {
   alarm: () => Promise<void>
   schedule: (operation: unknown) => Promise<void>
+  stubCall?: (props: unknown, input: unknown) => Promise<unknown>
 }
 
 /** RPC and WebSocket surface owned by one tenant/app Durable Object. */
 export interface ComposeDurableObject {
+  /** Call only as an RPC into the object: dispatch a re-entered loopback call. */
+  composeStubCall: (props: unknown, input: unknown) => Promise<unknown>
   /** Call only as an RPC into the object: apply a host schedule operation. */
   composeSchedule: (operation: unknown) => Promise<void>
   /** Call only from inside the object: forward its platform alarm. */
@@ -76,6 +79,19 @@ export interface ComposeDurableObjectOptions<TEnv> {
   catalog: Readonly<Record<string, AnyPlugin>>
   /** Stub values named by the serialized grant names. */
   grants: Readonly<Record<string, AnyStubGrant>>
+  /**
+   * Resolve one entry's granted stubs. Defaults to looking each name up in
+   * `grants`; an app that narrows a grant per entry — a view's `server` grant
+   * typed from its paired server module's exports, say — does it here.
+   */
+  resolveStubs?: (
+    entry: SerializedEntry,
+    context: {
+      entries: ReadonlyArray<SerializedEntry>
+      grants: Readonly<Record<string, AnyStubGrant>>
+      checker: SourceChecker | undefined
+    },
+  ) => Promise<ReadonlyArray<AnyStubGrant>>
   /** Base actions the browser shell may dispatch, keyed by public name. */
   actions?: Readonly<Record<string, AnyAction>>
   /** Mint an RPC stub for the same Durable Object as `ctx`; called per use. */
@@ -204,7 +220,7 @@ export function createComposeDurableObject<TEnv>(
       this.#client = createClient({
         checker: options.checker,
         hosts: { [this.#hostName]: this.#host },
-        plugins: this.#materialize(this.#entries),
+        plugins: await this.#materialize(this.#entries),
       })
       await this.#client.settled()
       const registry = this.#client.getContext(slotsKey)
@@ -217,6 +233,18 @@ export function createComposeDurableObject<TEnv>(
       this.#client.instances.subscribe(() => this.#schedulePublish())
       this.#registry.state.subscribe(() => this.#schedulePublish())
       await this.#publishNow()
+    }
+
+    /** Dispatch a loopback call after RPC re-enters this object. */
+    async composeStubCall(props: unknown, input: unknown): Promise<unknown> {
+      // Not gated on #ready: a facet's setup calls stubs while #initialize is
+      // still awaiting that setup, and the two would wait on each other.
+      if (!this.#host.stubCall) {
+        throw new Error(
+          '@tanstack/start-compose: this host does not re-enter loopback calls',
+        )
+      }
+      return await this.#host.stubCall(props, input)
     }
 
     /** Apply a schedule operation after RPC re-enters this object. */
@@ -232,38 +260,53 @@ export function createComposeDurableObject<TEnv>(
       await this.#host.alarm()
     }
 
-    #materialize(entries: ReadonlyArray<SerializedEntry>): Array<PluginEntry> {
-      return entries.map((entry) => {
-        const stubs = entry.stubs.map((name) => {
-          const grant = options.grants[name]
-          if (!grant) {
-            throw new Error(
-              `@tanstack/start-compose: the grant catalog has no "${name}"`,
-            )
-          }
-          return grant
-        })
-        const common = {
-          id: entry.id,
-          options: entry.options,
-          enabled: entry.enabled,
+    #catalogStubs(entry: SerializedEntry): Array<AnyStubGrant> {
+      return entry.stubs.map((name) => {
+        const grant = options.grants[name]
+        if (!grant) {
+          throw new Error(
+            `@tanstack/start-compose: the grant catalog has no "${name}"`,
+          )
         }
-        if ('catalog' in entry.plugin) {
-          const plugin = options.catalog[entry.plugin.catalog]
-          if (!plugin) {
-            throw new Error(
-              `@tanstack/start-compose: the plugin catalog has no "${entry.plugin.catalog}"`,
-            )
-          }
-          return { ...common, plugin }
-        }
-        return {
-          ...common,
-          source: entry.plugin.source,
-          host: entry.host ?? this.#hostName,
-          stubs,
-        }
+        return grant
       })
+    }
+
+    async #materialize(
+      entries: ReadonlyArray<SerializedEntry>,
+    ): Promise<Array<PluginEntry>> {
+      const context = {
+        entries,
+        grants: options.grants,
+        checker: options.checker,
+      }
+      return await Promise.all(
+        entries.map(async (entry): Promise<PluginEntry> => {
+          const common = {
+            id: entry.id,
+            options: entry.options,
+            enabled: entry.enabled,
+          }
+          if ('catalog' in entry.plugin) {
+            const plugin = options.catalog[entry.plugin.catalog]
+            if (!plugin) {
+              throw new Error(
+                `@tanstack/start-compose: the plugin catalog has no "${entry.plugin.catalog}"`,
+              )
+            }
+            return { ...common, plugin }
+          }
+          const stubs = options.resolveStubs
+            ? await options.resolveStubs(entry, context)
+            : this.#catalogStubs(entry)
+          return {
+            ...common,
+            source: entry.plugin.source,
+            host: entry.host ?? this.#hostName,
+            stubs,
+          }
+        }),
+      )
     }
 
     #snapshot(): ComposeSnapshot {
@@ -348,7 +391,7 @@ export function createComposeDurableObject<TEnv>(
       await this.ctx.storage.put(listKey, this.#entries)
       this.#reconciling = true
       try {
-        await this.#client.setPluginList(this.#materialize(this.#entries))
+        await this.#client.setPluginList(await this.#materialize(this.#entries))
       } finally {
         this.#reconciling = false
       }

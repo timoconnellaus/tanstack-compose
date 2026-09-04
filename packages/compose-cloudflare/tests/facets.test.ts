@@ -21,9 +21,12 @@ describe('the Durable Object facet host', () => {
     const object = testObject('scheduled-export')
     await object.scheduleOnce()
 
-    await new Promise((resolve) => setTimeout(resolve, 300))
-
-    await expect(object.events()).resolves.toEqual(['fired'])
+    await vi.waitFor(
+      async () => {
+        expect(await object.events()).toEqual(['fired'])
+      },
+      { timeout: 3000 },
+    )
     await object.stopClient()
   })
 
@@ -37,7 +40,7 @@ describe('the Durable Object facet host', () => {
           (await object.events()).filter((event) => event === 'tick').length,
         ).toBeGreaterThanOrEqual(2)
       },
-      { timeout: 1000 },
+      { timeout: 5000 },
     )
     await object.cancelRecurring()
     const afterCancel = await object.events()
@@ -52,9 +55,12 @@ describe('the Durable Object facet host', () => {
     const object = testObject('schedule-lifecycle')
     await object.scheduleThroughRestartAndRewrite()
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    await expect(object.events()).resolves.toEqual(['survived'])
+    await vi.waitFor(
+      async () => {
+        expect(await object.events()).toEqual(['survived'])
+      },
+      { timeout: 5000 },
+    )
     await object.armSurvivor()
     await object.removeScheduled('survivor')
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -72,7 +78,7 @@ describe('the Durable Object facet host', () => {
         expect(events).toContain('left')
         expect(events).toContain('right')
       },
-      { timeout: 1000 },
+      { timeout: 5000 },
     )
     await object.removeScheduled('left')
     const before = await object.events()

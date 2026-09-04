@@ -4,12 +4,16 @@ import {
   isClient,
   useComposeView,
 } from '@tanstack/react-compose'
-import {
-  TanStackDevtools,
-  composeDevtoolsPlugin,
-} from '@tanstack/compose-devtools/react'
 import { useComposeEdit, useComposeSnapshot } from '@tanstack/start-compose'
-import { Suspense, createContext, useContext, useMemo } from 'react'
+import {
+  Suspense,
+  createContext,
+  lazy,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { notifications, pageSide } from '../base'
 import { PluginPanel } from './plugin-panel'
 import { useDeclareSlots } from './slots'
@@ -171,15 +175,41 @@ function Frame(properties: {
 }
 
 /**
+ * The devtools shell is imported only in the browser: its UI kit is Solid, and
+ * Solid's server build throws when the module is merely evaluated during SSR.
+ */
+const DevtoolsShell = lazy(async () => {
+  const devtools = await import('@tanstack/compose-devtools/react')
+  return {
+    default: ({ client }: { client: Client }) => (
+      <devtools.TanStackDevtools
+        plugins={[devtools.composeDevtoolsPlugin(client)]}
+      />
+    ),
+  }
+})
+
+/**
  * TanStack Devtools in development, over the browser-only client. The deployed
  * shape holds a read-only view, which the devtools do not read yet.
  */
 function Devtools(): ReactNode {
   const view = useComposeView()
-  if (!import.meta.env.DEV || import.meta.env.TEST || !isClient(view)) {
+  const [inBrowser, setInBrowser] = useState(false)
+  useEffect(() => setInBrowser(true), [])
+  if (
+    !import.meta.env.DEV ||
+    import.meta.env.TEST ||
+    !inBrowser ||
+    !isClient(view)
+  ) {
     return null
   }
-  return <TanStackDevtools plugins={[composeDevtoolsPlugin(view)]} />
+  return (
+    <Suspense fallback={null}>
+      <DevtoolsShell client={view} />
+    </Suspense>
+  )
 }
 
 /** Declare the frame's own slots on this app's client while it is mounted. */

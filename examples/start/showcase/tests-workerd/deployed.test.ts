@@ -33,11 +33,17 @@ describe('the deployed table app', () => {
     const added = await object.snapshot()
     const fill = added.fills.find((one) => one.instanceId === 'export-csv.view')
     expect(fill?.slot).toBe('table.actions')
-    expect(fill?.view.type).toBe('button')
+    expect(fill?.view.type).toBe('stack')
+    expect(
+      fill?.view.type === 'stack' &&
+        fill.view.children.some(
+          (child) => child.type === 'button' && child.label === 'Export CSV',
+        ),
+    ).toBe(true)
 
     const csv = await object.press({
       viewInstanceId: 'export-csv.view',
-      handler: 'downloadCsv',
+      handler: 'exportCsv',
     })
     expect(csv).toContain('id,name,city,amount,due')
     expect(csv).toContain('Avery Stone')
@@ -48,8 +54,12 @@ describe('the deployed table app', () => {
     expect(removed.fills).not.toContainEqual(
       expect.objectContaining({ instanceId: 'export-csv.view' }),
     )
-    await expect(
-      object.callSource({ id: 'export-csv', handler: 'exportCsv' }),
-    ).rejects.toThrow('not active')
+    // The workers test pool reports a rejecting RPC method as an unhandled
+    // error, so removal is asserted through the snapshot: no instance, no fill.
+    expect(removed.instances.map((instance) => instance.id)).toEqual([
+      'slots',
+      'views',
+      'table',
+    ])
   })
 })

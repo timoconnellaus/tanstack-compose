@@ -509,3 +509,14 @@ silencing it means marking the binding remote, which is the thing being avoided.
 
 `self` is a factory, not a stub: an RPC stub is bound to the request that minted it, and the schedule loopback runs in
 the facet's request, so the host mints a fresh stub per operation (`options.self()`).
+
+## Loopbacks re-enter the object
+
+A loopback (`ComposeStubLoopback`) runs in the loader Worker's own request. For the facet host every stub handler
+may touch the object — `schedule` writes its storage, `server` calls back into another facet through `ctx.facets` —
+and workerd refuses I/O on an object's `ctx` from any request the object is not handling. So the facet host registers
+a re-entry for its host id (`registerStubReentry`): the loopback mints a stub to the object (`options.self()`, per
+call, because a stub is bound to the request that minted it) and asks `composeStubCall(props, input)`, which the
+object's class forwards to `host.stubCall` — the ordinary registry dispatch, now inside the object. The facet stub
+itself is likewise obtained per use (`ctx.facets.get` is idempotent). The isolate host has no object and dispatches
+in the loopback directly.

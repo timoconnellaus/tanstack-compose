@@ -7,7 +7,7 @@ import {
 } from '@tanstack/compose'
 import { createFacetHost } from '../src/index'
 import type { Client, PluginEntry } from '@tanstack/compose'
-import type { FacetHost } from '../src/index'
+import type { FacetHost, StubAnswer, StubProps } from '../src/index'
 
 interface Env {
   LOADER: WorkerLoader
@@ -211,6 +211,11 @@ export async function fire() { await api.note(label) }
 
   async alarm(): Promise<void> {
     await this.#facetHost().alarm()
+  }
+
+  /** Re-entered loopback calls; call only as an RPC into this object. */
+  async composeStubCall(props: StubProps, input: unknown): Promise<StubAnswer> {
+    return await this.#facetHost().stubCall(props, input)
   }
 
   /** Re-entered schedule writes; call only as an RPC into this object. */
