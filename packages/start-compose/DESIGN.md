@@ -45,16 +45,37 @@ real app). The app supplies:
 - an optional action catalog for the ordinary base actions the shell dispatches;
 - the host constructor and checker.
 
-The list is stored under `compose:plugin-list` before reconciliation. Its only
+The generation log is stored under `compose:generations` before reconciliation.
+Its entries' only
 durable form is `{ id, plugin: { catalog } | { source }, options, enabled,
 stubs: [names], host }`. Plugin objects and grant functions never enter
-storage. On eviction, initialization reads that list, resolves it against the
+storage. On eviction, initialization reads the head's list, resolves it against the
 current catalog through `@tanstack/compose/catalog`, and starts a new client.
 An unknown plugin name becomes an ordinary error instance rather than
 preventing the list from loading. A functional initial list needs the
 app id only for the first `snapshot(appId)`; after persistence, the object id
 already isolates the app and no app discriminator is stored or accepted by
 edits.
+
+Each edit first derives the next full serialized list and appends a pending
+generation through `@tanstack/compose/generations`; settlement finalises it as
+`good` only when every enabled entry is active, otherwise `bad`. The snapshot
+generation is the log generation, not a publication counter. Fill-only
+publications may therefore repeat a generation and followers accept equal
+generation numbers as newer whole state.
+
+On boot, a missing log gets generation zero for the initial list. A head whose
+base version differs from the option selected for this boot is copied into a
+new pending generation before the fresh client checks it; the settled outcome
+is then recorded. A matching settled head is reconstructed without inventing a
+generation. `generations()` returns cloned history and `revert(n)` appends the
+chosen entries under the current head's base version before reconciling them.
+
+`reset(appId?)` is the explicit eviction-equivalent seam for an application that
+selects a base per request (the showcase Upgrade toggle). It destroys only the
+in-memory client, retains the log, and initializes again. `baseVersion` may be a
+function of that boot id and `createChecker` may select the declarations for
+the resulting version; fixed applications pass a string and one checker.
 
 Explicitly narrowed `createSlotsStub({ slots })` grants also declare a missing
 allowed list slot when used in the headless server client. A mounted browser
@@ -69,6 +90,9 @@ is what lets an evicted DO reconstruct view fills before it renders a route.
 ```ts
 interface ComposeSnapshot {
   generation: number
+  baseVersion: string
+  outcome: 'pending' | 'good' | 'bad'
+  lastKnownGood?: number
   pluginList: Array<SnapshotEntry>
   instances: Array<InstanceSnapshotWithSerializableError>
   fills: Array<{ id; instanceId; slot; order; key?; view: ViewNode }>
@@ -85,8 +109,12 @@ holds the host-attached view instance id and its validated `ViewNode`.
 batch, recreates renderers and binds every named callback to `press` with that
 tagged id. A caller cannot substitute an id through view data.
 
-The generation is stored under `compose:generation`, incremented before every
-whole-snapshot publication, and therefore remains monotonic across eviction.
+The generation comes from the persisted append-only log and therefore remains
+monotonic across eviction and every plugin-list edit.
+When an application selects among bundled bases dynamically, an initialization
+without a new selection hint keeps the stored head's `baseVersion`; this makes
+the selected base survive object eviction. A supplied boot id remains the
+authority for an intentional switch and can append a new-version generation.
 Instance-store and fill-store changes queue publication. Changes arriving
 while a publication is in progress queue another pass instead of being lost.
 During an `edit`, intermediate reconciliation notifications are held; the
@@ -110,7 +138,8 @@ its composer results without teaching this package about agents.
 
 ## Server calls and error ownership
 
-The DO surface is `snapshot()`, `edit(op)`, `dispatch(...)`, `press(...)`, the
+The DO surface is `snapshot()`, `edit(op)`, `generations()`, `revert(n)`,
+`reset(appId?)`, `dispatch(...)`, `press(...)`, the
 operator-only `callSource(...)`, and `follow()`.
 
 Before calling a view export, `press` proves that the current snapshot contains
@@ -137,9 +166,9 @@ whole snapshots and `useComposeEdit()` sends authoritative edits.
 
 - Whole snapshots are preferred to diffs until measurement justifies another
   protocol.
-- This package persists only the minimal plugin list and generation needed to
-  reconstruct the DO. It does not implement slice 8's other services or slice
-  9's version log/revert history.
+- This package persists only the generation log needed to reconstruct the DO;
+  base declarations, catalogs, plugin objects and grant implementations stay in
+  the application.
 - The app owns tenant identity, routing, cookies, authorization, catalogs, and
   deployment bindings.
 - There is no in-process fallback in the deployed browser. An app may keep a
@@ -154,6 +183,7 @@ whole snapshots and `useComposeEdit()` sends authoritative edits.
 | newer generations apply, older ones are ignored, and a closed follower reconnects          | `tests/follow.test.tsx`                                  |
 | mounted follower status returns on the same socket and disconnect removes server status    | `tests/follow.test.tsx`, `tests/durable-object.test.ts`  |
 | durable edits, source hiding, headless fills, presses, removal, and product error messages | `tests/durable-object.test.ts`                           |
+| base-version boot generations, bad rechecks, revert under the current base, and repair     | `tests/durable-object.test.ts`                           |
 | the actual Table shell hydrates with 30 rows and an export fill unchanged                  | `examples/start/showcase/tests/hydration.test.tsx`       |
 | the facet-backed DO adds, presses, and removes the export pair                             | `examples/start/showcase/tests-workerd/deployed.test.ts` |
 

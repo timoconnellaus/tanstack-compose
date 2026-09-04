@@ -6,7 +6,7 @@
       "ignoreDependencies": ["cloudflare"]
     },
     "packages/compose-typescript": {
-      "entry": ["tests/workerd/worker.ts"]
+      "entry": ["tests/workerd/worker.ts", "tests/fixtures/base.ts"]
     }
   },
   "ignoreWorkspaces": ["examples/**"],

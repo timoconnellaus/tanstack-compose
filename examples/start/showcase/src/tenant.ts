@@ -8,6 +8,8 @@ import {
   storageStub,
 } from '@tanstack/compose/grants'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
+import declarationsV1 from 'compose:declarations'
+import declarationsV2 from 'compose:declarations-v2'
 import {
   createServerStub,
   createSlotsStub,
@@ -21,10 +23,13 @@ import { createComposeDurableObject } from '@tanstack/start-compose'
 import {
   actionsStub,
   dataStub,
+  depsStub,
+  exportsStub,
   grantableActions,
   tablePlugin,
   todoPlugin,
 } from './base'
+import { dataV2Stub } from './base-v2'
 import {
   appById,
   currencyApp,
@@ -33,6 +38,8 @@ import {
   tableApp,
   tenantsApp,
   todoApp,
+  upgradeApp,
+  pairApp,
 } from './apps'
 import type { SerializedPluginEntry } from '@tanstack/compose/catalog'
 
@@ -49,7 +56,7 @@ export interface ShowcaseEnv {
 class TenantBase extends DurableObject<ShowcaseEnv> {}
 
 const initialEntries = (appId: string): Array<SerializedPluginEntry> => {
-  const app = appById(appId)
+  const app = appById(appId.split(':')[0]!)
   return app.plugins.map((entry) => {
     if (!entry.plugin) throw new Error('showcase: base entries are catalogued')
     return {
@@ -66,6 +73,8 @@ const grants = {
   ai: aiStub,
   actions: actionsStub,
   data: dataStub,
+  deps: depsStub,
+  exports: exportsStub,
   files: filesStub,
   http: httpStub,
   schedule: scheduleStub,
@@ -77,6 +86,8 @@ const grants = {
   'digest.slots': createSlotsStub({ slots: digestApp.viewSlots }),
   'currency.slots': createSlotsStub({ slots: currencyApp.viewSlots }),
   'tenants.slots': createSlotsStub({ slots: tenantsApp.viewSlots }),
+  'upgrade.slots': createSlotsStub({ slots: upgradeApp.viewSlots }),
+  'pair.slots': createSlotsStub({ slots: pairApp.viewSlots }),
 }
 
 /**
@@ -101,10 +112,12 @@ const resolveStubs: NonNullable<
     !('source' in server.plugin)
   ) {
     return entry.stubs.map((name) => {
-      if (!Object.hasOwn(context.grants, name)) {
-        throw new Error(`showcase: no grant named "${name}"`)
+      if (name === 'data' && context.baseVersion === declarationsV2.version) {
+        return dataV2Stub
       }
-      return context.grants[name]
+      const grant = context.grants[name]
+      if (!grant) throw new Error(`showcase: no grant named "${name}"`)
+      return grant
     })
   }
   const app = appById(slotsName.slice(0, -'.slots'.length))
@@ -135,7 +148,16 @@ export const ShowcaseTenant = createComposeDurableObject<ShowcaseEnv>({
   grants,
   resolveStubs,
   actions: grantableActions,
-  checker: createTypeScriptChecker(),
+  baseVersion: (appId) =>
+    appId?.endsWith(':v2') ? declarationsV2.version : declarationsV1.version,
+  createChecker: (version) => {
+    const declarations =
+      version === declarationsV2.version ? declarationsV2 : declarationsV1
+    return createTypeScriptChecker({
+      baseDeclarations: declarations.text,
+      baseVersion: declarations.version,
+    })
+  },
   hostName: 'cloudflare',
   self: ({ ctx, env }) => env.TENANT.get(ctx.id),
   createHost: ({ ctx, env, self }) =>

@@ -8,7 +8,7 @@ const setup: Setup = async ({ stubs }) => {
   const response = await stubs.http.fetch('currency', '/rates')
   if (!response.ok) throw new Error('currency service refused the request')
   const payload = JSON.parse(response.body) as { rates: { USD: number } }
-  const rows = await stubs.data({ operation: 'rows' })
+  const rows = await stubs.data.rows()
   await stubs.slots({
     slot: 'table.currency',
     key: 'usd',

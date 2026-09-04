@@ -27,7 +27,13 @@ export interface HostStartRequest {
   /** The instance's validated options; structured-clone-safe. */
   readonly options: unknown
   /** The stubs the operator granted, already bound to this instance. */
-  readonly stubs: Readonly<Record<string, (input: unknown) => Promise<unknown>>>
+  readonly stubs: Readonly<Record<string, HostStub>>
+}
+
+/** One instance-bound stub callable, with optional method-shape metadata. */
+export interface HostStub {
+  (input: unknown): Promise<unknown>
+  readonly methods?: ReadonlyArray<string>
 }
 
 /** One started hosted plugin, as the client sees it. */
@@ -102,6 +108,8 @@ export interface StubGrant<TInput = any, TOutput = any> {
   readonly name: string
   /** The declarations a plugin holding this stub is checked against and shown. */
   readonly declarations: string
+  /** Method names a host exposes as a plain object instead of one callable. */
+  readonly methods?: ReadonlyArray<string>
   /** Context keys the handler needs; they become the hosted entry's deps. */
   readonly deps: ReadonlyArray<AnyContextKey>
   /** Context keys the handler may provide through `call.instance.provide`. */
@@ -192,6 +200,8 @@ export interface SourceCheckResult {
  */
 export interface SourceChecker {
   check: (request: {
+    /** Content hash of the generated base declarations for this check. */
+    baseVersion: string
     /** The entry whose source this is. */
     instanceId: string
     /** The source as written. */
@@ -396,7 +406,19 @@ export function createInProcessHost(options?: {
         }
         const provider = options?.grants?.[name]
         if (!provider) {
-          stubs[name] = invoke
+          stubs[name] = stub.methods
+            ? Object.freeze(
+                Object.assign(
+                  Object.create(null) as Record<string, unknown>,
+                  Object.fromEntries(
+                    stub.methods.map((method) => [
+                      method,
+                      (...args: Array<unknown>) => invoke({ method, args }),
+                    ]),
+                  ),
+                ),
+              )
+            : invoke
           continue
         }
         const started = await provider.start({

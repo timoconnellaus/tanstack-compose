@@ -42,6 +42,7 @@ export function report(): Array<Entry> {
 `
 
 const request = (source: string) => ({
+  baseVersion: 'test',
   instanceId: 'budget',
   source,
   declarations: toolsStub.declarations,

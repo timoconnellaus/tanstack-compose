@@ -86,6 +86,7 @@ interface ExportedName {
  * ```ts
  * const checker = createTypeScriptChecker()
  * const result = await checker.check({
+ *   baseVersion: '',
  *   instanceId: 'draft',
  *   source,
  *   declarations: '',
@@ -93,14 +94,26 @@ interface ExportedName {
  * })
  * ```
  */
-export function createTypeScriptChecker(): SourceChecker {
+export function createTypeScriptChecker(options?: {
+  /** Generated declarations for the product base. */
+  baseDeclarations?: string
+  /** Base version used by `exports`, which has no check request of its own. */
+  baseVersion?: string
+}): SourceChecker {
   const sessions = new Map<string, Session>()
+  const declarationsFor = (grants: Parameters<typeof pluginDeclarations>[0]) =>
+    pluginDeclarations(grants, options?.baseDeclarations)
 
   return {
     async check(request): Promise<SourceCheckResult> {
       const compiler = await loadCompiler()
-      const declarations = pluginDeclarations(request.grants)
-      const session = sessionFor(compiler, sessions, declarations)
+      const declarations = declarationsFor(request.grants)
+      const session = sessionFor(
+        compiler,
+        sessions,
+        request.baseVersion,
+        declarations,
+      )
       const diagnostics = diagnose(compiler, session, request.source)
       if (diagnostics.length > 0) return { diagnostics }
       return { code: transpile(compiler, request.source) }
@@ -110,13 +123,14 @@ export function createTypeScriptChecker(): SourceChecker {
       const session = sessionFor(
         compiler,
         sessions,
-        pluginDeclarations(request.grants),
+        options?.baseVersion ?? '',
+        declarationsFor(request.grants),
       )
       return exportedTypes(compiler, session, request.source)
     },
     // The same producer `check` compiles against, so a composer that shows this
     // shows the model exactly what its source is checked against (D8).
-    declarations: pluginDeclarations,
+    declarations: declarationsFor,
   }
 }
 
@@ -198,21 +212,23 @@ function transpile(compiler: Compiler, source: string): string {
 }
 
 /**
- * The language service for one declaration text, opened on first use and kept
- * warm. Declarations are a function of the grant set, so entries with the same
- * grants share one, and an entry whose grants change gets its own.
+ * The language service for one `(baseVersion, declaration text)` pair, opened
+ * on first use and kept warm. Entries with the same base and grants share one;
+ * either kind of change gets a distinct session.
  */
 function sessionFor(
   compiler: Compiler,
   sessions: Map<string, Session>,
+  baseVersion: string,
   declarations: string,
 ): Session {
   const { ts } = compiler
-  const existing = sessions.get(declarations)
+  const key = `${baseVersion}\0${declarations}`
+  const existing = sessions.get(key)
   if (existing) {
     // Least-recently-used: re-inserting moves it to the end of the map.
-    sessions.delete(declarations)
-    sessions.set(declarations, existing)
+    sessions.delete(key)
+    sessions.set(key, existing)
     return existing
   }
 
@@ -257,7 +273,7 @@ function sessionFor(
     service: ts.createLanguageService(host, compiler.documentRegistry),
     files,
   }
-  sessions.set(declarations, session)
+  sessions.set(key, session)
   if (sessions.size > sessionLimit) {
     const oldest = sessions.keys().next().value
     if (oldest !== undefined) {

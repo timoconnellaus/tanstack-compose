@@ -44,6 +44,24 @@ export function PluginPanel(): ReactNode {
         <span className="count">{entries.length}</span>
       </div>
 
+      {writer.generation === undefined ? null : (
+        <div className="generation" data-testid="generation">
+          <p>
+            Generation {writer.generation} · {writer.outcome}
+          </p>
+          <code>{writer.baseVersion}</code>
+          <button
+            type="button"
+            disabled={writer.lastKnownGood === undefined}
+            onClick={() =>
+              void run(() => writer.revertGeneration(writer.lastKnownGood!))
+            }
+          >
+            Revert to last known good
+          </button>
+        </div>
+      )}
+
       <div className="plugin-list">
         {entries.map((entry) => {
           const snapshot = snapshots.get(entry.id)

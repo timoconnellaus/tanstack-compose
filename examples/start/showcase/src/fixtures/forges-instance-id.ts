@@ -10,10 +10,7 @@ export const forgesInstanceIdFixture: HostileFixture = {
   source: `
 let observed: { claimedInstanceId: string; actualInstanceId: string }
 const setup: Setup = async ({ stubs }) => {
-  observed = await stubs.data({
-    operation: 'rows',
-    claimedInstanceId: 'table',
-  })
+  observed = await stubs.data.identity('table')
 }
 export default setup
 export function observation() { return observed }

@@ -3,6 +3,7 @@ import type {
   InProcessGrantContext,
   InProcessGrantInstance,
 } from '../host'
+import type { GrantMethodCall } from '../base'
 import type {
   AiTextInput,
   FileValue,
@@ -85,32 +86,34 @@ const storageGrant = (): InProcessGrant => {
         value: Object.freeze({
           get: async (key: unknown) => {
             const input = operation<StorageOperation>(
-              await context.invoke({ method: 'get', key }),
+              await context.invoke({ method: 'get', args: [key] }),
             )
-            return clone(
-              state.values.get(string(method(input, 'get').key, 'storage key')),
-            )
+            const read = method(input, 'get')
+            return clone(state.values.get(string(read.args[0], 'storage key')))
           },
           set: async (key: unknown, value: unknown) => {
             const input = operation<StorageOperation>(
-              await context.invoke({ method: 'set', key, value }),
+              await context.invoke({ method: 'set', args: [key, value] }),
             )
             const write = method(input, 'set')
-            state.values.set(string(write.key, 'storage key'), write.value)
+            state.values.set(
+              string(write.args[0], 'storage key'),
+              write.args[1],
+            )
           },
           delete: async (key: unknown) => {
             const input = operation<StorageOperation>(
-              await context.invoke({ method: 'delete', key }),
+              await context.invoke({ method: 'delete', args: [key] }),
             )
-            return state.values.delete(
-              string(method(input, 'delete').key, 'storage key'),
-            )
+            const remove = method(input, 'delete')
+            return state.values.delete(string(remove.args[0], 'storage key'))
           },
           list: async (prefix: unknown = '') => {
             const input = operation<StorageOperation>(
-              await context.invoke({ method: 'list', prefix }),
+              await context.invoke({ method: 'list', args: [prefix] }),
             )
-            const start = string(method(input, 'list').prefix, 'storage prefix')
+            const listed = method(input, 'list')
+            const start = string(listed.args[0] ?? '', 'storage prefix')
             const result: Record<string, unknown> = {}
             for (const [key, value] of state.values) {
               if (key.startsWith(start)) result[key] = clone(value)
@@ -151,19 +154,22 @@ const scheduleGrant = (): InProcessGrant => {
         let at: unknown
         let every: number | undefined
         if (input.method === 'every') {
-          if (!Number.isFinite(input.ms) || Number(input.ms) <= 0) {
+          const [ms] = input.args
+          if (!Number.isFinite(ms) || Number(ms) <= 0) {
             throw new Error('@tanstack/compose: interval must be >0')
           }
-          every = Number(input.ms)
+          every = Number(ms)
           at = Date.now() + every
         } else {
-          at = input.at
+          const [when] = input.args
+          at = when instanceof Date ? when.getTime() : when
         }
+        const handler = input.args[1]
         if (
           typeof at !== 'number' ||
           !Number.isFinite(at) ||
-          typeof input.handler !== 'string' ||
-          input.handler === ''
+          typeof handler !== 'string' ||
+          handler === ''
         ) {
           throw new Error(
             '@tanstack/compose: schedule needs a time and named export',
@@ -171,7 +177,7 @@ const scheduleGrant = (): InProcessGrant => {
         }
         state.alarm = {
           at,
-          handler: input.handler,
+          handler,
           ...(every ? { every } : {}),
         }
         armAlarm(state)
@@ -180,14 +186,13 @@ const scheduleGrant = (): InProcessGrant => {
       return {
         value: Object.freeze({
           every: (ms: unknown, handler: unknown) =>
-            change({ method: 'every', ms, handler }),
+            change({ method: 'every', args: [ms, handler] }),
           at: (when: number | Date, handler: unknown) =>
             change({
               method: 'at',
-              at: when instanceof Date ? when.getTime() : when,
-              handler,
+              args: [when, handler],
             }),
-          cancel: () => change({ method: 'cancel' }),
+          cancel: () => change({ method: 'cancel', args: [] }),
         }),
         ready: () => {
           state.call = context.call
@@ -225,17 +230,21 @@ const httpGrant = (
           init?: unknown,
         ): Promise<HttpGrantResponse> => {
           const input = operation<HttpOperation>(
-            await context.invoke({ service, path, init }),
+            await context.invoke({
+              method: 'fetch',
+              args: [service, path, init],
+            }),
           )
-          const name = string(input.service, 'HTTP service')
+          const [approvedService, approvedPath, approvedInit] = input.args
+          const name = string(approvedService, 'HTTP service')
           const policy = services[name]
           if (!policy) throw new Error(`no service named "${name}" is granted`)
           const base = new URL(policy.origin)
-          const url = new URL(string(input.path, 'HTTP path'), base)
+          const url = new URL(string(approvedPath, 'HTTP path'), base)
           if (url.origin !== base.origin) {
             throw new Error(`HTTP path leaves the granted "${name}" origin`)
           }
-          const request = (input.init ?? {}) as HttpRequestOptions
+          const request = (approvedInit ?? {}) as HttpRequestOptions
           const headers = new Headers(request.headers)
           if (policy.credential) {
             headers.set(policy.credential.header, policy.credential.value)
@@ -260,7 +269,10 @@ const aiGrant = (
     return {
       value: Object.freeze({
         text: async (given: unknown): Promise<string> => {
-          const input = operation<AiTextInput>(await context.invoke(given))
+          const approved = operation<GrantMethodCall>(
+            await context.invoke({ method: 'text', args: [given] }),
+          )
+          const input = operation<AiTextInput>(approved.args[0])
           if (typeof input.prompt !== 'string') {
             throw new Error('@tanstack/compose: ai.text needs a prompt')
           }
@@ -303,37 +315,43 @@ const filesGrant = (): InProcessGrant => {
         value: Object.freeze({
           put: async (name: unknown, body: unknown, options?: unknown) => {
             const input = operation<FilesOperation>(
-              await context.invoke({ method: 'put', key: name, body, options }),
+              await context.invoke({
+                method: 'put',
+                args: [name, body, options],
+              }),
             )
             if (input.method !== 'put') return
-            const contentType = input.options?.contentType
+            const [approvedName, approvedBody, approvedOptions] = input.args
+            const contentType = (
+              approvedOptions as { contentType?: unknown } | undefined
+            )?.contentType
             if (contentType !== undefined && typeof contentType !== 'string') {
               throw new Error(
                 '@tanstack/compose: file contentType must be a string',
               )
             }
-            objects.set(key(input.key), {
-              body: await bytes(input.body),
+            objects.set(key(approvedName), {
+              body: await bytes(approvedBody),
               ...(contentType === undefined ? {} : { contentType }),
             })
           },
           get: async (name: unknown) => {
             const input = operation<FilesOperation>(
-              await context.invoke({ method: 'get', key: name }),
+              await context.invoke({ method: 'get', args: [name] }),
             )
-            return clone(objects.get(key(method(input, 'get').key)))
+            return clone(objects.get(key(method(input, 'get').args[0])))
           },
           delete: async (name: unknown) => {
             const input = operation<FilesOperation>(
-              await context.invoke({ method: 'delete', key: name }),
+              await context.invoke({ method: 'delete', args: [name] }),
             )
-            objects.delete(key(method(input, 'delete').key))
+            objects.delete(key(method(input, 'delete').args[0]))
           },
           list: async (given: unknown = '') => {
             const input = operation<FilesOperation>(
-              await context.invoke({ method: 'list', prefix: given }),
+              await context.invoke({ method: 'list', args: [given] }),
             )
-            const start = key(method(input, 'list').prefix)
+            const start = key(method(input, 'list').args[0] ?? '')
             return [...objects.keys()]
               .filter((name) => name.startsWith(start))
               .map((name) => name.slice(prefix.length))

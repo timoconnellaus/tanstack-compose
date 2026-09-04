@@ -32,6 +32,15 @@ export const tenantFor = (tenant: string, id: AppId): ComposeDurableObject => {
   return bindings.TENANT.get(objectId) as unknown as ComposeDurableObject
 }
 
+/** The generated base selected by the public, non-secret preference cookie. */
+export const selectedBase = (): 'v1' | 'v2' =>
+  getCookie('base') === 'v2' ? 'v2' : 'v1'
+
+/** Select a base for later requests. */
+export const selectBase = (version: 'v1' | 'v2'): void => {
+  setCookie('base', version, { sameSite: 'lax', path: '/' })
+}
+
 /** The tenant id carried by a raw request's cookie, outside Start's context. */
 const tenantIdOf = (request: Request): string | undefined =>
   request.headers
@@ -56,7 +65,9 @@ export async function followTenant(request: Request): Promise<Response> {
     app !== 'hostile' &&
     app !== 'digest' &&
     app !== 'currency' &&
-    app !== 'tenants'
+    app !== 'tenants' &&
+    app !== 'upgrade' &&
+    app !== 'pair'
   ) {
     return new Response('unknown app', { status: 400 })
   }

@@ -6,6 +6,9 @@ import type { ComposeSnapshot } from '../src'
 
 const snapshot: ComposeSnapshot = {
   generation: 1,
+  baseVersion: 'v1',
+  outcome: 'good',
+  lastKnownGood: 1,
   pluginList: [],
   instances: [],
   fills: [

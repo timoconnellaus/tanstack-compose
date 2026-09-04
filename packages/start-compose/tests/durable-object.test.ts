@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { createComposeDurableObject } from '../src'
 import type { SerializedEntry } from '../src'
+import type { SourceChecker } from '@tanstack/compose'
 
 class FakeDurableObject {
   constructor(_ctx: DurableObjectState, _env: object) {}
@@ -55,6 +56,7 @@ describe('createComposeDurableObject', () => {
       ],
       catalog: { slots: slotsPlugin, views: viewsPlugin },
       grants: {},
+      baseVersion: 'v1',
       createHost: () => ({
         ...inProcessHost,
         alarm: () => Promise.resolve(),
@@ -86,6 +88,7 @@ describe('createComposeDurableObject', () => {
         server: createServerStub(),
       },
       createHost: () => ({ ...inProcessHost, alarm, schedule }),
+      baseVersion: 'v1',
     })
     const object = new Tenant(state.ctx, {})
 
@@ -177,9 +180,110 @@ export function exportCsv() { throw new Error('CSV is unavailable') }`,
 
     const removed = await object.edit({ type: 'remove', id: 'csv.view' })
     expect(removed.fills).toEqual([])
-    expect(state.values.get('compose:plugin-list')).toEqual(
+    const log = state.values.get('compose:generations') as Array<{
+      entries: Array<{ id: string }>
+    }>
+    expect(log.at(-1)?.entries).toEqual(
       expect.not.arrayContaining([expect.objectContaining({ id: 'csv.view' })]),
     )
     await Promise.all(state.pending)
+  })
+
+  it('records a bad boot generation when the base changes and rechecks source', async () => {
+    const state = fakeState()
+    const checks: Array<{ selected: string; requested: string }> = []
+    const createChecker = (selected: string): SourceChecker => ({
+      check: (request) => {
+        checks.push({ selected, requested: request.baseVersion })
+        if (selected === 'v2' && request.source.includes('.rows')) {
+          return {
+            diagnostics: [
+              {
+                line: 2,
+                column: 15,
+                message: "Property 'rows' does not exist on type 'data'.",
+              },
+            ],
+          }
+        }
+        return { code: request.source }
+      },
+    })
+    const source = (method: 'rows' | 'records') => `let data
+export default function ({ stubs }) { data = stubs.data }
+export function read() { return data.${method}() }`
+    const Tenant = createComposeDurableObject({
+      base: FakeDurableObject,
+      self: () => ({}) as DurableObjectStub,
+      initialPluginList: () => [
+        ...baseEntries,
+        {
+          id: 'sort-by-due',
+          plugin: { source: source('rows') },
+          stubs: [],
+        },
+      ],
+      catalog: { slots: slotsPlugin, views: viewsPlugin },
+      grants: {},
+      createHost: () => ({
+        ...inProcessHost,
+        alarm: () => Promise.resolve(),
+        schedule: () => Promise.resolve(),
+      }),
+      baseVersion: (id) => id ?? 'v1',
+      createChecker,
+    })
+    const object = new Tenant(state.ctx, {})
+
+    const v1 = await object.snapshot('v1')
+    expect(v1).toMatchObject({
+      generation: 0,
+      baseVersion: 'v1',
+      outcome: 'good',
+      lastKnownGood: 0,
+    })
+
+    const v2 = await object.reset('v2')
+    expect(v2).toMatchObject({
+      generation: 1,
+      baseVersion: 'v2',
+      outcome: 'bad',
+      lastKnownGood: 0,
+    })
+    expect(
+      v2.instances.find((entry) => entry.id === 'sort-by-due'),
+    ).toMatchObject({
+      status: 'error',
+      error: { message: expect.stringContaining('rows') },
+    })
+
+    const reverted = await object.revert(0)
+    expect(reverted).toMatchObject({
+      generation: 2,
+      baseVersion: 'v2',
+      outcome: 'bad',
+      lastKnownGood: 0,
+    })
+
+    const fixed = await object.edit({
+      type: 'write',
+      entry: {
+        id: 'sort-by-due',
+        plugin: { source: source('records') },
+        stubs: [],
+      },
+    })
+    expect(fixed).toMatchObject({
+      generation: 3,
+      baseVersion: 'v2',
+      outcome: 'good',
+      lastKnownGood: 3,
+    })
+    expect(checks).toEqual(
+      expect.arrayContaining([
+        { selected: 'v1', requested: 'v1' },
+        { selected: 'v2', requested: 'v2' },
+      ]),
+    )
   })
 })

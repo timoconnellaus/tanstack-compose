@@ -37,6 +37,7 @@ import type {
 /** How the Start app reaches its tenant Durable Object. */
 export interface ComposeTransport {
   edit: (operation: ComposeEdit) => Promise<ComposeSnapshot | void>
+  revert?: (n: number) => Promise<ComposeSnapshot | void>
   press: (request: ComposePress) => Promise<unknown>
   dispatch?: (request: ComposeDispatch) => Promise<unknown>
   callSource?: (request: {
@@ -61,6 +62,7 @@ interface SnapshotState {
   view: ComposeView
   apply: (snapshot: ComposeSnapshot) => void
   edit: (operation: ComposeEdit) => Promise<void>
+  revert: (n: number) => Promise<void>
   setStatusSender: (
     sender: ((report: BrowserStatusReport) => void) | undefined,
   ) => void
@@ -141,6 +143,10 @@ const createFollower = (
     },
     async edit(operation) {
       const next = await transport.edit(operation)
+      if (next) state.apply(next)
+    },
+    async revert(n) {
+      const next = await transport.revert?.(n)
       if (next) state.apply(next)
     },
     setStatusSender(sender) {
@@ -263,4 +269,10 @@ export function useComposeSnapshot(): ComposeSnapshot {
 export function useComposeEdit(): (operation: ComposeEdit) => Promise<void> {
   const state = useSnapshotState()
   return useCallback((operation: ComposeEdit) => state.edit(operation), [state])
+}
+
+/** Revert to an earlier list by appending and applying a new generation. */
+export function useComposeRevert(): (n: number) => Promise<void> {
+  const state = useSnapshotState()
+  return useCallback((n: number) => state.revert(n), [state])
 }

@@ -9,10 +9,7 @@ export const oversizedPayloadFixture: HostileFixture = {
   deployedExpected: 'stub payload exceeds the 1048576-byte loopback limit',
   source: `
 const setup: Setup = async ({ stubs }) => {
-  await stubs.data({
-    operation: 'rows',
-    payload: 'x'.repeat(50 * 1024 * 1024),
-  })
+  await stubs.data.probe('x'.repeat(50 * 1024 * 1024))
 }
 export default setup
 `.trim(),

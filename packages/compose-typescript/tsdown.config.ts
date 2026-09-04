@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['./src/index.ts'],
+  entry: ['./src/index.ts', './src/generate.ts', './src/cli.ts'],
   format: ['esm', 'cjs'],
   unbundle: true,
   dts: true,
@@ -9,7 +9,10 @@ export default defineConfig({
   clean: true,
   minify: false,
   fixedExtension: false,
-  exports: true,
+  exports: {
+    exclude: ['cli'],
+    bin: { 'compose-declarations': './src/cli.ts' },
+  },
   publint: {
     strict: true,
   },

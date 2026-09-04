@@ -21,3 +21,9 @@ export const BrowserCurrencyApp = unavailable
 
 /** Unreachable production placeholder selected instead of the S1 clients. */
 export const BrowserTenantsApp = unavailable
+
+/** Unreachable production placeholder selected instead of the S1 client. */
+export const BrowserPairApp = unavailable
+
+/** Unreachable production placeholder selected instead of the S1 client. */
+export const BrowserUpgradeApp = unavailable

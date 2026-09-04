@@ -7,10 +7,7 @@ export const smugglesAFunctionFixture: HostileFixture = {
   expected: 'is not structured-clone-safe',
   source: `
 const setup: Setup = async ({ stubs }) => {
-  await stubs.data({
-    operation: 'rows',
-    payload: () => 'not plain data',
-  })
+  await stubs.data.probe(() => 'not plain data')
 }
 export default setup
 `.trim(),

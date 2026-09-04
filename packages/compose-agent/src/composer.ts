@@ -394,6 +394,7 @@ export const composerPlugin = createPlugin({
       const checker = client.checker
       if (!checker) return undefined
       const checked = await checker.check({
+        baseVersion: client.baseVersion,
         instanceId: id,
         source,
         declarations: stubDeclarations(grants),

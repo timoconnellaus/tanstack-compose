@@ -35,9 +35,17 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./base": {
+      "import": "./dist/base.js",
+      "require": "./dist/base.cjs"
+    },
     "./catalog": {
       "import": "./dist/catalog.js",
       "require": "./dist/catalog.cjs"
+    },
+    "./generations": {
+      "import": "./dist/generations.js",
+      "require": "./dist/generations.cjs"
     },
     "./grants": {
       "import": "./dist/grants/index.js",

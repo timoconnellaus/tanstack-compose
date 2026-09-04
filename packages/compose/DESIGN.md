@@ -451,11 +451,15 @@ approves, logs or refuses per instance exactly as it does for any other action
 
 The `@tanstack/compose/grants` subpath exports the five standard grant
 declarations and their in-process implementations. The kernel knows none of
-their names. `createInProcessHost({ grants })` accepts factories keyed by stub
-name; each factory creates the value placed in written source's `stubs` object
-and receives an `invoke` function which dispatches `stubCallAction` before
-performing host-local work. The default `inProcessHost` has no factories and
-continues to expose ordinary one-call stubs.
+their names. Each declaration uses `defineGrant`, so source sees method-shaped
+`storage`, `schedule`, `http`, `ai`, and `files` objects and every call crosses
+the low-level seam as `{ method, args }`. `createInProcessHost({ grants })`
+accepts factories keyed by stub name; each factory creates the value placed in
+written source's `stubs` object and receives an `invoke` function which
+dispatches `stubCallAction` before performing host-local work. The default
+`inProcessHost` has no factories; method metadata still controls its exposed
+shape, while products that need the standard resources supply their host-local
+implementations.
 
 In process, state is keyed by entry id outside an activation. `storage` is a
 `Map` of structured-cloned values with `get`, `set`, `delete`, and prefix
@@ -756,7 +760,7 @@ parity oracle, and the two have different jobs.
 | I1  | `tests/I-runtime.test.ts`           | `the core has no framework dependencies and no runtime-specific imports`                                                                                                                                   |
 | I1  | `tests/workerd/smoke.test.ts`       | `the kernel assembles, provides and cleans up under workerd` / `reports a clear error for a source entry, because workerd forbids evaluating code`                                                         |
 | I2  | `tests/I-runtime.test.ts`           | `two copies of the package loaded at once interoperate`                                                                                                                                                    |
-| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 7 kB min+gzip size budget`                                                                                                              |
+| I3  | `tests/I-runtime.test.ts`           | `the core uses no Proxy on hot paths` / `the core stays within its 6 kB min+gzip size budget`                                                                                                              |
 | I4  | `tests/I-runtime.test.ts`           | `every public export has JSDoc and DESIGN.md maps every criterion`                                                                                                                                         |
 | J1  | `tests/J-end-to-end.test.ts`        | `assembles a client, swaps a provider, and edits its own plugin list`                                                                                                                                      |
 
@@ -800,5 +804,49 @@ checker that proves it.
 - **I3 — size** is a test in `tests/I-runtime.test.ts`: a rolldown bundle of
   `src/index.ts`, minified and gzipped, with `@tanstack/store` external. The
   kernel, with the host contract and generic in-process host in it, is measured
-  against the 6 kB min+gzip budget. Grant and catalog subpaths are separate
-  entries and are not part of that measurement.
+  against the 6 kB min+gzip budget. Grant, catalog, typed-base, and generation
+  subpaths are separate entries and are not part of that measurement.
+
+## Typed bases and generations (slice 9)
+
+Slice 9 adds two deliberately separate subpath modules. Neither is re-exported
+from the kernel entry, so an application that only creates a client pays for
+neither and the 6 kB hot-path budget is unchanged.
+
+`@tanstack/compose/base` owns `defineGrant` and `defineBase`. A method-shaped
+grant keeps its method names as runtime data and its method functions as a
+phantom type surface. `defineGrant` compiles the methods to the existing
+`createStub` seam: the host sends `{ method, args }`, the handler appends the
+trusted `StubCall` context and invokes that method, and an unknown method throws
+`"<grant>" has no method "<method>"`. Methods may have zero or more authored
+arguments; the final handler argument is always the trusted context and is the
+one declaration generation removes. This is the smallest generalisation that
+makes both `data.rows()` and `actions.wrap(name, options)` ordinary calls while
+retaining one wire shape.
+
+The bound callable in `HostStartRequest.stubs` carries the optional method-name
+array. Each host builds a frozen, null-prototype object with one function per
+name; each function sends the same `{ method, args }` through the bound callable.
+It is metadata on the existing stub seam, not a second host operation, and no
+`Proxy` is used.
+
+`defineBase` preserves the exact inferred records supplied as `keys`, `actions`,
+`slots`, `grants`, and `plugins`, and exposes `plugins` again as `catalog` for
+plugin-list resolution. The duplicate reference is intentional: the base is a
+typed inventory, not a registry with its own lifecycle.
+
+`@tanstack/compose/generations` is a pure reducer over a generic generation log.
+A generation stores a full entry list, `n`, `parent`, `at`, `baseVersion`, and a
+one-way outcome (`pending` to `good` or `bad`). Finalising the single pending
+head replaces that value in the returned immutable array; settled history is
+never changed. A revert appends a new pending generation containing a copied
+earlier list but the head's current base version, so reverting source cannot
+pretend to revert the deployed base. `lastKnownGood` searches newest-first.
+
+The client itself only gains `baseVersion` as immutable checker infrastructure.
+Every source check receives it. Generation persistence remains outside the
+kernel, in the owner of the durable plugin list.
+
+Slice 9's method dispatch and inferred catalog are covered by
+`tests/K-base.test.ts`; the append, outcome, last-known-good, and revert reducer
+behavior is covered by `tests/L-generations.test.ts`.

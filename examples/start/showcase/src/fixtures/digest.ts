@@ -30,7 +30,7 @@ const setup: Setup = async ({ stubs }) => {
 export default setup
 
 export async function digest(): Promise<void> {
-  const rows = await api.data({ operation: 'rows' })
+  const rows = await api.data.rows()
   const text = await api.ai.text({
     system: 'Summarise invoice rows in one sentence.',
     prompt: JSON.stringify(rows),

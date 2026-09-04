@@ -2,6 +2,7 @@ import { createClient, createInProcessHost } from '@tanstack/compose'
 import { createInProcessGrants } from '@tanstack/compose/grants'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import { currencyHandler } from './services/currency-handler'
+import declarations from 'compose:declarations'
 import type { ShowcaseApp } from './apps'
 import type { Client } from '@tanstack/compose'
 
@@ -10,7 +11,11 @@ const clients = new Map<ShowcaseApp['id'], Client>()
 /** A fresh in-process client for S1 tests and `dev:browser` only. */
 export function createAppClient(app: ShowcaseApp): Client {
   return createClient({
-    checker: createTypeScriptChecker(),
+    baseVersion: declarations.version,
+    checker: createTypeScriptChecker({
+      baseDeclarations: declarations.text,
+      baseVersion: declarations.version,
+    }),
     hosts: {
       'in-process': createInProcessHost({
         grants: createInProcessGrants({

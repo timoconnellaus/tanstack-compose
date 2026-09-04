@@ -42,10 +42,14 @@ export interface WrapperResult {
  * the loader and the wrapper's own state are all closed over in this module and
  * never passed across (D6).
  */
-export function wrapperSource(stubNames: ReadonlyArray<string>): string {
+export function wrapperSource(
+  stubNames: ReadonlyArray<string>,
+  stubMethods: Readonly<Record<string, ReadonlyArray<string>>> = {},
+): string {
   return `import { WorkerEntrypoint } from 'cloudflare:workers'
 
 const stubNames = ${JSON.stringify([...stubNames])}
+const stubMethods = ${JSON.stringify(stubMethods)}
 
 /** One capability object, built from the loopbacks and nothing else. */
 function stubsFrom(env) {
@@ -56,24 +60,16 @@ function stubsFrom(env) {
     return answer.value
   }
   for (const name of stubNames) {
-    if (['http', 'ai', 'files'].includes(name)) continue
-    stubs[name] = (input) => call(name, input)
-  }
-  if (stubNames.includes('http')) {
-    stubs.http = Object.freeze({
-      fetch: (service, path, init) => call('http', { service, path, init }),
-    })
-  }
-  if (stubNames.includes('ai')) {
-    stubs.ai = Object.freeze({ text: (input) => call('ai', input) })
-  }
-  if (stubNames.includes('files')) {
-    stubs.files = Object.freeze({
-      put: (key, body, options) => call('files', { method: 'put', key, body, options }),
-      get: (key) => call('files', { method: 'get', key }),
-      delete: (key) => call('files', { method: 'delete', key }),
-      list: (prefix = '') => call('files', { method: 'list', prefix }),
-    })
+    const methods = stubMethods[name]
+    if (methods) {
+      const shaped = Object.create(null)
+      for (const method of methods) {
+        shaped[method] = (...args) => call(name, { method, args })
+      }
+      stubs[name] = Object.freeze(shaped)
+    } else {
+      stubs[name] = (input) => call(name, input)
+    }
   }
   return Object.freeze(stubs)
 }
@@ -187,10 +183,14 @@ export class ${wrapperEntrypoint} extends WorkerEntrypoint {
  * The Dynamic Worker module used for a Durable Object facet. Storage is local
  * to the facet; every other granted stub is a loopback to the parent object.
  */
-export function facetWrapperSource(stubNames: ReadonlyArray<string>): string {
+export function facetWrapperSource(
+  stubNames: ReadonlyArray<string>,
+  stubMethods: Readonly<Record<string, ReadonlyArray<string>>> = {},
+): string {
   return `import { DurableObject } from 'cloudflare:workers'
 
 const stubNames = ${JSON.stringify([...stubNames])}
+const stubMethods = ${JSON.stringify(stubMethods)}
 const dataPrefix = '\\0compose:data:'
 
 const failed = (phase, error) => ({
@@ -220,62 +220,49 @@ function stubsFrom(ctx, env) {
     return answer.value
   }
   for (const name of stubNames) {
-    if (['storage', 'schedule', 'http', 'ai', 'files'].includes(name)) continue
-    stubs[name] = (input) => call(name, input)
+    if (name === 'storage') continue
+    const methods = stubMethods[name]
+    if (methods) {
+      const shaped = Object.create(null)
+      for (const method of methods) {
+        shaped[method] = (...args) => call(name, { method, args })
+      }
+      stubs[name] = Object.freeze(shaped)
+    } else {
+      stubs[name] = (input) => call(name, input)
+    }
   }
   if (stubNames.includes('storage')) {
     stubs.storage = Object.freeze({
       get: async (name) => {
-        const input = await call('storage', { method: 'get', key: name })
-        return ctx.storage.get(dataPrefix + key(input.key))
+        const input = await call('storage', { method: 'get', args: [name] })
+        return ctx.storage.get(dataPrefix + key(input.args[0]))
       },
       set: async (name, value) => {
-        const input = await call('storage', { method: 'set', key: name, value })
-        return ctx.storage.put(dataPrefix + key(input.key), input.value)
+        const input = await call('storage', {
+          method: 'set',
+          args: [name, value],
+        })
+        return ctx.storage.put(dataPrefix + key(input.args[0]), input.args[1])
       },
       delete: async (name) => {
-        const input = await call('storage', { method: 'delete', key: name })
-        return ctx.storage.delete(dataPrefix + key(input.key))
+        const input = await call('storage', { method: 'delete', args: [name] })
+        return ctx.storage.delete(dataPrefix + key(input.args[0]))
       },
       list: async (prefix = '') => {
-        const input = await call('storage', { method: 'list', prefix })
-        const values = await ctx.storage.list({ prefix: dataPrefix + key(input.prefix) })
+        const input = await call('storage', {
+          method: 'list',
+          args: [prefix],
+        })
+        const values = await ctx.storage.list({
+          prefix: dataPrefix + key(input.args[0] ?? ''),
+        })
         const result = {}
         for (const [name, value] of values) {
           result[name.slice(dataPrefix.length)] = value
         }
         return result
       },
-    })
-  }
-  if (stubNames.includes('schedule')) {
-    stubs.schedule = Object.freeze({
-      every: (ms, handler) => call('schedule', { method: 'every', ms, handler }),
-      at: (when, handler) =>
-        call('schedule', {
-          method: 'at',
-          at: when instanceof Date ? when.getTime() : when,
-          handler,
-        }),
-      cancel: () => call('schedule', { method: 'cancel' }),
-    })
-  }
-  if (stubNames.includes('http')) {
-    stubs.http = Object.freeze({
-      fetch: (service, path, init) => call('http', { service, path, init }),
-    })
-  }
-  if (stubNames.includes('ai')) {
-    stubs.ai = Object.freeze({
-      text: (input) => call('ai', input),
-    })
-  }
-  if (stubNames.includes('files')) {
-    stubs.files = Object.freeze({
-      put: (key, body, options) => call('files', { method: 'put', key, body, options }),
-      get: (key) => call('files', { method: 'get', key }),
-      delete: (key) => call('files', { method: 'delete', key }),
-      list: (prefix = '') => call('files', { method: 'list', prefix }),
     })
   }
   return Object.freeze(stubs)

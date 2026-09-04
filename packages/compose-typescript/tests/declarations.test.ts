@@ -17,6 +17,7 @@ const check = async (
   grants: Array<{ name: string; declarations: string }>,
 ): Promise<Array<SourceDiagnostic>> => {
   const result = await createTypeScriptChecker().check({
+    baseVersion: 'test',
     instanceId: 'draft',
     source,
     declarations: grants.map((one) => one.declarations).join('\n'),

@@ -11,10 +11,12 @@ import {
 import { dispatchStubCall, registerStubReentry } from './loopback'
 import type {
   AiTextInput,
+  FilesOperation,
   HttpGrantResponse,
   HttpOperation,
   HttpRequestOptions,
   HttpServices,
+  ScheduleOperation,
 } from '@tanstack/compose/grants'
 import type {
   Host,
@@ -123,11 +125,6 @@ interface FacetSchedule {
   every?: number
 }
 
-type ScheduleCall =
-  | { method: 'at'; at: unknown; handler: unknown }
-  | { method: 'every'; ms: unknown; handler: unknown }
-  | { method: 'cancel' }
-
 const schedulePrefix = '\0compose:schedule:'
 
 const textModel = '@cf/zai-org/glm-5.3-flash' as const
@@ -145,15 +142,19 @@ const httpFetch = async (
   value: unknown,
 ): Promise<HttpGrantResponse> => {
   const input = value as HttpOperation | null
-  const name = string(input?.service, 'HTTP service')
+  if (input?.method !== 'fetch') {
+    throw new Error('@tanstack/compose-cloudflare: unknown http operation')
+  }
+  const [service, path, requestOptions] = input.args
+  const name = string(service, 'HTTP service')
   const policy = services[name]
   if (!policy) throw new Error(`no service named "${name}" is granted`)
   const base = new URL(policy.origin)
-  const url = new URL(string(input?.path, 'HTTP path'), base)
+  const url = new URL(string(path, 'HTTP path'), base)
   if (url.origin !== base.origin) {
     throw new Error(`HTTP path leaves the granted "${name}" origin`)
   }
-  const request = (input?.init ?? {}) as HttpRequestOptions
+  const request = (requestOptions ?? {}) as HttpRequestOptions
   const headers = new Headers(request.headers)
   if (policy.credential) {
     headers.set(policy.credential.header, policy.credential.value)
@@ -178,7 +179,11 @@ const aiText = async (binding: TextAiBinding | undefined, value: unknown) => {
       '@tanstack/compose-cloudflare: the ai grant needs an AI binding',
     )
   }
-  const input = value as AiTextInput | null
+  const call = value as { method?: unknown; args?: Array<unknown> } | null
+  if (call?.method !== 'text') {
+    throw new Error('@tanstack/compose-cloudflare: unknown ai operation')
+  }
+  const input = call.args?.[0] as AiTextInput | null
   if (typeof input?.prompt !== 'string') {
     throw new Error('@tanstack/compose-cloudflare: ai.text needs a prompt')
   }
@@ -216,31 +221,23 @@ const filesCall = async (
       '@tanstack/compose-cloudflare: the files grant needs an R2 binding',
     )
   }
-  const input = value as {
-    method?: unknown
-    key?: unknown
-    body?: unknown
-    options?: { contentType?: unknown }
-    prefix?: unknown
-  } | null
+  const input = value as FilesOperation | null
   if (input?.method === 'put') {
-    const contentType = input.options?.contentType
+    const [key, body, options] = input.args
+    const contentType = (options as { contentType?: unknown } | undefined)
+      ?.contentType
     if (contentType !== undefined && typeof contentType !== 'string') {
       throw new Error(
         '@tanstack/compose-cloudflare: file contentType must be a string',
       )
     }
-    await bucket.put(
-      fileKey(instanceId, input.key),
-      input.body as ArrayBuffer,
-      {
-        ...(contentType === undefined ? {} : { httpMetadata: { contentType } }),
-      },
-    )
+    await bucket.put(fileKey(instanceId, key), body as ArrayBuffer, {
+      ...(contentType === undefined ? {} : { httpMetadata: { contentType } }),
+    })
     return undefined
   }
   if (input?.method === 'get') {
-    const found = await bucket.get(fileKey(instanceId, input.key))
+    const found = await bucket.get(fileKey(instanceId, input.args[0]))
     if (!found) return undefined
     return {
       body: await found.arrayBuffer(),
@@ -250,12 +247,12 @@ const filesCall = async (
     }
   }
   if (input?.method === 'delete') {
-    await bucket.delete(fileKey(instanceId, input.key))
+    await bucket.delete(fileKey(instanceId, input.args[0]))
     return undefined
   }
   if (input?.method === 'list') {
     const instancePrefix = `${instanceId}/`
-    const prefix = fileKey(instanceId, input.prefix)
+    const prefix = fileKey(instanceId, input.args[0] ?? '')
     const names: Array<string> = []
     let cursor: string | undefined
     do {
@@ -371,7 +368,11 @@ async function isolateId(
   request: HostStartRequest,
   hostId: string,
 ): Promise<string> {
-  const grants = Object.keys(request.stubs).sort().join(',')
+  const grants = JSON.stringify(
+    Object.entries(request.stubs)
+      .map(([name, stub]) => [name, stub.methods ? [...stub.methods] : null])
+      .sort(),
+  )
   const content = `${hostId} ${request.code} ${JSON.stringify(request.options ?? null)} ${grants}`
   return `${request.instanceId}:${await sha256(content)}`
 }
@@ -433,6 +434,11 @@ export function createCloudflareHost(options: CloudflareHostOptions): Host {
     name,
     async start(request: HostStartRequest): Promise<HostInstance> {
       const stubNames = Object.keys(request.stubs)
+      const stubMethods = Object.fromEntries(
+        Object.entries(request.stubs).flatMap(([stub, value]) =>
+          value.methods ? [[stub, value.methods] as const] : [],
+        ),
+      )
       const registered = { ...request.stubs }
       const through = async (
         stubName: string,
@@ -485,7 +491,7 @@ export function createCloudflareHost(options: CloudflareHostOptions): Host {
             : {}),
           mainModule: wrapperModule,
           modules: {
-            [wrapperModule]: wrapperSource(stubNames),
+            [wrapperModule]: wrapperSource(stubNames, stubMethods),
             [pluginModule]: request.code,
           },
           env,
@@ -602,7 +608,7 @@ export function createFacetHost(options: FacetHostOptions): FacetHost {
     instanceId: string,
     input: unknown,
   ): Promise<void> => {
-    const call = input as ScheduleCall | null
+    const call = input as ScheduleOperation | null
     if (call?.method === 'cancel') {
       await options.ctx.storage.delete(scheduleKey(instanceId))
       await rearm()
@@ -613,20 +619,18 @@ export function createFacetHost(options: FacetHostOptions): FacetHost {
     let every: number | undefined
     const handler =
       call?.method === 'at' || call?.method === 'every'
-        ? call.handler
+        ? call.args[1]
         : undefined
     if (call?.method === 'every') {
-      if (
-        typeof call.ms !== 'number' ||
-        !Number.isFinite(call.ms) ||
-        call.ms <= 0
-      ) {
+      const ms = call.args[0]
+      if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) {
         throw new Error('@tanstack/compose: interval must be >0')
       }
-      every = call.ms
-      at = Date.now() + call.ms
+      every = ms
+      at = Date.now() + ms
     } else if (call?.method === 'at') {
-      at = call.at
+      const when = call.args[0]
+      at = when instanceof Date ? when.getTime() : when
     }
     if (
       typeof at !== 'number' ||
@@ -682,6 +686,11 @@ export function createFacetHost(options: FacetHostOptions): FacetHost {
     name,
     async start(request: HostStartRequest): Promise<HostInstance> {
       const stubNames = Object.keys(request.stubs)
+      const stubMethods = Object.fromEntries(
+        Object.entries(request.stubs).flatMap(([stub, value]) =>
+          value.methods ? [[stub, value.methods] as const] : [],
+        ),
+      )
       const previousSchedule = await options.ctx.storage.get<FacetSchedule>(
         scheduleKey(request.instanceId),
       )
@@ -747,7 +756,7 @@ export function createFacetHost(options: FacetHostOptions): FacetHost {
             : {}),
           mainModule: wrapperModule,
           modules: {
-            [wrapperModule]: facetWrapperSource(stubNames),
+            [wrapperModule]: facetWrapperSource(stubNames, stubMethods),
             [pluginModule]: request.code,
           },
           env,

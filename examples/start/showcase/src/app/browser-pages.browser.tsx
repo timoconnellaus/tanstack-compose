@@ -3,18 +3,22 @@ import {
   currencyApp,
   digestApp,
   hostileApp,
+  pairApp,
   tableApp,
   tenantsApp,
   todoApp,
+  upgradeApp,
 } from '../apps'
 import { createAppClient, getBrowserClient } from '../browser-clients'
 import { AppFrame } from './app-frame'
 import { CurrencyPage } from './currency-page'
 import { DigestPage } from './digest-page'
 import { HostilePage } from './hostile-page'
+import { PairPage } from './pair-page'
 import { TablePage } from './table-page'
 import { TenantPanel } from './tenants-page'
 import { TodoPage } from './todo-page'
+import { UpgradePage } from './upgrade-page'
 import type { ReactNode } from 'react'
 
 /** S1's in-process Table app, loaded only by `vite --mode browser`. */
@@ -53,6 +57,15 @@ export function BrowserDigestApp(): ReactNode {
   )
 }
 
+/** Browser-only oracle for the Pair dependency graph. */
+export function BrowserPairApp(): ReactNode {
+  return (
+    <AppFrame app={pairApp} client={getBrowserClient(pairApp)}>
+      <PairPage />
+    </AppFrame>
+  )
+}
+
 /** Browser-only in-process Currency app. */
 export function BrowserCurrencyApp(): ReactNode {
   return (
@@ -82,5 +95,14 @@ export function BrowserTenantsApp(): ReactNode {
         <TenantPanel label="B" value="bravo" />
       </AppFrame>
     </div>
+  )
+}
+
+/** Browser-only v1 view of Upgrade; switching bases is deployed-only. */
+export function BrowserUpgradeApp(): ReactNode {
+  return (
+    <AppFrame app={upgradeApp} client={getBrowserClient(upgradeApp)}>
+      <UpgradePage />
+    </AppFrame>
   )
 }

@@ -61,6 +61,7 @@ export type {
   Host,
   HostInstance,
   HostStartRequest,
+  HostStub,
   InProcessGrant,
   InProcessGrantContext,
   InProcessGrantInstance,

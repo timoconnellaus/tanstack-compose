@@ -4,9 +4,16 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { workspaceSourceAlias } from './workspace-alias'
+import { composeDeclarations } from '@tanstack/compose-typescript/generate'
 
 export default defineConfig(({ mode }) => ({
   plugins: [
+    composeDeclarations({ entry: 'src/base.ts', exportName: 'base' }),
+    composeDeclarations({
+      entry: 'src/base-v2.ts',
+      exportName: 'baseV2',
+      id: 'compose:declarations-v2',
+    }),
     tanstackStart(),
     cloudflare({ viteEnvironment: { name: 'ssr' } }),
     react(),

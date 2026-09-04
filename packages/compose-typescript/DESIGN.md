@@ -12,19 +12,24 @@ Core owns the seam ([`compose/DESIGN.md` §The type-check seam](../compose/DESIG
 this package is one implementation of it. Nothing here changes how a plugin is
 written, and nothing in core knows this package exists.
 
-## The one primitive
+## The runtime primitive
 
 ```ts
-function createTypeScriptChecker(): SourceChecker
+function createTypeScriptChecker(options?: {
+  baseDeclarations?: string
+  baseVersion?: string
+}): SourceChecker
 ```
 
-One factory, passed to `createClient({ checker })`, with no options. Everything
-else this package exports exists so a composer can show the model what the
-checker will check against:
+One factory is passed to `createClient({ checker })`. Its only options install a
+generated product base and the version used for export inspection; the compiler
+language itself is fixed. The other runtime export exists so a composer can
+show the model what the checker will check against:
 
 ```ts
 function pluginDeclarations(
   grants: ReadonlyArray<{ name: string; declarations: string }>,
+  productBase?: string,
 ): string
 ```
 
@@ -42,6 +47,51 @@ grant set compiles to rather than falling back to core's `stubDeclarations` —
 which is the grant text alone, without the base declarations or the `Stubs`
 interface, and therefore not what this checker checks. It is the same function
 object `check` calls: there is one producer, and both callers reach it.
+
+### Generated product bases (slice 9)
+
+Slice 9 adds a build-time entry, `@tanstack/compose-typescript/generate`, with
+two more primitives:
+
+```ts
+generateDeclarations({ entry, exportName, tsconfig? }): {
+  text: string
+  version: string
+}
+composeDeclarations({ entry, exportName, tsconfig?, id? }): Plugin
+```
+
+`generateDeclarations` builds a TypeScript program from the base module, reads
+the exported `defineBase` value's `grants` property, and emits one ambient const
+per grant. The final trusted handler parameter is omitted; every authored
+parameter remains, and every result is awaited then wrapped in `Promise`.
+Anonymous types use `NoTruncation`. Named source types are discovered by walking
+their type symbols and emitted in the same file as `type` aliases, so no source
+module import can drift or become visible to written code. Declarations keep
+the base record's property order and the base version is lowercase SHA-256 of
+the exact text.
+
+The Vite adapter serves `compose:declarations` by default, invalidates it for a
+changed watched file, and regenerates on the next load. An optional `id` permits
+one build to carry two explicitly named base versions without changing the
+default interface. The CLI is the same generator plus one file write; it has no
+independent declaration logic.
+
+Vite is an optional peer and a development dependency. The generated API can
+therefore return Vite's real `Plugin` type when Vite is present, while the CLI
+path for non-Vite consumers installs no second declaration implementation.
+
+`createTypeScriptChecker({ baseDeclarations? })` prepends generated product-base
+text between the universal written-module shape and per-entry low-level grant
+text. The generated file may name every base grant, but `Stubs` is still
+synthesised only from the request's grants; the existing bare-global diagnostic
+also prevents reaching an ungranted ambient const directly. Low-level
+hand-authored declarations remain supported for hosts and tests.
+
+Language-service sessions are keyed by the pair `(baseVersion, grant-derived
+declarations)`. The request version, not checker construction time, selects the
+session, so a redeploy cannot reuse a program from the prior base even if grant
+names happen to be unchanged.
 
 ## The declaration file
 
@@ -293,10 +343,11 @@ several times in a turn, and each rewrite is a check.
 - **One `ts.DocumentRegistry` for the whole checker.** The 57 library files are
   parsed once and shared by every language service, which is where nearly all of
   the first check's cost is.
-- **One language service per declaration file, keyed by its text.** Declarations
-  are a function of the grant set, so entries with the same grants share a
-  service, and an entry whose grants change gets a new one. The cache holds
-  eight, evicted least-recently-used, and each disposes its service on eviction.
+- **One language service per base version and declaration file.** Declarations
+  are a function of the generated base plus the grant set, so entries checked
+  against the same base and grants share a service. Either a base-version or
+  grant change gets a new one. The cache holds eight, evicted
+  least-recently-used, and each disposes its service on eviction.
 - **The source is a versioned script.** A re-check of the same entry bumps
   `/plugin.ts`'s version and asks the same service again; TypeScript reparses one
   small file and reuses every other `SourceFile` in the program.
@@ -358,6 +409,7 @@ lying about that. Only this package depends on it; core does not, and must not.
 | The exports of one module, with the type of each                                                        | `tests/views.test.ts`                                    |
 | Import/factory stay cheap; the first check evaluates TypeScript                                         | `tests/loading.test.ts`                                  |
 | TypeScript evaluates and checks source under workerd                                                    | `tests/workerd/checker.test.ts`                          |
+| Generated method declarations, named aliases, stable hashes, and source checks                          | `tests/generate.test.ts`                                 |
 
 ## What was decided here
 
@@ -376,7 +428,8 @@ lying about that. Only this package depends on it; core does not, and must not.
   owns the shape of what it declares — the interface name, the call signature,
   the doc comments the model reads. This package owns only what TypeScript can
   recover, which keeps the seam free of anything view-shaped.
-- **No options.** Which lib, which strictness and which declarations are all
-  part of "what type-checks is what runs"; making them configurable would make
-  that sentence depend on the operator's configuration. If a host ever needs a
-  different library, that is a different checker.
+- **No compiler options.** Which lib and which strictness apply are part of
+  "what type-checks is what runs"; making them configurable would make that
+  sentence depend on operator configuration. Product declarations and their
+  base version are inputs because the base is product-owned, not changes to the
+  checker language.

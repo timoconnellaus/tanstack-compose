@@ -7,6 +7,7 @@ import type { SourceDiagnostic } from '@tanstack/compose'
 const check = async (source: string): Promise<Array<SourceDiagnostic>> =>
   (
     (await createTypeScriptChecker().check({
+      baseVersion: 'test',
       instanceId: 'draft',
       source,
       declarations: toolsStub.declarations,

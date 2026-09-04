@@ -1,6 +1,11 @@
 /** TanStack Start SSR, hydration and Durable Object support for Compose. */
 
-export { ComposeStart, useComposeEdit, useComposeSnapshot } from './react'
+export {
+  ComposeStart,
+  useComposeEdit,
+  useComposeRevert,
+  useComposeSnapshot,
+} from './react'
 export type { ComposeStartProps, ComposeTransport } from './react'
 
 export { applySnapshot, serializeFills } from './snapshot'
