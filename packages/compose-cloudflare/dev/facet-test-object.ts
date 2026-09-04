@@ -381,6 +381,39 @@ export const run = () => outcome
     }
   }
 
+  /**
+   * The object restarts (a new host, a new client) while the facet from its
+   * earlier life is still running: setup must run again for the new life.
+   */
+  async facetOutlivesHost(): Promise<Array<string>> {
+    const note = this.#noteStub()
+    const entry: PluginEntry = {
+      id: 'survivor',
+      source: `
+export default async function ({ stubs }) {
+  await stubs.note('setup ran')
+}
+`,
+      host: 'cloudflare',
+      stubs: [note],
+    }
+    const first = createClient({
+      hosts: { cloudflare: this.#facetHost() },
+      plugins: [entry],
+    })
+    await first.settled()
+    // The earlier life ends without stopping anything, as an eviction or a
+    // reload would: only the in-memory host and client are gone.
+    this.#host = undefined
+    this.#client = createClient({
+      hosts: { cloudflare: this.#facetHost() },
+      plugins: [entry],
+    })
+    await this.#client.settled()
+    const status = this.#client.inspect().find((one) => one.id === 'survivor')
+    return [...this.#events, `status:${status?.status ?? 'missing'}`]
+  }
+
   events(): Array<string> {
     return [...this.#events]
   }
