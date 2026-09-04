@@ -41,7 +41,30 @@ export type {
   SlotsState,
 } from './slots'
 
-export { createViewRenderer } from './views'
-export type { ViewCallback, ViewNode, ViewRenderer, ViewTone } from './views'
+export { createViewRenderer, viewsPlugin } from './views'
+export {
+  createServerStub,
+  createSlotsStub,
+  grantView,
+  pluginIdOf,
+  serverStub,
+  slotRegistryKey,
+  slotsStub,
+  viewIdOf,
+  viewRendererKey,
+  viewStubs,
+  viewSuffix,
+} from './view-runtime'
+export type {
+  ViewCallback,
+  ViewFill,
+  ViewGrantConfig,
+  ViewNode,
+  ViewRenderer,
+  ViewServerCall,
+  ViewSlot,
+  ViewSlotRegistry,
+  ViewTone,
+} from './view-runtime'
 
 export { useStore } from '@tanstack/react-store'

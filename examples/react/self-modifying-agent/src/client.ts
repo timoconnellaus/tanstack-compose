@@ -2,19 +2,19 @@ import { createClient } from '@tanstack/compose'
 import {
   agentStubs,
   composerPlugin,
+  credentialsPlugin,
   loopPlugin,
   modelsPlugin,
   promptPlugin,
   scriptedModelPlugin,
   sessionPlugin,
-  toolsPlugin,
-  credentialsPlugin,
   staticCredentials,
+  toolsPlugin,
   viewStubs,
 } from '@tanstack/compose-agent'
 import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
-import { slotsPlugin } from '@tanstack/react-compose'
+import { slotsPlugin, viewsPlugin } from '@tanstack/react-compose'
 import { actionLogPlugin } from './plugins/action-log'
 import { inputBoxPlugin } from './plugins/input-box'
 import { messageListPlugin } from './plugins/message-list'
@@ -22,7 +22,6 @@ import { modelPickerPlugin } from './plugins/model-picker'
 import { pageFramePlugin } from './plugins/page-frame'
 import { pluginPanelPlugin } from './plugins/plugin-panel'
 import { stopButtonPlugin } from './plugins/stop-button'
-import { viewsPlugin } from './plugins/views'
 import { summariserSource, summariserView } from './written'
 import type { Client, PluginEntry } from '@tanstack/compose'
 import type { ScriptedResponse } from '@tanstack/compose-agent'

@@ -5,6 +5,7 @@ preferWorkspacePackages: true
 packages:
   - 'packages/**'
   - 'examples/react/**'
+  - 'examples/start/**'
 
 allowBuilds:
   nx: true

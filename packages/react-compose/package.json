@@ -35,6 +35,10 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./view-runtime": {
+      "import": "./dist/view-runtime.js",
+      "require": "./dist/view-runtime.cjs"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,

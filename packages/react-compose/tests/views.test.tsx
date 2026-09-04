@@ -24,6 +24,14 @@ describe('the view renderer', () => {
     expect(text.className).toBe('view-text view-tone-muted')
   })
 
+  test('renders preformatted result data with an optional test id', () => {
+    show({ type: 'pre', text: 'a,b\n1,2', testId: 'preview' })
+
+    const preview = screen.getByTestId('preview')
+    expect(preview.tagName).toBe('PRE')
+    expect(preview.textContent).toBe('a,b\n1,2')
+  })
+
   test('renders a button that calls the handler it names', () => {
     const pressed = resolved()
     show(

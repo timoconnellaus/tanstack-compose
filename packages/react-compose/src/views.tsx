@@ -1,83 +1,40 @@
+import { createPlugin } from '@tanstack/compose'
 import { useState } from 'react'
+import { slotsKey } from './slots'
+import { slotRegistryKey, viewRendererKey } from './view-runtime'
+import type { AnySlot } from './slots'
+import type {
+  ViewCallback,
+  ViewNode,
+  ViewRenderer,
+  ViewSlotRegistry,
+  ViewTone,
+} from './view-runtime'
 import type { ComponentType, ReactNode } from 'react'
 
-/**
- * The renderer that turns a **view**'s declarative tree into a **fill**'s
- * renderer.
- *
- * The vocabulary below is a structural copy of the one the agent layer
- * publishes, not an import of it: this package knows nothing about agents,
- * sessions or chat (B1), and a value of either shape satisfies the other. The
- * one producer of the vocabulary is `@tanstack/compose-agent`, which puts it in
- * the declarations a written view is checked against; this file only has to
- * render what arrives.
- */
-
-/** How prominent an element is. The page decides what each tone looks like. */
-export type ViewTone = 'default' | 'muted' | 'primary' | 'danger'
-
-/**
- * What a **view** puts in a **slot**, as plain data. Nothing here is a
- * function: where a callback would be there is the *name* of one of the view
- * module's exports, so the same tree crosses every **host** boundary.
- */
-export type ViewNode =
-  | { type: 'text'; text: string; tone?: ViewTone }
-  | {
-      type: 'button'
-      label: string
-      /** The name of the handler to call when it is pressed. */
-      onPress?: string
-      disabled?: boolean
-      tone?: ViewTone
-    }
-  | {
-      type: 'input'
-      name: string
-      placeholder?: string
-      value?: string
-      /** Called with `{ name, value }` as the text changes. */
-      onChange?: string
-      /** Called with `{ name, value }` when the text is submitted. */
-      onSubmit?: string
-    }
-  | { type: 'row'; children: Array<ViewNode> }
-  | { type: 'stack'; children: Array<ViewNode> }
-
-/** One handler of the view module, already bound to the module's export. */
-export type ViewCallback = (input?: unknown) => Promise<unknown>
-
-/**
- * Turns a view's declarative tree and its bound handlers into whatever the page
- * renders. The agent layer holds this as a **context key** and never looks
- * inside the result, which is how React stays out of that package.
- */
-export type ViewRenderer = (
-  view: ViewNode,
-  callbacks: Readonly<Record<string, ViewCallback>>,
-) => unknown
-
-/** The class names a node renders with: its type, and its tone when it has one. */
 const classesOf = (type: string, tone: ViewTone | undefined): string =>
   tone === undefined || tone === 'default'
     ? `view-${type}`
     : `view-${type} view-tone-${tone}`
 
-/** Call a named handler, if the tree named one and the module exported it. */
-const press = (
+const press = async (
   callbacks: Readonly<Record<string, ViewCallback>>,
   name: string | undefined,
   input?: unknown,
-): void => {
-  if (name === undefined) return
-  void callbacks[name]?.(input)
+): Promise<unknown> =>
+  name === undefined ? undefined : callbacks[name]?.(input)
+
+/** Start a browser download without exposing the DOM to written view source. */
+const download = (text: string, filename: string, mediaType?: string): void => {
+  const anchor = document.createElement('a')
+  anchor.download = filename
+  anchor.href = `data:${mediaType ?? 'text/plain'};charset=utf-8,${encodeURIComponent(text)}`
+  anchor.hidden = true
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
 }
 
-/**
- * A text input, in its own component because it holds the text it shows. Enter
- * submits: a view fills a slot that may already be inside a form — the input
- * box's actions are — so a nested `<form>` would be invalid markup.
- */
 function ViewInput(properties: {
   node: Extract<ViewNode, { type: 'input' }>
   callbacks: Readonly<Record<string, ViewCallback>>
@@ -95,7 +52,7 @@ function ViewInput(properties: {
         : { placeholder: node.placeholder })}
       onChange={(event) => {
         setValue(event.target.value)
-        press(callbacks, node.onChange, {
+        void press(callbacks, node.onChange, {
           name: node.name,
           value: event.target.value,
         })
@@ -103,17 +60,12 @@ function ViewInput(properties: {
       onKeyDown={(event) => {
         if (event.key !== 'Enter') return
         event.preventDefault()
-        press(callbacks, node.onSubmit, { name: node.name, value })
+        void press(callbacks, node.onSubmit, { name: node.name, value })
       }}
     />
   )
 }
 
-/**
- * One node of the tree. An element of a type this vocabulary does not name
- * renders nothing and does not throw, so a view written against a newer
- * vocabulary degrades rather than taking the page with it (D1a).
- */
 function ViewElement(properties: {
   node: ViewNode
   callbacks: Readonly<Record<string, ViewCallback>>
@@ -122,13 +74,28 @@ function ViewElement(properties: {
   switch (node.type) {
     case 'text':
       return <span className={classesOf('text', node.tone)}>{node.text}</span>
+    case 'pre':
+      return (
+        <pre
+          className={classesOf('pre', node.tone)}
+          {...(node.testId === undefined ? {} : { 'data-testid': node.testId })}
+        >
+          {node.text}
+        </pre>
+      )
     case 'button':
       return (
         <button
           type="button"
           className={classesOf('button', node.tone)}
           disabled={node.disabled ?? false}
-          onClick={() => press(callbacks, node.onPress)}
+          onClick={() => {
+            void press(callbacks, node.onPress).then((result) => {
+              if (node.download !== undefined && typeof result === 'string') {
+                download(result, node.download, node.mediaType)
+              }
+            })
+          }}
         >
           {node.label}
         </button>
@@ -140,8 +107,6 @@ function ViewElement(properties: {
       return (
         <div className={`view-${node.type}`}>
           {node.children.map((child, at) => (
-            // The tree is data with no identity of its own; a rewritten view is
-            // a new fill, so position is the only key there is.
             <ViewElement key={at} node={child} callbacks={callbacks} />
           ))}
         </div>
@@ -152,22 +117,8 @@ function ViewElement(properties: {
 }
 
 /**
- * The React **view** renderer: it turns a view's declarative tree into a
- * component the **slot** registry can hold as a **fill**.
- *
- * `text` is a span with a tone class, `button` is a button that calls the
- * handler its `onPress` names, `input` is a controlled input that calls
- * `onChange` as it is typed in and `onSubmit` on Enter, and `row` and `stack`
- * are flex containers the page's stylesheet lays out. An element of an unknown
- * type renders nothing rather than throwing.
- *
- * The page provides the result under the agent layer's renderer key; nothing in
- * this package knows what a view is for.
- *
- * @example
- * ```ts
- * instance.provide(viewRendererKey, createViewRenderer())
- * ```
+ * Turn a declarative view tree into a React component held by a slot fill.
+ * Unknown node types render nothing so a newer view degrades in place.
  */
 export function createViewRenderer(): ViewRenderer {
   return (view, callbacks) => {
@@ -178,3 +129,26 @@ export function createViewRenderer(): ViewRenderer {
     return ViewFill
   }
 }
+
+/**
+ * Publish the browser client's slot registry and React view renderer for the
+ * framework-neutral `slots` and `server` view grants.
+ */
+export const viewsPlugin = createPlugin({
+  name: 'views',
+  deps: [slotsKey],
+  provides: [slotRegistryKey, viewRendererKey],
+  setup(instance) {
+    const slots = instance.context.get(slotsKey)
+    const registry: ViewSlotRegistry = {
+      slot: (name) => slots.slot(name),
+      fill: (slot, fill) =>
+        slots.fill(slot as AnySlot, {
+          ...fill,
+          render: fill.render as ComponentType<unknown>,
+        }),
+    }
+    instance.provide(slotRegistryKey, registry)
+    instance.provide(viewRendererKey, createViewRenderer())
+  },
+})

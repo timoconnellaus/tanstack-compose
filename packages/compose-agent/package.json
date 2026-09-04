@@ -47,6 +47,7 @@
   },
   "dependencies": {
     "@tanstack/compose": "workspace:*",
+    "@tanstack/react-compose": "workspace:*",
     "@tanstack/store": "^0.11.1"
   },
   "devDependencies": {

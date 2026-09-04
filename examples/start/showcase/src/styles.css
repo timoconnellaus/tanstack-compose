@@ -1,0 +1,363 @@
+:root {
+  color: #17211b;
+  background: #f4f2e9;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #335f48;
+  border-radius: 999px;
+  padding: 0.55rem 0.9rem;
+  color: #f9fff8;
+  background: #285e42;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.showcase-shell {
+  min-height: 100vh;
+}
+
+.site-header {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1.1rem 1.5rem;
+  color: #f7fff8;
+  background: #173b2b;
+}
+
+.site-header h1,
+.page h2,
+.plugin-panel h2,
+.plugin-panel h3,
+.hostile-grid h3 {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+
+.site-header h1 {
+  font-size: 1.35rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.2rem;
+  color: #c8a85e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+nav {
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 1px solid #54725f;
+  border-radius: 999px;
+}
+
+nav a {
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  color: #dbe8dd;
+  text-decoration: none;
+}
+
+nav a[aria-current='page'] {
+  color: #173b2b;
+  background: #f2c96e;
+}
+
+.notifications {
+  justify-self: end;
+}
+
+.shell-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 1.25rem;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.page-content {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.page,
+.plugin-panel {
+  border: 1px solid #d7d2c2;
+  border-radius: 20px;
+  background: #fffdf7;
+  box-shadow: 0 12px 34px rgb(36 55 43 / 8%);
+}
+
+.page {
+  min-width: 0;
+  padding: 1.4rem;
+}
+
+.page-heading,
+.panel-heading,
+.plugin-line,
+.button-row,
+.fixture-buttons,
+.todo-form,
+.view-row {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.page-heading,
+.panel-heading,
+.plugin-line {
+  justify-content: space-between;
+}
+
+.page-heading p:not(.eyebrow) {
+  margin: 0.35rem 0 0;
+  color: #637067;
+}
+
+.slot-toolbar {
+  min-height: 3rem;
+  margin: 1rem 0;
+  padding: 0.65rem;
+  border: 1px dashed #bdc8bd;
+  border-radius: 12px;
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  padding: 0.65rem;
+  border-bottom: 1px solid #e6e2d7;
+  text-align: left;
+  white-space: nowrap;
+}
+
+th {
+  color: #566158;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plugin-panel {
+  align-self: start;
+  max-height: calc(100vh - 7rem);
+  padding: 1rem;
+  overflow: auto;
+  position: sticky;
+  top: 1rem;
+}
+
+.count,
+.status {
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.count {
+  color: #f7fff8;
+  background: #285e42;
+}
+
+.plugin-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1rem 0;
+}
+
+.plugin-row,
+.hostile-grid article {
+  padding: 0.75rem;
+  border: 1px solid #dfdbcf;
+  border-radius: 12px;
+  background: #faf8f1;
+}
+
+.plugin-row code {
+  font-weight: 750;
+}
+
+.status-active {
+  color: #175b39;
+  background: #d9f2e1;
+}
+
+.status-pending,
+.status-disabled {
+  color: #695410;
+  background: #f5e9b9;
+}
+
+.status-error {
+  color: #8d2f2f;
+  background: #f9dada;
+}
+
+.detail,
+.error {
+  overflow-wrap: anywhere;
+  color: #9a3030;
+  font-size: 0.82rem;
+}
+
+.button-row button {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+}
+
+.paste-form,
+.paste-form label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.paste-form {
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ddd8cb;
+}
+
+.paste-form input,
+.paste-form textarea,
+.paste-form select,
+.todo-form input {
+  width: 100%;
+  border: 1px solid #b9b9ad;
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: white;
+}
+
+.paste-form textarea,
+.view-pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+}
+
+.todo-form {
+  align-items: end;
+  padding: 1rem;
+  border-radius: 12px;
+  background: #f0eee5;
+}
+
+.todo-list {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0;
+  list-style: none;
+}
+
+.todo-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.75rem;
+  border-bottom: 1px solid #e3dfd4;
+}
+
+.hostile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.hostile-grid dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.hostile-grid dd {
+  margin: 0;
+}
+
+.view-stack {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.view-pre {
+  max-height: 12rem;
+  margin: 0;
+  padding: 0.65rem;
+  overflow: auto;
+  border-radius: 8px;
+  background: #17211b;
+  color: #e8f0e9;
+}
+
+.booting {
+  padding: 2rem;
+}
+
+@media (max-width: 900px) {
+  .site-header,
+  .shell-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notifications,
+  .plugin-panel {
+    justify-self: stretch;
+    position: static;
+    max-height: none;
+  }
+
+  .page-heading,
+  .todo-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

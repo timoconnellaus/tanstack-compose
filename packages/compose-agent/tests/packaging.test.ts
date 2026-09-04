@@ -11,9 +11,10 @@ const sources = readdirSync(sourceDir)
   .map((name) => ({ name, text: readFileSync(join(sourceDir, name), 'utf8') }))
 
 describe('Packaging', () => {
-  it('depends on the kernel and the store and nothing else', () => {
+  it('depends on the kernel, store and framework-neutral view runtime', () => {
     expect(Object.keys(packageJson.dependencies)).toEqual([
       '@tanstack/compose',
+      '@tanstack/react-compose',
       '@tanstack/store',
     ])
     expect('peerDependencies' in packageJson).toBe(false)

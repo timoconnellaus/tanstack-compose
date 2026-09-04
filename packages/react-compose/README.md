@@ -140,8 +140,24 @@ return <button disabled={!tools} onClick={() => tools?.call('stop', {})} />
 ## Rendering a view
 
 A **view** describes what it puts in a slot as plain data, because a function
-cannot cross a **host** boundary. `createViewRenderer()` turns that data into a
-component, so a plugin written as source can fill a slot on the page:
+cannot cross a **host** boundary. Add `viewsPlugin` beside `slotsPlugin` to
+publish the renderer and registry used by the `slots` and `server` view grants:
+
+```ts
+import { slotsPlugin, viewStubs, viewsPlugin } from '@tanstack/react-compose'
+
+const client = createClient({
+  plugins: [
+    { id: 'slots', plugin: slotsPlugin },
+    { id: 'views', plugin: viewsPlugin },
+  ],
+})
+
+await client.addPlugin({ id: 'notice.view', source, stubs: [...viewStubs] })
+```
+
+`createViewRenderer()` is also public for pages that want to render the data
+directly:
 
 ```ts
 const renderer = createViewRenderer()
@@ -160,10 +176,11 @@ const Fill = renderer(
 slots.fill(toolbar, { render: Fill })
 ```
 
-`text` is a span with a tone class, `button` calls the handler its `onPress`
-names, `input` is controlled and calls `onChange` as it is typed and `onSubmit`
-on Enter, and `row` and `stack` are flex containers your stylesheet lays out.
-An element of a type the vocabulary does not name renders nothing and is not an
+`text` is a span with a tone class, `pre` preserves returned text, `button`
+calls the handler its `onPress` names (and can download a returned string),
+`input` is controlled and calls `onChange` as it is typed and `onSubmit` on
+Enter, and `row` and `stack` are flex containers your stylesheet lays out. An
+element of a type the vocabulary does not name renders nothing and is not an
 error.
 
 ## Learn more

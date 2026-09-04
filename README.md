@@ -36,6 +36,7 @@ is [ROADMAP.md](./ROADMAP.md).
 ## Examples
 
 - [`examples/react/self-modifying-agent`](./examples/react/self-modifying-agent)
+- [`examples/start/showcase`](./examples/start/showcase)
 
 ## Contributing
 

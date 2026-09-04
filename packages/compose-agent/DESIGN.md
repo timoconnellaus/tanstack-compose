@@ -896,6 +896,14 @@ handlers through **stubs** (ui.md D1). The composer grows one argument for it �
 `write_plugin { id, source, view? }` — and nothing else about writing a plugin
 changes.
 
+The view vocabulary, pairing helpers, context keys, and the `slots` and
+`server` stubs are owned by `@tanstack/react-compose`'s framework-neutral view
+runtime. This package imports that non-React subpath and re-exports the surface
+for compatibility. It owns only the agent-specific `agent` and `session` read
+stubs; its compatibility `viewStubs` is the UI runtime's stubs followed by
+those two reads. This keeps agent concepts out of the general UI extension
+surface while preserving the declarations existing composers expose.
+
 ### A view is its own entry
 
 `write_plugin` with a `view` writes **two** plugin entries, not one:
@@ -966,10 +974,13 @@ slot as plain data:
 ```ts
 type ViewNode =
   | { type: 'text'; text: string; tone?: ViewTone }
+  | { type: 'pre'; text: string; testId?: string; tone?: ViewTone }
   | {
       type: 'button'
       label: string
       onPress?: string
+      download?: string
+      mediaType?: string
       disabled?: boolean
       tone?: ViewTone
     }
@@ -1003,17 +1014,13 @@ type ViewRenderer = (
 ) => unknown
 ```
 
-The page provides it (`viewRendererKey`); this package never imports React and
-never sees a React element — `render` is `unknown` all the way through.
-`callbacks` holds one entry per handler name the tree names, already bound to
-that export through `StubCall.call`, so the renderer only has to attach them.
-The React implementation lives in the example app, next to
-`@tanstack/react-compose`. The **slot registry** is read the same way, through
-`slotRegistryKey` and a structural `SlotRegistry` (`slot(name)`, `fill(slot, …)`)
-whose `render` is `unknown`, because nothing here may name a component type. A
-React page adapts its own registry to it in one small plugin — twenty lines,
-one narrowing of `unknown` back to `ComponentType`, and the operator's, since
-which slots exist is the operator's decision anyway.
+`@tanstack/react-compose` provides it (`viewRendererKey`) from `viewsPlugin`;
+this package never imports React code and never sees a React element — `render`
+is `unknown` all the way through. `callbacks` holds one entry per handler name
+the tree names, already bound to that export through `StubCall.call`, so the
+renderer only has to attach them. The **slot registry** is read the same way,
+through `slotRegistryKey` and a structural `ViewSlotRegistry`
+(`slot(name)`, `fill(slot, …)`) whose `render` is `unknown`.
 
 **Which slots, as part of the grant (D1).** The operator names them
 (`options.viewSlots`); `grantView` rebuilds the `slots` grant with that list, so

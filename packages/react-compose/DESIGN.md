@@ -1,14 +1,20 @@
 # `@tanstack/react-compose` — design
 
-The React **adapter**, and the **slot** registry it renders through. The contract
-is [`docs/acceptance/ui.md`](../../docs/acceptance/ui.md) §A and §B; the terms
-are [`CONTEXT.md`](../../CONTEXT.md)'s.
+The React **adapter**, the **slot** registry it renders through, and the
+framework-neutral **view** grant runtime. The contract is
+[`docs/acceptance/ui.md`](../../docs/acceptance/ui.md) §A and §B; the terms are
+[`CONTEXT.md`](../../CONTEXT.md)'s.
 
 Two things live here, and the split between them is the important line:
 
 - **the registry** — framework-agnostic. It holds fills, settles them by
   cardinality, and publishes its state as a `@tanstack/store` store. It holds
   components but never renders one.
+- **the view runtime** — framework-agnostic. It owns `ViewNode`, the `slots`
+  and `server` stubs, their declaration text and the pairing convention. It is
+  in `src/view-runtime.ts`, which names no React API, so non-React packages can
+  import the `@tanstack/react-compose/view-runtime` subpath without loading the
+  adapter.
 - **the adapter** — React. A provider, hooks over the client's stores, a hook
   over a context key, and the `Slot` component that renders what the registry
   settled.
@@ -136,13 +142,17 @@ store, and `useStore` is re-exported from `@tanstack/react-store` for the stores
 plugins publish themselves — an agent's status, a session log. The adapter adds
 nothing to it.
 
-## The view renderer
+## The view runtime and renderer
 
 A **view** — the part of a plugin that runs in the browser — cannot hand the
 page a renderer, because a function does not cross a **host** boundary. It
-describes what it puts in a **slot** as plain data instead, and something in the
-page turns that data into a component. `createViewRenderer()` is that something
-for React:
+describes what it puts in a **slot** as plain data instead. The declaration
+text, validation, fill ownership, slot narrowing and server-half calls are UI
+concerns and therefore live here, not in the agent layer (ADR-0006).
+
+`viewsPlugin` publishes the slot registry and React renderer under the two
+framework-neutral context keys the view stubs depend on. `createViewRenderer()`
+turns the data into a React component:
 
 ```ts
 type ViewRenderer = (
@@ -157,6 +167,7 @@ const Fill = renderer(tree, callbacks) as ComponentType
 | Node            | Renders as                                                         |
 | --------------- | ------------------------------------------------------------------ |
 | `text`          | `<span>` with `view-text` and a tone class                         |
+| `pre`           | `<pre>` for result data a view wants to expose                     |
 | `button`        | `<button>` calling the handler `onPress` names                     |
 | `input`         | a controlled input; `onChange` as it is typed, `onSubmit` on Enter |
 | `row` / `stack` | a flex container the page's stylesheet lays out                    |
@@ -164,34 +175,26 @@ const Fill = renderer(tree, callbacks) as ComponentType
 
 Three decisions worth stating:
 
-- **The vocabulary is a structural copy, not an import.** The one producer of
-  `ViewNode` is `@tanstack/compose-agent`, which puts it in the **plugin
-  declarations** a written view is checked against. This package cannot import
-  it without knowing about agents (B1), so it declares the same shape and lets
-  structural typing do the rest; a value of either type satisfies the other, and
-  a test in the example app renders a tree the agent layer produced.
+- **There is one vocabulary.** `ViewNode` and the grant declarations are
+  authored by the framework-neutral view runtime. The agent layer re-exports
+  them for compatibility and adds only its `agent` and `session` stubs.
 - **An unknown element renders nothing rather than throwing.** A view written
   against a vocabulary the page does not have yet degrades in place; the rest of
   the tree, and the rest of the page, keep rendering (D1a).
 - **Enter submits an input, rather than a `<form>` doing it.** A fill lands
   wherever the slot is, and the slot may already be inside a form — the example
   app's input actions are — where a nested `<form>` is invalid markup.
+- **A button may name a download.** When its handler returns text, the renderer
+  uses a `data:` URL and a temporary `<a download>` to start the download. The
+  handler remains ordinary host RPC, and the view source receives no DOM grant.
 
 ## What the adapter does not know
 
-There is nothing about agents, chat, sessions or tools in this package (B1). The
-example application's every element is a plugin built on these exports, and none
-of the vocabulary of that application appears here.
-
-That is also why the twenty lines that publish this page's **slot registry** and
-this renderer under the agent layer's two **context keys** are not in this
-package. They name both sides, and neither side may name the other:
-`@tanstack/react-compose` knows nothing about agents, and
-`@tanstack/compose-agent` imports no framework. The glue is one plugin the
-operator writes — `src/plugins/views.ts` in the example — and it is where it
-belongs, since which slots exist and who may fill them is the operator's
-decision anyway. A shared `@tanstack/react-compose-agent` would be the place for
-it if a second page ever wants the same fifteen lines.
+There is nothing about agents, chat, sessions, models or tools in this package
+(B1). Views are an application UI extension surface, so the vocabulary, grants
+and their shell plugin do not need an agent in order to exist. The non-React
+subpath keeps the grant runtime usable by `@tanstack/compose-agent` without
+making that package import React code.
 
 ## UI events are actions
 

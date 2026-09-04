@@ -151,11 +151,9 @@ could replace it could replace the whole page.
 A view describes its fill as plain data — a tree of `text`, `button`, `input`,
 `row` and `stack`, with the _name_ of one of its own exports where a callback
 would be, because a function cannot cross a **host** boundary.
-`createViewRenderer()` from `@tanstack/react-compose` turns that tree into a
-component; [`src/plugins/views.ts`](./src/plugins/views.ts) is the twenty lines
-that publish it, and this page's **slot** registry, under the two context keys
-the agent layer reads them through. That plugin is **protected**: a view that
-could remove it could take every view off the page.
+`viewsPlugin` from `@tanstack/react-compose` turns that tree into a component
+and publishes it with this page's **slot** registry. That entry is
+**protected**: a view that could remove it could take every view off the page.
 
 The source the canned conversation writes is in
 [`src/written.ts`](./src/written.ts), so you can read what the model "wrote".
