@@ -5,8 +5,13 @@ import { workspaceSourceAlias } from './workspace-alias'
 
 export default defineConfig({
   plugins: [react()],
-  resolve: { alias: workspaceSourceAlias },
+  // The devtools UI kit is Solid; outside a browser Node would pick its server build.
+  resolve: {
+    alias: workspaceSourceAlias,
+    conditions: ['browser', 'development'],
+  },
   test: {
+    server: { deps: { inline: [/solid-js/, /@tanstack\/devtools/] } },
     name: packageJson.name,
     dir: './tests',
     watch: false,

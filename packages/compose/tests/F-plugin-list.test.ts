@@ -119,6 +119,15 @@ describe('F. Plugin list', () => {
     expect(client.inspect().map((entry) => entry.id)).toEqual(['a', 'b'])
   })
 
+  it('keeps the runtime guard for an entry with neither plugin nor source', async () => {
+    const client = createClient()
+    const malformed = { id: 'empty' } as unknown as PluginEntry
+
+    await expect(client.setPluginList([malformed])).rejects.toThrow(
+      /must carry exactly one of a plugin and plugin source/,
+    )
+  })
+
   it('overlapping list edits are serialised and apply in order', async () => {
     const log: Array<string> = []
     const slow = createPlugin({

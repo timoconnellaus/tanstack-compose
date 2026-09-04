@@ -12,6 +12,7 @@ import type {
   ActionHandler,
   AnyAction,
   AnyContextKey,
+  AnyDependency,
   AnyEvent,
   AnyPlugin,
   Cleanup,
@@ -25,6 +26,7 @@ import type {
   Listener,
   Middleware,
   PluginEntry,
+  PluginSourceEntry,
   ResourceNode,
   Status,
 } from './definitions'
@@ -79,7 +81,7 @@ interface InstanceRecord {
   resources: Array<Resource>
   /** The client view this instance edits through; built on first use (F5). */
   view?: Client
-  provisions: Array<AnyContextKey>
+  provisions: Array<AnyDependency>
   controller?: AbortController
   removal?: Promise<void>
 }
@@ -138,8 +140,8 @@ class ClientImpl implements Client {
   readonly errors: Store<Array<ClientErrorReport>>
 
   #records = new Map<string, InstanceRecord>()
-  #published = new Map<AnyContextKey, unknown>()
-  #claims = new Map<AnyContextKey, InstanceRecord>()
+  #published = new Map<AnyDependency, unknown>()
+  #claims = new Map<AnyDependency, InstanceRecord>()
   #handlers = new Map<AnyAction, ActionHandler<any, any>>()
   #middleware = new Map<AnyAction, Array<MiddlewareRegistration>>()
   #listeners = new Map<AnyEvent, Array<ListenerRegistration>>()
@@ -152,15 +154,23 @@ class ClientImpl implements Client {
   #outstanding = 0
   #nextPass: Promise<void> | undefined
   #onError: ((report: ClientErrorReport) => void) | undefined
+  #errorLimit: number
 
   constructor(options?: {
     plugins?: Array<PluginEntry>
     hosts?: Record<string, Host>
     checker?: SourceChecker
     onError?: (report: ClientErrorReport) => void
+    errorLimit?: number
   }) {
     this.checker = options?.checker
     this.#onError = options?.onError
+    this.#errorLimit = options?.errorLimit ?? 200
+    if (!Number.isInteger(this.#errorLimit) || this.#errorLimit < 0) {
+      throw new RangeError(
+        '@tanstack/compose: errorLimit must be a non-negative integer',
+      )
+    }
     for (const [name, host] of Object.entries(options?.hosts ?? {})) {
       this.#hosts.set(name, host)
     }
@@ -303,6 +313,13 @@ class ClientImpl implements Client {
   async #applyList(next: Array<PluginEntry>): Promise<void> {
     const seen = new Set<string>()
     for (const entry of next) {
+      // Keep runtime validation for untyped callers even though PluginEntry is
+      // a discriminated union at compile time.
+      const runtimeEntry = entry as {
+        plugin?: AnyPlugin
+        source?: unknown
+        stubs?: ReadonlyArray<AnyStubGrant>
+      }
       if (typeof entry.id !== 'string' || entry.id === '') {
         throw new Error(
           '@tanstack/compose: every plugin entry needs a string id',
@@ -314,24 +331,27 @@ class ClientImpl implements Client {
         )
       }
       seen.add(entry.id)
-      if ((entry.plugin === undefined) === (entry.source === undefined)) {
+      if (
+        (runtimeEntry.plugin === undefined) ===
+        (runtimeEntry.source === undefined)
+      ) {
         throw new Error(
           `@tanstack/compose: entry "${entry.id}" must carry exactly one of a plugin and plugin source`,
         )
       }
-      if (entry.source === undefined) {
-        const plugin = entry.plugin as { type?: unknown } | undefined
+      if (runtimeEntry.source === undefined) {
+        const plugin = runtimeEntry.plugin as { type?: unknown } | undefined
         if (plugin?.type !== 'compose/plugin') {
           throw new Error(
             `@tanstack/compose: entry "${entry.id}" does not hold a plugin created by createPlugin`,
           )
         }
-      } else if (typeof entry.source !== 'string') {
+      } else if (typeof runtimeEntry.source !== 'string') {
         throw new Error(
           `@tanstack/compose: entry "${entry.id}" holds plugin source that is not a string`,
         )
       }
-      for (const grant of entry.stubs ?? []) {
+      for (const grant of runtimeEntry.stubs ?? []) {
         if ((grant as { type?: unknown }).type !== 'compose/stub') {
           throw new Error(
             `@tanstack/compose: entry "${entry.id}" was granted something that is not a stub created by createStub`,
@@ -387,7 +407,7 @@ class ClientImpl implements Client {
     const hosted = entry.source !== undefined
     const record: InstanceRecord = {
       id: entry.id,
-      plugin: hosted ? this.#hostedPlugin(entry) : entry.plugin!,
+      plugin: hosted ? this.#hostedPlugin(entry) : entry.plugin,
       ...(hosted
         ? {
             source: entry.source,
@@ -435,7 +455,7 @@ class ClientImpl implements Client {
    * its grants', so a hosted entry sits in the dependency graph like any other
    * instance and every kernel rule applies to it unchanged.
    */
-  #hostedPlugin(entry: PluginEntry): AnyPlugin {
+  #hostedPlugin(entry: PluginSourceEntry): AnyPlugin {
     const deps: Array<AnyContextKey> = []
     const provides: Array<AnyContextKey> = []
     for (const grant of entry.stubs ?? []) {
@@ -601,9 +621,9 @@ class ClientImpl implements Client {
 
   // -------------------------------------------------------------- settle passes
 
-  #missing(record: InstanceRecord): Array<AnyContextKey> {
+  #missing(record: InstanceRecord): Array<AnyDependency> {
     return record.plugin.deps.filter(
-      (key: AnyContextKey) => !this.#published.has(key),
+      (dependency: AnyDependency) => !this.#published.has(dependency),
     )
   }
 
@@ -637,11 +657,11 @@ class ClientImpl implements Client {
       (record) => record.status === 'pending',
     )
     if (blocked.length === 0) return
-    const providers = new Map<AnyContextKey, Array<InstanceRecord>>()
+    const providers = new Map<AnyDependency, Array<InstanceRecord>>()
     for (const record of this.#records.values()) {
       if (record.status === 'active') continue
       for (const key of record.plugin
-        .provides as ReadonlyArray<AnyContextKey>) {
+        .provides as ReadonlyArray<AnyDependency>) {
         const list = providers.get(key)
         if (list) list.push(record)
         else providers.set(key, [record])
@@ -675,13 +695,13 @@ class ClientImpl implements Client {
 
   async #startRecord(record: InstanceRecord): Promise<void> {
     this.#setPhase(record, 'setup')
-    const deps = new Map<AnyContextKey, unknown>()
-    for (const key of record.plugin.deps) {
-      deps.set(key, this.#published.get(key))
+    const deps = new Map<AnyDependency, unknown>()
+    for (const dependency of record.plugin.deps) {
+      deps.set(dependency, this.#published.get(dependency))
     }
     const controller = new AbortController()
     record.controller = controller
-    const values = new Map<AnyContextKey, unknown>()
+    const values = new Map<AnyDependency, unknown>()
     try {
       const result = await record.plugin.setup(
         this.#makeInstance(record, values, deps, controller.signal),
@@ -734,7 +754,9 @@ class ClientImpl implements Client {
         dependent !== record &&
         dependent.status === 'active' &&
         dependent.phase === 'idle' &&
-        dependent.plugin.deps.some((key: AnyContextKey) => provided.has(key)),
+        dependent.plugin.deps.some((dependency: AnyDependency) =>
+          provided.has(dependency),
+        ),
     )
     if (dependents.length === 0) return undefined
     return (async () => {
@@ -849,8 +871,8 @@ class ClientImpl implements Client {
 
   #makeInstance(
     record: InstanceRecord,
-    values: Map<AnyContextKey, unknown>,
-    deps: Map<AnyContextKey, unknown>,
+    values: Map<AnyDependency, unknown>,
+    deps: Map<AnyDependency, unknown>,
     signal: AbortSignal,
   ): Instance<any, any> {
     // Named, because `client` is a getter and `this` inside it is the instance.
@@ -882,6 +904,7 @@ class ClientImpl implements Client {
         get: (key: AnyContextKey) => deps.get(key),
         peek: (key: AnyContextKey) => this.#published.get(key),
       },
+      get: (action: AnyAction) => deps.get(action),
       provide: (key: AnyContextKey, value: unknown) => {
         guard()
         if (
@@ -922,16 +945,31 @@ class ClientImpl implements Client {
         this.#emit(event, payload)) as Instance['emit'],
       defineAction: (action: AnyAction, handler: ActionHandler<any, any>) => {
         guard()
+        if (
+          !(record.plugin.provides as ReadonlyArray<AnyDependency>).includes(
+            action,
+          )
+        ) {
+          throw new Error(
+            `@tanstack/compose: "${record.plugin.name}" did not declare "${action.name}" in provides`,
+          )
+        }
         if (this.#handlers.has(action)) {
           throw new Error(
             `@tanstack/compose: action "${action.name}" already has an owner`,
           )
         }
+        this.#claims.set(action, record)
         this.#handlers.set(action, handler)
+        values.set(action, (input: unknown) => this.#dispatch(action, input))
+        record.provisions.push(action)
         record.resources.push({
           label: `action(${action.name})`,
           cleanup: () => {
+            this.#claims.delete(action)
+            this.#published.delete(action)
             this.#handlers.delete(action)
+            values.delete(action)
           },
         })
       },
@@ -1168,7 +1206,10 @@ class ClientImpl implements Client {
   // ------------------------------------------------------------------ reporting
 
   #report(report: ClientErrorReport): void {
-    this.errors.setState((list) => [...list, report])
+    this.errors.setState((list) => {
+      if (this.#errorLimit === 0) return []
+      return [...list, report].slice(-this.#errorLimit)
+    })
     this.#onError?.(report)
   }
 
@@ -1204,7 +1245,11 @@ class ClientImpl implements Client {
       }),
     )
     const context: Array<ContextSnapshot> = [...this.#claims.entries()]
-      .filter(([key]) => this.#published.has(key))
+      .filter(
+        ([dependency]) =>
+          dependency.type === 'compose/context-key' &&
+          this.#published.has(dependency),
+      )
       .map(([key, owner]) => ({ key: key.name, providedBy: owner.id }))
     batch(() => {
       this.instances.setState(() => instances)
@@ -1240,6 +1285,8 @@ export function createClient(options?: {
   hosts?: Record<string, Host>
   /** Called for every failure the client contained rather than propagated. */
   onError?: (report: ClientErrorReport) => void
+  /** Maximum retained error reports. Defaults to 200; zero retains none. */
+  errorLimit?: number
 }): Client {
   return new ClientImpl(options)
 }

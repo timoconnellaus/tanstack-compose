@@ -45,6 +45,7 @@ describe('H. Types', () => {
 
     createPlugin({
       name: 'inferred',
+      provides: [compute],
       validator: intervalValidator,
       setup(instance, options) {
         expectTypeOf(options).toEqualTypeOf<{ every: number }>()
@@ -79,6 +80,41 @@ describe('H. Types', () => {
     expectTypeOf(client.emit(awaited, { at: 1 })).toEqualTypeOf<Promise<void>>()
   })
 
+  it('types action callables from declared deps', () => {
+    const compute = createAction<number, string>('compute')
+
+    createPlugin({
+      name: 'consumer',
+      deps: [compute],
+      setup(instance) {
+        expectTypeOf(instance.get(compute)).toEqualTypeOf<
+          (input: number) => Promise<string>
+        >()
+        expectTypeOf(instance.get(compute)(1)).toEqualTypeOf<Promise<string>>()
+      },
+    })
+
+    createPlugin({
+      name: 'non-consumer',
+      setup(instance) {
+        // @ts-expect-error — `compute` was not declared as a dep.
+        instance.get(compute)
+      },
+    })
+  })
+
+  it('requires every plugin entry to select exactly one entry kind', () => {
+    // @ts-expect-error — an entry must carry a plugin or source.
+    createClient({ plugins: [{ id: 'empty' }] })
+
+    createClient({
+      plugins: [
+        // @ts-expect-error — a plugin-object entry cannot also carry source.
+        { id: 'both', plugin: mailerPlugin, source: 'export default () => {}' },
+      ],
+    })
+  })
+
   it('a plugin authored in another package keeps full types with value imports only', () => {
     const client = createClient({
       plugins: [
@@ -90,10 +126,10 @@ describe('H. Types', () => {
       ],
     })
 
+    // @ts-expect-error — the options are typed by the plugin's validator.
     void client.addPlugin({
       id: 'wrong',
       plugin: mailerPlugin,
-      // @ts-expect-error — the options are typed by the plugin's validator.
       options: { from: 1 },
     })
 

@@ -13,6 +13,7 @@
   "dependencies": {
     "@tanstack/compose": "^0.1.0",
     "@tanstack/compose-cloudflare": "^0.1.0",
+    "@tanstack/compose-devtools": "^0.1.0",
     "@tanstack/compose-typescript": "^0.1.0",
     "@tanstack/react-compose": "^0.1.0",
     "@tanstack/start-compose": "^0.1.0",

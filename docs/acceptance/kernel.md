@@ -23,6 +23,7 @@ package and say nothing about how they are met. Terms are as defined in
 - **B4** A plugin can read a context key it did not declare as a dep, receiving `undefined` when absent, and keeps running either way.
 - **B5** Providing a key that is already provided in the same client throws for the second provider.
 - **B6** Circular deps are detected and reported with the cycle named; the instances involved do not spin or hang.
+- **B7** An action may be declared in `provides` and used in `deps`; its dependent waits until the owning instance is active, is removed before that owner, names the action when pending, and receives a typed callable. Registering middleware for the action creates no dependency edge.
 
 ## C. Replacement
 
@@ -58,7 +59,7 @@ package and say nothing about how they are met. Terms are as defined in
 
 ## H. Types
 
-- **H1** Reading context inside a plugin is typed from that plugin's declared deps; reading an undeclared key through the typed accessor is a type error.
+- **H1** Reading context or getting an action callable inside a plugin is typed from that plugin's declared deps; reading an undeclared key or getting an undeclared action through the typed accessors is a type error.
 - **H2** Event payloads, action input/result, and options are inferred from the values passed to the builders; no `declare module` and no global type augmentation is required anywhere.
 - **H3** A plugin authored in one package and consumed in another keeps full types with value imports only.
 

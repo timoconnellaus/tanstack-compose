@@ -415,7 +415,7 @@ const csvCell = (value: string | number): string =>
 /** The trusted table plugin holding the dataset and default CSV action. */
 export const tablePlugin = createPlugin({
   name: 'table',
-  provides: [tableKey],
+  provides: [tableKey, tableExportAction],
   setup(instance) {
     const table: TableData = {
       rows: demoRows,
@@ -474,7 +474,7 @@ export function createTodoStore(): TodoStore {
 /** The trusted todo plugin holding state and the default action handlers. */
 export const todoPlugin = createPlugin({
   name: 'todo',
-  provides: [todosKey],
+  provides: [todosKey, listSortAction, itemValidateAction, itemCreateAction],
   setup(instance) {
     const todos = createTodoStore() as TodoStore & {
       next: (input: { title: string; due?: string }) => Todo

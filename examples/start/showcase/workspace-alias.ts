@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url'
 
 /** A workspace package, resolved from its source rather than its `dist`. */
-const source = (name: string): string =>
+const source = (name: string, entry = 'index.ts'): string =>
   fileURLToPath(
-    new URL(`../../../packages/${name}/src/index.ts`, import.meta.url),
+    new URL(`../../../packages/${name}/src/${entry}`, import.meta.url),
   )
 
 const moduleSource = (name: string, module: string): string =>
@@ -23,6 +23,7 @@ export const workspaceSourceAlias: Record<string, string> = {
     'view-runtime',
   ),
   '@tanstack/compose-cloudflare': source('compose-cloudflare'),
+  '@tanstack/compose-devtools/react': source('compose-devtools', 'react.tsx'),
   '@tanstack/compose-typescript': source('compose-typescript'),
   '@tanstack/react-compose': source('react-compose'),
   '@tanstack/start-compose': source('start-compose'),

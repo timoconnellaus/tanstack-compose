@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createClient, createContextKey, createPlugin } from '../src/index'
+import {
+  createAction,
+  createClient,
+  createContextKey,
+  createPlugin,
+} from '../src/index'
 
 const loggerKey = createContextKey<{ log: (message: string) => void }>('logger')
 const timerKey = createContextKey<{ now: () => number }>('timer')
@@ -22,6 +27,75 @@ const timerPlugin = createPlugin({
 })
 
 describe('B. Deps and context', () => {
+  it('treats an owned action like a dependency', async () => {
+    const run = createAction<number, string>('run')
+    const order: Array<string> = []
+    const results: Array<string> = []
+    const consumer = createPlugin({
+      name: 'consumer',
+      deps: [run],
+      async setup(instance) {
+        order.push('consumer:start')
+        results.push(await instance.get(run)(1))
+        instance.cleanup(() => {
+          order.push('consumer:cleanup')
+        })
+      },
+    })
+    const owner = createPlugin({
+      name: 'owner',
+      provides: [run],
+      setup(instance) {
+        order.push('owner:start')
+        instance.defineAction(run, (input) => String(input))
+        instance.cleanup(() => {
+          order.push('owner:cleanup')
+        })
+      },
+    })
+    const client = createClient({
+      plugins: [{ id: 'consumer', plugin: consumer }],
+    })
+    await client.settled()
+
+    expect(client.inspect()[0]).toMatchObject({
+      status: 'pending',
+      missing: ['run'],
+    })
+
+    await client.addPlugin({ id: 'owner', plugin: owner })
+    expect(order).toEqual(['owner:start', 'consumer:start'])
+    expect(results).toEqual(['1'])
+
+    await client.removePlugin('owner')
+    expect(order).toEqual([
+      'owner:start',
+      'consumer:start',
+      'consumer:cleanup',
+      'owner:cleanup',
+    ])
+    expect(client.inspect()[0]).toMatchObject({
+      status: 'pending',
+      missing: ['run'],
+    })
+  })
+
+  it('does not make middleware registration an action dependency', async () => {
+    const run = createAction<void, void>('unowned')
+    const middleware = createPlugin({
+      name: 'middleware',
+      setup(instance) {
+        instance.use(run, ({ next, input }) => next(input))
+      },
+    })
+    const client = createClient({
+      plugins: [{ id: 'middleware', plugin: middleware }],
+    })
+    await client.settled()
+
+    expect(client.inspect()[0]).toMatchObject({ status: 'active', missing: [] })
+  })
+
   it('an instance stays pending until the last dep is provided, whatever the order', async () => {
     const started = vi.fn()
     const consumer = createPlugin({

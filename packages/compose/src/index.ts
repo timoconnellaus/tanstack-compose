@@ -27,9 +27,11 @@ export {
 
 export type {
   ActionDefinition,
+  ActionCall,
   ActionHandler,
   AnyAction,
   AnyContextKey,
+  AnyDependency,
   AnyEvent,
   AnyPlugin,
   Cleanup,
@@ -47,6 +49,8 @@ export type {
   OptionsInputOf,
   Plugin,
   PluginEntry,
+  PluginObjectEntry,
+  PluginSourceEntry,
   ResourceNode,
   ResultOf,
   Status,

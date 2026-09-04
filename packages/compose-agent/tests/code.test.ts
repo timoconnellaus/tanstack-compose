@@ -215,7 +215,7 @@ describe('the plugins the agent writes', () => {
     // Somebody else edits the entry between the read and the rewrite.
     await client.setPluginList(
       client.pluginList.state.map((entry) =>
-        entry.id === 'written'
+        entry.id === 'written' && entry.source !== undefined
           ? { ...entry, source: alpha.replace('alpha', 'gamma') }
           : entry,
       ),
