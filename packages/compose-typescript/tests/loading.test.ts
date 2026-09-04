@@ -16,6 +16,7 @@ describe('loading the compiler', () => {
 
     await expect(
       checker.check({
+        baseVersion: 'test',
         instanceId: 'lazy',
         source: 'const setup: Setup = () => {}\nexport default setup',
         declarations: '',

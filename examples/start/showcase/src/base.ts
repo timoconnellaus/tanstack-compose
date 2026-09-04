@@ -2,9 +2,9 @@ import {
   createAction,
   createContextKey,
   createPlugin,
-  createStub,
   sourceErrorOf,
 } from '@tanstack/compose'
+import { defineBase, defineGrant } from '@tanstack/compose/base'
 import { createSlot, serverStub, slotsStub } from '@tanstack/react-compose'
 import { Store } from '@tanstack/store'
 import type {
@@ -13,6 +13,7 @@ import type {
   Cleanup,
   ContextKey,
 } from '@tanstack/compose'
+import type { GrantContext } from '@tanstack/compose/base'
 
 /** One row in the table page's fixed demo dataset. */
 export interface Row {
@@ -53,6 +54,9 @@ export const tableKey: ContextKey<TableData> =
 export const todosKey: ContextKey<TodoStore> =
   createContextKey<TodoStore>('showcase.todos')
 
+/** The value A publishes and B consumes on the Pair page. */
+export const pairValueKey = createContextKey<string>('pair.value')
+
 /** Sort the todo items before the page renders them. */
 export const listSortAction: ActionDefinition<
   { items: Array<Todo> },
@@ -89,67 +93,34 @@ export const notifications = createSlot('notifications')
 /** Optional content beside a page. */
 export const pageSide = createSlot('page.side')
 
-const rowDeclaration = `
-interface TableRow {
-  id: number
-  name: string
-  city: string
-  amount: number
-  due: string
-}
-`.trim()
-
-interface DataRequest {
-  operation: string
-  /** Used by hostile fixtures; the grant ignores non-operation fields. */
-  payload?: unknown
-  claimedInstanceId?: string
-}
-
 interface IdentityObservation {
   claimedInstanceId: string
   actualInstanceId: string
 }
 
 /** Read the table rows through one named grant. */
-export const dataStub = createStub<
-  DataRequest,
-  Array<Row> | IdentityObservation
->({
+export const dataStub = defineGrant({
   name: 'data',
-  declarations: `${rowDeclaration}
-
-/** Observe the host-attached identity on a deliberately forged request. */
-declare function data(request: {
-  operation: 'rows'
-  claimedInstanceId: string
-}): Promise<{ claimedInstanceId: string; actualInstanceId: string }>
-
-/** Read table data granted to this entry. */
-declare function data(request: {
-  operation: 'rows'
-  payload?: unknown
-}): Promise<Array<TableRow>>`,
-  deps: [tableKey],
-  handler: ({ input, instance, instanceId }) => {
-    if (input.operation !== 'rows') {
-      throw new Error('@showcase/data: only the rows operation is granted')
-    }
-    return input.claimedInstanceId === undefined
-      ? [...instance.context.get(tableKey).rows]
-      : {
-          claimedInstanceId: input.claimedInstanceId,
-          actualInstanceId: instanceId,
-        }
+  methods: {
+    rows(_context: GrantContext): Array<Row> {
+      return [...demoRows]
+    },
+    identity(
+      claimedInstanceId: string,
+      { instanceId }: GrantContext,
+    ): IdentityObservation {
+      return { claimedInstanceId, actualInstanceId: instanceId }
+    },
+    probe(_payload: unknown, _context: GrantContext): void {
+      // Crossing the host seam is the behavior hostile fixtures exercise.
+    },
   },
 })
 
 /** The actions hosted source may wrap. */
 export type GrantableActionName = 'list.sort' | 'item.validate' | 'item.create'
 
-interface ActionWrapRequest {
-  operation: string
-  action: string
+export interface ActionWrapOptions {
   before?: string
   after?: string
 }
@@ -167,46 +138,53 @@ const isGrantableAction = (name: string): name is GrantableActionName =>
   name === 'list.sort' || name === 'item.validate' || name === 'item.create'
 
 /** Wrap one explicitly granted base action with exports of the hosted source. */
-export const actionsStub = createStub<ActionWrapRequest, void>({
+export const actionsStub = defineGrant({
   name: 'actions',
-  declarations: `
-interface TodoItem {
-  id: string
-  title: string
-  due?: string
-  done: boolean
-}
+  methods: {
+    wrap(
+      actionName: GrantableActionName,
+      options: ActionWrapOptions,
+      { instance, call }: GrantContext,
+    ): void {
+      if (!isGrantableAction(actionName)) {
+        throw new Error(
+          `@showcase/actions: the action "${String(actionName)}" is not granted`,
+        )
+      }
+      const action = grantableActions[actionName]
+      instance.use<unknown, unknown>(action, async ({ input: given, next }) => {
+        const prepared =
+          options.before === undefined
+            ? given
+            : await unwrapped(() => call(options.before!, given))
+        const result = await next(prepared)
+        return options.after === undefined
+          ? result
+          : unwrapped(() => call(options.after!, result))
+      })
+    },
+  },
+})
 
-type GrantableAction = 'list.sort' | 'item.validate' | 'item.create'
+/** Publish A's value into the ordinary context dependency graph. */
+export const exportsStub = defineGrant({
+  name: 'exports',
+  provides: [pairValueKey],
+  methods: {
+    value(value: string, { instance }: GrantContext): void {
+      instance.provide(pairValueKey, value)
+    },
+  },
+})
 
-/** Register middleware owned by this hosted instance. */
-declare const actions: (request: {
-  operation: 'wrap'
-  action: GrantableAction
-  before?: string
-  after?: string
-}) => Promise<void>
-`.trim(),
-  handler: ({ input, instance, call }) => {
-    if (input.operation !== 'wrap') {
-      throw new Error('@showcase/actions: only the wrap operation is granted')
-    }
-    if (!isGrantableAction(input.action)) {
-      throw new Error(
-        `@showcase/actions: the action "${String(input.action)}" is not granted`,
-      )
-    }
-    const action = grantableActions[input.action]
-    instance.use<unknown, unknown>(action, async ({ input: given, next }) => {
-      const prepared =
-        input.before === undefined
-          ? given
-          : await unwrapped(() => call(input.before!, given))
-      const result = await next(prepared)
-      return input.after === undefined
-        ? result
-        : unwrapped(() => call(input.after!, result))
-    })
+/** Read A's published value; granting this makes B depend on A's key. */
+export const depsStub = defineGrant({
+  name: 'deps',
+  deps: [pairValueKey],
+  methods: {
+    value({ instance }: GrantContext): string {
+      return instance.context.get(pairValueKey)
+    },
   },
 })
 
@@ -490,6 +468,25 @@ export const todoPlugin = createPlugin({
       return todo
     })
   },
+})
+
+/** The showcase extension surface, typed once for runtime and generation. */
+export const base = defineBase({
+  keys: { table: tableKey, todos: todosKey, pairValue: pairValueKey },
+  actions: {
+    listSort: listSortAction,
+    itemValidate: itemValidateAction,
+    itemCreate: itemCreateAction,
+    tableExport: tableExportAction,
+  },
+  slots: { tableActions, todoActions, notifications, pageSide },
+  grants: {
+    data: dataStub,
+    actions: actionsStub,
+    exports: exportsStub,
+    deps: depsStub,
+  },
+  plugins: { table: tablePlugin, todo: todoPlugin },
 })
 
 /**

@@ -392,6 +392,8 @@ export interface ClientErrorReport {
  * `createClient`.
  */
 export interface Client {
+  /** The content hash of the generated base declarations used for checks. */
+  readonly baseVersion: string
   /** The source checker configured as client infrastructure, when present. */
   readonly checker: SourceChecker | undefined
   /** The plugin list. Writing to it reconciles the client (F1, ADR-0002). */

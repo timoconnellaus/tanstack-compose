@@ -27,6 +27,9 @@
     "test:build": "publint --strict",
     "build": "tsdown --tsconfig tsconfig.build.json"
   },
+  "bin": {
+    "compose-declarations": "./dist/cli.js"
+  },
   "type": "module",
   "types": "./dist/index.d.cts",
   "main": "./dist/index.cjs",
@@ -35,6 +38,10 @@
     ".": {
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./generate": {
+      "import": "./dist/generate.js",
+      "require": "./dist/generate.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -53,6 +60,15 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@tanstack/compose-agent": "workspace:*",
-    "rolldown": "^1.2.6"
+    "rolldown": "^1.2.6",
+    "vite": "^8.0.8"
+  },
+  "peerDependencies": {
+    "vite": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
   }
 }

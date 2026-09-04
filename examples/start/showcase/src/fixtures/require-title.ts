@@ -3,11 +3,7 @@ import type { ShowcaseFixture } from './types'
 
 export const requireTitleSource = `
 const setup: Setup = async ({ stubs }) => {
-  await stubs.actions({
-    operation: 'wrap',
-    action: 'item.validate',
-    before: 'requireTitle',
-  })
+  await stubs.actions.wrap('item.validate', { before: 'requireTitle' })
 }
 export default setup
 

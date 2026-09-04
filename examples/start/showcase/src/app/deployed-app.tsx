@@ -5,6 +5,7 @@ import {
   dispatchCompose,
   editCompose,
   pressCompose,
+  revertCompose,
 } from '../compose-functions'
 import { AppFrame } from './app-frame'
 import type { ShowcaseApp } from '../apps'
@@ -25,6 +26,10 @@ export function DeployedApp(properties: {
     () => ({
       edit: (operation) =>
         editCompose({ data: { app: properties.app.id, operation } }),
+      revert: (generation) =>
+        revertCompose({
+          data: { app: properties.app.id, generation },
+        }),
       dispatch: (request) =>
         dispatchCompose({ data: { app: properties.app.id, request } }),
       press: (request) =>

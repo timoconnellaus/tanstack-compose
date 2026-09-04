@@ -8,6 +8,9 @@ const statusSlot = createSlot('status')
 
 const snapshot = (generation: number, withFill = false): ComposeSnapshot => ({
   generation,
+  baseVersion: 'v1',
+  outcome: 'good',
+  lastKnownGood: generation,
   pluginList: [],
   instances: [],
   fills: withFill

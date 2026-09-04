@@ -96,6 +96,7 @@ type Handler = (input: never) => unknown
  */
 export function pluginDeclarations(
   grants: ReadonlyArray<GrantDeclarations>,
+  productBase = '',
 ): string {
   const granted = grants
     .map(
@@ -112,7 +113,9 @@ export function pluginDeclarations(
     members === ''
       ? `/** The stubs this entry was granted. */\ninterface Stubs {}\n`
       : `/** The stubs this entry was granted. */\ninterface Stubs {\n${members}}\n`
-  return `${baseDeclarations}\n${granted}${granted === '' ? '' : '\n'}${stubs}`
+  const generated =
+    productBase === '' ? '' : `${productBase.replace(/\n+$/, '')}\n\n`
+  return `${baseDeclarations}\n${generated}${granted}${granted === '' ? '' : '\n'}${stubs}`
 }
 
 /** A grant name as an interface member: quoted when it is not an identifier. */

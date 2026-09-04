@@ -1,13 +1,17 @@
-import { actionsStub } from '../base'
+import { actionsStub, dataStub } from '../base'
 import type { ShowcaseFixture } from './types'
 
 export const sortByDueSource = `
+interface TodoItem {
+  id: string
+  title: string
+  due?: string
+  done: boolean
+}
+
 const setup: Setup = async ({ stubs }) => {
-  await stubs.actions({
-    operation: 'wrap',
-    action: 'list.sort',
-    after: 'byDue',
-  })
+  await stubs.data.rows()
+  await stubs.actions.wrap('list.sort', { after: 'byDue' })
 }
 export default setup
 
@@ -23,5 +27,5 @@ export function byDue(items: Array<TodoItem>): Array<TodoItem> {
 export const sortByDueFixture: ShowcaseFixture = {
   id: 'sort-by-due',
   source: sortByDueSource,
-  stubs: [actionsStub],
+  stubs: [actionsStub, dataStub],
 }

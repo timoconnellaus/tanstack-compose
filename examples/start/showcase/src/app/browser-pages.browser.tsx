@@ -1,8 +1,10 @@
 import { AppFrame } from './app-frame'
 import { HostilePage } from './hostile-page'
+import { PairPage } from './pair-page'
 import { TablePage } from './table-page'
 import { TodoPage } from './todo-page'
-import { hostileApp, tableApp, todoApp } from '../apps'
+import { UpgradePage } from './upgrade-page'
+import { hostileApp, pairApp, tableApp, todoApp, upgradeApp } from '../apps'
 import { getBrowserClient } from '../browser-clients'
 import type { ReactNode } from 'react'
 
@@ -29,6 +31,24 @@ export function BrowserHostileApp(): ReactNode {
   return (
     <AppFrame app={hostileApp} client={getBrowserClient(hostileApp)}>
       <HostilePage />
+    </AppFrame>
+  )
+}
+
+/** Browser-only oracle for the Pair dependency graph. */
+export function BrowserPairApp(): ReactNode {
+  return (
+    <AppFrame app={pairApp} client={getBrowserClient(pairApp)}>
+      <PairPage />
+    </AppFrame>
+  )
+}
+
+/** Browser-only v1 view of Upgrade; switching bases is deployed-only. */
+export function BrowserUpgradeApp(): ReactNode {
+  return (
+    <AppFrame app={upgradeApp} client={getBrowserClient(upgradeApp)}>
+      <UpgradePage />
     </AppFrame>
   )
 }

@@ -35,6 +35,14 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./base": {
+      "import": "./dist/base.js",
+      "require": "./dist/base.cjs"
+    },
+    "./generations": {
+      "import": "./dist/generations.js",
+      "require": "./dist/generations.cjs"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,

@@ -5,7 +5,9 @@ import {
   createStub,
   stubCallAction,
 } from '@tanstack/compose'
+import { defineGrant } from '@tanstack/compose/base'
 import { testHost } from './helpers/host'
+import type { GrantContext } from '@tanstack/compose/base'
 
 /** A written plugin that says whatever it likes about who it is. */
 const liar = `
@@ -122,6 +124,50 @@ export default async function setup({ stubs }) {
     await client.settled()
 
     expect(names).toEqual(['granted', 'list'])
+
+    await client.destroy()
+  })
+
+  it('exposes a method-shaped grant as a Proxy-free method object', async () => {
+    let received: unknown
+    const data = defineGrant({
+      name: 'data',
+      methods: {
+        rows(filter: { prefix: string }, context: GrantContext) {
+          received = { filter, instanceId: context.instanceId }
+          return ['one']
+        },
+      },
+    })
+    const report = createStub<unknown, void>({
+      name: 'report',
+      declarations: 'declare const report: (value: unknown) => Promise<void>',
+      handler: ({ input }) => {
+        received = { received, reported: input }
+      },
+    })
+    const client = createClient({
+      hosts: { cloudflare: testHost({ callTimeoutMs: 2000 }) },
+      plugins: [
+        {
+          id: 'methods',
+          host: 'cloudflare',
+          stubs: [data, report],
+          source: `
+export default async function setup({ stubs }) {
+  const rows = await stubs.data.rows({ prefix: 'a' })
+  await stubs.report({ names: Object.keys(stubs.data), rows })
+}
+`,
+        },
+      ],
+    })
+    await client.settled()
+
+    expect(received).toEqual({
+      received: { filter: { prefix: 'a' }, instanceId: 'methods' },
+      reported: { names: ['rows'], rows: ['one'] },
+    })
 
     await client.destroy()
   })

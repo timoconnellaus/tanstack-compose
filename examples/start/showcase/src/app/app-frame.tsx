@@ -4,7 +4,11 @@ import {
   isClient,
   useComposeView,
 } from '@tanstack/react-compose'
-import { useComposeEdit, useComposeSnapshot } from '@tanstack/start-compose'
+import {
+  useComposeEdit,
+  useComposeRevert,
+  useComposeSnapshot,
+} from '@tanstack/start-compose'
 import {
   Suspense,
   createContext,
@@ -31,10 +35,15 @@ const AppContext = createContext<ShowcaseApp | undefined>(undefined)
 
 interface ComposeWriter {
   deployed: boolean
+  generation?: number
+  baseVersion?: string
+  outcome?: 'pending' | 'good' | 'bad'
+  lastKnownGood?: number
   add: (fixture: ShowcaseFixture) => Promise<void>
   remove: (id: string) => Promise<void>
   setEnabled: (id: string, enabled: boolean) => Promise<void>
   revert: (keep: ReadonlySet<string>) => Promise<void>
+  revertGeneration: (n: number) => Promise<void>
 }
 
 const WriterContext = createContext<ComposeWriter | undefined>(undefined)
@@ -98,6 +107,7 @@ function DirectOperations(properties: {
           ),
         )
       },
+      revertGeneration: () => Promise.resolve(),
     }),
     [properties.app, properties.client],
   )
@@ -113,10 +123,15 @@ function FollowerOperations(properties: {
   children: ReactNode
 }): ReactNode {
   const edit = useComposeEdit()
+  const revert = useComposeRevert()
   const snapshot = useComposeSnapshot()
   const writer = useMemo<ComposeWriter>(
     () => ({
       deployed: true,
+      generation: snapshot.generation,
+      baseVersion: snapshot.baseVersion,
+      outcome: snapshot.outcome,
+      lastKnownGood: snapshot.lastKnownGood,
       add: async (fixture) => {
         for (const entry of serializedEntriesForWritten(
           fixture,
@@ -138,8 +153,9 @@ function FollowerOperations(properties: {
           if (!keep.has(entry.id)) await edit({ type: 'remove', id: entry.id })
         }
       },
+      revertGeneration: revert,
     }),
-    [edit, properties.app, snapshot.pluginList],
+    [edit, properties.app, revert, snapshot],
   )
   return (
     <WriterContext value={writer}>

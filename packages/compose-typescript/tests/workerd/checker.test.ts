@@ -7,6 +7,7 @@ const logGrant = {
 }
 
 const request = (argument: string) => ({
+  baseVersion: 'test',
   instanceId: 'workerd-smoke',
   declarations: logGrant.declarations,
   grants: [logGrant],

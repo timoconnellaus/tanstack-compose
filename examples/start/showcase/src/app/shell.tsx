@@ -23,6 +23,12 @@ export function SiteFrame(properties: { children: ReactNode }): ReactNode {
           <Link to="/hostile" activeProps={{ 'aria-current': 'page' }}>
             Hostile gallery
           </Link>
+          <Link to="/upgrade" activeProps={{ 'aria-current': 'page' }}>
+            Upgrade
+          </Link>
+          <Link to="/pair" activeProps={{ 'aria-current': 'page' }}>
+            Pair
+          </Link>
         </nav>
         <div />
       </header>

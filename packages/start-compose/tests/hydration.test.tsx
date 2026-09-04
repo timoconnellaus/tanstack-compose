@@ -16,6 +16,9 @@ const actions = createSlot('table.actions')
 
 const snapshot: ComposeSnapshot = {
   generation: 4,
+  baseVersion: 'v1',
+  outcome: 'good',
+  lastKnownGood: 4,
   pluginList: [
     {
       id: 'export-csv',

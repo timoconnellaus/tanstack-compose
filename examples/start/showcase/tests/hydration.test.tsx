@@ -10,6 +10,9 @@ import type { ComposeSnapshot, ComposeTransport } from '@tanstack/start-compose'
 
 const snapshot: ComposeSnapshot = {
   generation: 9,
+  baseVersion: 'v1',
+  outcome: 'good',
+  lastKnownGood: 9,
   pluginList: [
     { id: 'slots', plugin: { catalog: 'slots' }, stubs: [] },
     { id: 'views', plugin: { catalog: 'views' }, stubs: [] },
