@@ -1,58 +1,22 @@
 import { createPlugin } from '@tanstack/compose'
-import { agentKey, sessionKey } from '@tanstack/compose-agent'
-import {
-  Slot,
-  slotsKey,
-  useContextKey,
-  useStore,
-} from '@tanstack/react-compose'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Store } from '@tanstack/store'
+import { sessionKey } from '@tanstack/compose-agent'
+import { Slot, slotsKey, useStore } from '@tanstack/react-compose'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { chatMainSlot, chatMessageSlot } from '../slots'
+import { chatListTrailerSlot, chatMainSlot, chatMessageSlot } from '../slots'
 import type { ReactNode } from 'react'
 import type { ChatMessageProps, ToolResultEntry } from '../slots'
 
 /**
- * A quiet row at the end of the list while a turn is running and no text is
- * arriving — between tool calls, or while the model is still thinking. Read
- * through the adapter's context hook so the list survives the loop's absence.
+ * Plain paragraphs for what the agent says. The markdown plugin fills the same
+ * keys with a later fill and takes over; disable it and this is what renders.
  */
-const idle = new Store<'idle' | 'running'>('idle')
-
-const WorkingRow = ({ streaming }: { streaming: boolean }): ReactNode => {
-  const agent = useContextKey(agentKey)
-  const status = useStore(agent?.status ?? idle)
-  if (!agent || status !== 'running' || streaming) return null
-  return (
-    <li className="working" data-testid="agent-working" aria-live="polite">
-      <span className="working-dots" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </span>
-      Agent is working
-    </li>
-  )
-}
-
 const AssistantText = ({ text }: { text: string }): ReactNode => (
-  <div className="message message-assistant">
+  <div className="message message-assistant" data-testid="plain-text">
     <span className="who">agent</span>
     <div className="message-content">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        skipHtml
-        components={{
-          a: ({ node, ...props }) => {
-            void node
-            return <a {...props} target="_blank" rel="noreferrer" />
-          },
-        }}
-      >
-        {text}
-      </ReactMarkdown>
+      {text.split(/\n{2,}/).map((paragraph, index) => (
+        <p key={index}>{paragraph}</p>
+      ))}
     </div>
   </div>
 )
@@ -336,7 +300,10 @@ export const messageListPlugin = createPlugin({
                 </li>
               )
             })}
-            <WorkingRow streaming={streamingText.size > 0} />
+            <Slot
+              of={chatListTrailerSlot}
+              props={{ streaming: streamingText.size > 0 }}
+            />
           </ol>
           {!following ? (
             <button
@@ -355,6 +322,10 @@ export const messageListPlugin = createPlugin({
     }
 
     instance.cleanup(slots.declare(chatMessageSlot), 'slot(chat.message)')
+    instance.cleanup(
+      slots.declare(chatListTrailerSlot),
+      'slot(chat.list.trailer)',
+    )
     for (const [kind, render] of Object.entries(defaults)) {
       instance.cleanup(
         slots.fill(chatMessageSlot, { key: kind, render }),

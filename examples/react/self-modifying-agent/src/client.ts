@@ -17,11 +17,15 @@ import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import { slotsPlugin, viewsPlugin } from '@tanstack/react-compose'
 import { actionLogPlugin } from './plugins/action-log'
 import { inputBoxPlugin } from './plugins/input-box'
+import { markdownPlugin } from './plugins/markdown'
 import { messageListPlugin } from './plugins/message-list'
 import { modelPickerPlugin } from './plugins/model-picker'
 import { pageFramePlugin } from './plugins/page-frame'
+import { pageTitlePlugin } from './plugins/page-title'
 import { pluginPanelPlugin } from './plugins/plugin-panel'
+import { sendOnCtrlEnterPlugin, sendOnEnterPlugin } from './plugins/send-keys'
 import { stopButtonPlugin } from './plugins/stop-button'
+import { workingIndicatorPlugin } from './plugins/working-indicator'
 import { summariserSource, summariserView } from './written'
 import type { Client, PluginEntry } from '@tanstack/compose'
 import type { ScriptedResponse } from '@tanstack/compose-agent'
@@ -187,6 +191,11 @@ export function createAppClient(options: AppClientOptions = {}): Client {
           catalog: {
             'stop-button': stopButtonPlugin,
             'model-picker': modelPickerPlugin,
+            'page-title': pageTitlePlugin,
+            markdown: markdownPlugin,
+            'working-indicator': workingIndicatorPlugin,
+            'send-on-enter': sendOnEnterPlugin,
+            'send-on-ctrl-enter': sendOnCtrlEnterPlugin,
           },
           protected: [...protectedIds],
           stubs: agentStubs,
@@ -194,7 +203,13 @@ export function createAppClient(options: AppClientOptions = {}): Client {
           // fill. `root` is not among them: the page frame is the operator's,
           // and a view that could replace it could replace the whole page.
           viewStubs,
-          viewSlots: ['chat.input.actions', 'chat.side', 'chat.main'],
+          viewSlots: [
+            'chat.input.actions',
+            'chat.side',
+            'chat.main',
+            'chat.list.trailer',
+            'page.title',
+          ],
         },
       },
 
@@ -203,8 +218,12 @@ export function createAppClient(options: AppClientOptions = {}): Client {
       { id: 'slots', plugin: slotsPlugin },
       { id: 'views', plugin: viewsPlugin },
       { id: 'page-frame', plugin: pageFramePlugin },
+      { id: 'page-title', plugin: pageTitlePlugin },
       { id: 'message-list', plugin: messageListPlugin },
+      { id: 'markdown', plugin: markdownPlugin },
+      { id: 'working-indicator', plugin: workingIndicatorPlugin },
       { id: 'input-box', plugin: inputBoxPlugin },
+      { id: 'send-on-enter', plugin: sendOnEnterPlugin },
       { id: 'stop-button', plugin: stopButtonPlugin },
       { id: 'plugin-panel', plugin: pluginPanelPlugin },
       { id: 'model-picker', plugin: modelPickerPlugin },

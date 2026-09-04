@@ -45,3 +45,14 @@ export const chatMessageSlot = createSlot<ChatMessageProps>('chat.message', {
 export const chatInputActionsSlot = createSlot<{ draft: string }>(
   'chat.input.actions',
 )
+
+/** The page heading. The page frame declares it; the page title plugin fills it. */
+export const pageTitleSlot = createSlot('page.title')
+
+/**
+ * The end of the message list, after the last entry. `streaming` is true while
+ * assistant text is still arriving, so a fill can stay out of the way of it.
+ */
+export const chatListTrailerSlot = createSlot<{ streaming: boolean }>(
+  'chat.list.trailer',
+)

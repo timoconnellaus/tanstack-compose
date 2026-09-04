@@ -17,6 +17,7 @@ describe('the page as it starts', () => {
     app = await startApp()
 
     expect(screen.getByTestId('page-frame')).toBeDefined()
+    expect(screen.getByTestId('page-title')).toBeDefined()
     expect(screen.getByTestId('messages')).toBeDefined()
     expect(screen.getByTestId('input-box')).toBeDefined()
     expect(screen.getByTestId('stop-button')).toBeDefined()
@@ -97,6 +98,7 @@ describe('the conversation', () => {
  */
 const shell: Array<{ id: string; gone: string; stays: string }> = [
   { id: 'page-frame', gone: 'page-frame', stays: 'page-frame' },
+  { id: 'page-title', gone: 'page-title', stays: 'page-frame' },
   { id: 'message-list', gone: 'messages', stays: 'input-box' },
   { id: 'input-box', gone: 'input-box', stays: 'messages' },
   { id: 'stop-button', gone: 'stop-button', stays: 'input-box' },
