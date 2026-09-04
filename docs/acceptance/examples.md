@@ -9,20 +9,20 @@ and the grants are [ADR-0007](../adr/0007-authority-is-named-grants.md).
 ## Shape
 
 - **Stack**: TanStack Start (React 19) on Cloudflare Workers. One **client** per tenant runs in a
-  Durable Object; plugin source — server halves _and_ view modules — runs in Dynamic Workers through
+  Durable Object; plugin source (server halves _and_ view modules) runs in Dynamic Workers through
   `@tanstack/compose-cloudflare`. A view is data (a `ViewNode` tree naming handlers), so the server
   holds every fill; a Start route loader reads the tenant snapshot (plugin list, instances, fills) and
   **renders the fills on the server**. The browser hydrates a follower client from the same snapshot
   (no layout shift on refresh), then follows live changes over a connection, and sends a view.s
   button presses up to the server, which calls the view module through its host (`ui.md` §E,
   amended: the browser holds fills, never plugin source). This lives in `@tanstack/start-compose`.
-  The shell — page frame, navigation, the plugin panel — is ordinary application code with slots,
+  The shell (page frame, navigation, the plugin panel) is ordinary application code with slots,
   not plugins.
 - **The base** is one `defineBase({ keys, actions, slots, grants })` in `examples/start/showcase/src/base.ts`.
   The declarations a written plugin is checked against are generated from the base's types at build
   time, never hand-written.
 - **No model in the loop to begin with.** Every page has buttons that add a pre-designed plugin
-  **as source** — `addPlugin({ id, source, stubs })` — through the checker and the host, exactly as
+  **as source**, `addPlugin({ id, source, stubs })`, through the checker and the host, exactly as
   an agent would, plus a "paste source" panel. The sources live in `src/fixtures/` and are what a
   later agent path reuses. A model is added only after every page passes without one.
 - **Staging**: S1 a TanStack Start app with client-only routes, the client in the browser with the in-process host (pages 1–3);

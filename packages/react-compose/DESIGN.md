@@ -109,7 +109,7 @@ adapter actually needs: readable `pluginList`, `instances`, `context`, and
 satisfy the interface without pretending to hold the other's plugin value.
 
 `useComposeView()` returns that read surface. `useClient()` remains the hook
-for code that genuinely needs plugin-list mutation, middleware, events, or
+for code that needs plugin-list mutation, middleware, events, or
 lifecycle control. It checks structurally for `setPluginList` and throws a
 specific error when the provider holds only a view. The store and context hooks
 use `useComposeView()`, as do `Slot` and the view renderer transitively; none of

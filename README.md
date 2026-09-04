@@ -4,9 +4,9 @@
 
 > **Status: pre-release, under active development.** The kernel, the Cloudflare host, the React adapter, the TanStack Start integration and pages 1–3 of the showcase are implemented and tested. The API is not stable and nothing is published to npm yet. This repository is public so colleagues can review the direction; see [ROADMAP.md](./ROADMAP.md) for what is done and what is next.
 
-**A runtime extension surface for deployed applications.** You write your product as ordinary TypeScript. At the exact points you want to be changeable after deployment, you place a **slot**, declare an **action**, or offer a **grant**. Compose lets code that was not there at build time — written by an operator, a tenant, or an AI agent on a user's behalf — fill those slots, wrap those actions and use those grants, **while the application runs**, with the same type-safety as the code you wrote yourself, and in a way that can be taken back in one step.
+**A runtime extension surface for deployed applications.** You write your product as ordinary TypeScript. At the exact points you want to be changeable after deployment, you place a **slot**, declare an **action**, or offer a **grant**. Code that was not there at build time (written by an operator, a tenant, or an AI agent on a user's behalf) can then fill those slots, wrap those actions and use those grants while the application runs. It gets the same type-safety as the code you wrote yourself, and it can be taken back in one step.
 
-The headline use case: an agent that updates the product it lives inside, in real time, in production, without a redeploy — and without being able to reach anything you did not hand it.
+The headline use case is an agent that updates the product it lives inside, in production, without a redeploy, and without being able to reach anything you did not hand it.
 
 ## What is possible
 
@@ -22,11 +22,11 @@ Everything below is demonstrated by one example application, [`examples/start/sh
 | **Two tenants**     | One base, two isolated tenants: a plugin added for one never appears for the other; the same storage key holds different values.                                                                                                                                    | slice 8  |
 | **Upgrade**         | The plugin list is a **log of generations**. Redeploying the base with a renamed API re-checks every plugin; the broken one lands in `error` with a readable diagnostic; you can revert to the last known good generation or fix the source.                        | slice 9  |
 | **Pair**            | The **dependency graph** works for written code: plugin B waits for plugin A, is deactivated when A goes, and revives when A returns.                                                                                                                               | slice 9  |
-| **Harness**         | An agent built on TanStack AI operates all of the above through compose's tool surface — list, add from catalog, write, rewrite, remove — with no compose code in its loop.                                                                                         | slice 10 |
+| **Harness**         | An agent built on TanStack AI operates all of the above through compose's tool surface (list, add from catalog, write, rewrite, remove), with no compose code in its loop.                                                                                          | slice 10 |
 
 Two things run through all of them:
 
-- **Deployed, not a demo.** One **client** per tenant lives in a Durable Object. Plugin source runs in isolated Dynamic Workers (server halves as Durable Object _facets_, so each keeps its own storage). Views are data, so the server renders every fill: a refresh is server-rendered with **no layout shift**, and while the page is open the browser follows live changes over a socket.
+- **Deployed.** One **client** per tenant lives in a Durable Object. Plugin source runs in isolated Dynamic Workers (server halves as Durable Object _facets_, so each keeps its own storage). Views are data, so the server renders every fill: a refresh is server-rendered with **no layout shift**, and while the page is open the browser follows live changes over a socket.
 - **What type-checks is what runs.** Before source is started it is type-checked against declarations derived from exactly the grants it holds. A plugin cannot name a capability it was not given. The checker runs inside the Worker.
 
 ## Why a plugin system instead of bespoke code
@@ -37,7 +37,7 @@ Because the three authors are different people at different times ([ADR-0006](./
 - an **operator** edits the plugin list at runtime, with options validated by each plugin;
 - an **agent** writes plugin _source_ at runtime, hosted and isolated, reaching only its **grants**.
 
-A plugin is the unit of code that can be written by someone you do not trust, at a time you are not present, and taken back in one step. Compose is _not_ a way to build the whole application out of plugins; your shell, routes and pages stay ordinary code. The kernel is small (a few kB) precisely because it carries nothing for the base to compose itself.
+A plugin is the unit of code that can be written by someone you do not trust, at a time you are not present, and taken back in one step. Your shell, routes and pages stay ordinary code; only the points you marked are open to plugins. The kernel is small (a few kB) because it carries nothing for the base to compose itself.
 
 Authority is explicit ([ADR-0007](./docs/adr/0007-authority-is-named-grants.md)): a hosted plugin has no network, storage, timers or bindings of its own. `storage`, `schedule`, `http` (to a _named_ service, credential attached server-side), `ai` and `files` are grants the operator gives an entry, and every call is attributed to the calling instance so middleware can log, limit or refuse it.
 
@@ -122,7 +122,7 @@ Adding it is one edit to the plugin list. The kernel checks the source, starts i
 await client.addPlugin({ id: 'export-csv', source, stubs: [dataStub] })
 ```
 
-(Slice 9 replaces the tagged form `data({ operation: 'rows' })` with method calls, `data.rows()`, and generates the declarations from the base's types — [ADR-0008](./docs/adr/0008-the-base-is-typed-once-and-versioned.md).)
+(Slice 9 replaces the tagged form `data({ operation: 'rows' })` with method calls, `data.rows()`, and generates the declarations from the base's types; see [ADR-0008](./docs/adr/0008-the-base-is-typed-once-and-versioned.md).)
 
 ## Running the showcase
 
@@ -130,7 +130,7 @@ Requires Node 22+ and pnpm.
 
 ```sh
 pnpm install
-pnpm --filter @tanstack/compose-example-showcase dev      # http://localhost:3061 — the Worker runs in workerd with a real tenant Durable Object
+pnpm --filter @tanstack/compose-example-showcase dev      # http://localhost:3061; the Worker runs in workerd with a real tenant Durable Object
 pnpm --filter @tanstack/compose-example-showcase dev:browser  # the browser-only shape: client and host in the page, no Worker
 pnpm --filter @tanstack/compose-example-showcase test:lib     # jsdom suite, then the deployed suite under vitest-pool-workers
 pnpm test:ci                                                  # everything
@@ -140,10 +140,10 @@ Open the Table page, press **Add: export to CSV**, then **Export CSV**. Open the
 
 ## Reading the repository
 
-- [CONTEXT.md](./CONTEXT.md) — the vocabulary (client, plugin, instance, host, stub, grant, slot, fill…). Every document uses these words and no others.
-- [docs/adr](./docs/adr) — the decisions, each with what was rejected and why: types by inference, state in `@tanstack/store`, middleware over interception, the host contract, stubs as loopbacks, the extension-surface stance, named grants, generated declarations and generations.
-- [docs/acceptance](./docs/acceptance) — what "done" means, slice by slice; each criterion maps to a test.
-- [ROADMAP.md](./ROADMAP.md) — the build order and status.
+- [CONTEXT.md](./CONTEXT.md): the vocabulary (client, plugin, instance, host, stub, grant, slot, fill). Every document uses these words and no others.
+- [docs/adr](./docs/adr): the decisions, each with what was rejected and why: types by inference, state in `@tanstack/store`, middleware over interception, the host contract, stubs as loopbacks, the extension-surface stance, named grants, generated declarations and generations.
+- [docs/acceptance](./docs/acceptance): what "done" means, slice by slice; each criterion maps to a test.
+- [ROADMAP.md](./ROADMAP.md): the build order and status.
 - Each package has a `DESIGN.md` explaining how it meets its acceptance criteria and what it learned the hard way (the Cloudflare one records several Workers-runtime constraints worth knowing).
 
 ## Contributing
