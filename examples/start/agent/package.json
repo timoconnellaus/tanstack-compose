@@ -7,7 +7,7 @@
     "build": "vite build",
     "test:types": "tsc",
     "test:eslint": "eslint ./src ./tests ./tests-workerd",
-    "test:lib": "vitest run"
+    "test:lib": "vitest run && vitest run --config vitest.workerd.config.ts"
   },
   "dependencies": {
     "@tanstack/compose": "workspace:*",
@@ -19,7 +19,6 @@
     "@tanstack/react-router": "^1.170.32",
     "@tanstack/react-start": "^1.168.49",
     "@tanstack/start-compose": "workspace:*",
-    "@tanstack/store": "^0.11.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",

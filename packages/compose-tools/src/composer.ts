@@ -125,6 +125,7 @@ export function createComposerTools(
   const protectedIds = [...(given.protected ?? [])]
   const stubs = [...(given.stubs ?? [])]
   const observed = new Map<string, string>()
+  const written = new Set<string>()
 
   const list = (): Array<PluginEntry> => client.pluginList.state
   const entryOf = (id: string): PluginEntry | undefined =>
@@ -446,7 +447,16 @@ export function createComposerTools(
       const entry = entryOf(id)
       if (!entry) return failure(`there is no plugin entry "${id}"`, [id])
       if (entry.source === undefined) {
-        return failure(`the entry "${id}" has no source to read`, [id])
+        return failure(
+          `the entry "${id}" is a plugin from the assembly or the catalog and has no source to read`,
+          [id],
+        )
+      }
+      if (!written.has(id)) {
+        return failure(
+          `the entry "${id}" was not written by this agent, so its source cannot be read`,
+          [id],
+        )
       }
       observed.set(id, entry.source)
       return {
@@ -500,17 +510,15 @@ export function createComposerTools(
         },
       ])
       if (failed) return failure(failed, [id])
+      written.add(id)
       const row = report(id)
       if (row.status === 'error') {
-        return failure(
-          row.error ?? `the source of "${id}" did not start`,
-          [id],
-          {
-            ...(row.sourceError?.diagnostics
-              ? { diagnostics: row.sourceError.diagnostics }
-              : {}),
-          },
-        )
+        return failure(`the source of "${id}" did not start`, [id], {
+          error: row.error ?? `the source of "${id}" did not start`,
+          ...(row.sourceError?.diagnostics
+            ? { diagnostics: row.sourceError.diagnostics }
+            : {}),
+        })
       }
       return {
         ok: true,
@@ -548,14 +556,23 @@ export function createComposerTools(
       if (entry.source === undefined) {
         return failure(`the entry "${id}" is not a source entry`, [id])
       }
+      if (!written.has(id)) {
+        return failure(
+          `the entry "${id}" was not written by this agent, so it cannot be rewritten`,
+          [id],
+        )
+      }
       const seen = observed.get(id)
       if (seen === undefined) {
-        return failure(`read the source of "${id}" before rewriting it`, [id])
+        return failure(
+          `read the source of "${id}" with read_plugin before rewriting it`,
+          [id],
+        )
       }
       if (seen !== entry.source) {
         observed.delete(id)
         return failure(
-          `the source of "${id}" has changed since you read it; read it again`,
+          `the source of "${id}" has changed since you read it; read it again and try again`,
           [id],
         )
       }
@@ -584,7 +601,12 @@ export function createComposerTools(
       if (failed) return failure(failed, [id])
       const row = report(id)
       if (row.status === 'error') {
-        return failure(row.error ?? `the source of "${id}" did not start`, [id])
+        return failure(`the source of "${id}" did not start`, [id], {
+          error: row.error ?? `the source of "${id}" did not start`,
+          ...(row.sourceError?.diagnostics
+            ? { diagnostics: row.sourceError.diagnostics }
+            : {}),
+        })
       }
       return {
         ok: true,
@@ -616,13 +638,14 @@ export function createComposerTools(
       const failed = await apply(list().filter((item) => item.id !== id))
       if (failed) return failure(failed, [id])
       observed.delete(id)
+      written.delete(id)
       return {
         ok: true,
         message: `removed the entry "${id}"`,
         entries: [
           {
             id,
-            plugin: entry.source === undefined ? entry.plugin.name : 'source',
+            plugin: entry.source === undefined ? 'removed' : 'source',
             kind: entry.source === undefined ? 'plugin' : 'source',
             enabled: false,
             protected: false,

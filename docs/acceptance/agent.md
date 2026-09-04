@@ -57,3 +57,24 @@ kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 ## G. End-to-end
 
 - **G1** One test runs a three-turn conversation against the scripted provider with three tools, one exclusive; a middleware plugin refuses one call and rewrites another; a prompt section and a tool are added during turn one and first appear in turn two; the model provider is swapped during turn two and first used in turn three; the test asserts the derived messages, the session log, the order of tool results, that the loop instance was never restarted, and that the client holds no leaked resources afterwards.
+
+## Criterion → test
+
+Paths are from the repository root. Test titles remain behavioral and do not
+carry criterion ids.
+
+| Criterion                | Test file                                                                                                                        |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| A1–A3                    | `examples/shared/agent/tests/plugins.test.ts`                                                                                    |
+| B1–B4                    | `examples/shared/agent/tests/session.test.ts`                                                                                    |
+| C1–C7                    | `examples/shared/agent/tests/loop.test.ts`                                                                                       |
+| D1–D5                    | `examples/shared/agent/tests/actions.test.ts`                                                                                    |
+| E1–E3                    | `examples/shared/agent/tests/providers.test.ts`                                                                                  |
+| E4                       | `examples/shared/agent/tests/openai.test.ts` and `smoke.test.ts`                                                                 |
+| E5                       | `examples/shared/agent/tests/credentials.test.ts`, `openai.test.ts` and `examples/start/agent/tests-workerd/credentials.test.ts` |
+| E6                       | `examples/start/agent/tests-workerd/cloudflare-agent.test.ts` and `packages/compose-cloudflare/tests/workers-ai.test.ts`         |
+| F1–F3                    | `examples/shared/agent/tests/actions.test.ts`, `helpers/other-package.ts` and the runtime workspace's `test:types` target        |
+| G1                       | `examples/shared/agent/tests/end-to-end.test.ts`                                                                                 |
+| Human tool calls         | `examples/shared/agent/tests/human.test.ts`                                                                                      |
+| Runtime limits           | `examples/shared/agent/tests/limits.test.ts`                                                                                     |
+| Node/workerd portability | `examples/start/agent/tests-workerd/runtime-smoke.test.ts`                                                                       |

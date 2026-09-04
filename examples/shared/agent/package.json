@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test:types": "tsc",
-    "test:eslint": "eslint ./src"
+    "test:eslint": "eslint ./src ./tests",
+    "test:lib": "vitest run && vitest run --config vitest.jsdom.config.ts"
   },
   "dependencies": {
     "@tanstack/compose": "workspace:*",
@@ -17,5 +18,11 @@
     "@tanstack/compose-tools": "workspace:*",
     "@tanstack/react-compose": "workspace:*",
     "@tanstack/store": "^0.11.1"
+  },
+  "devDependencies": {
+    "@tanstack/compose-typescript": "workspace:*",
+    "@types/node": "^25.6.0",
+    "jsdom": "^29.0.2",
+    "vitest": "^4.1.4"
   }
 }

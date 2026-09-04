@@ -78,7 +78,19 @@ part of that surface. They remain validator-library-neutral Standard Schemas.
 
 ## Verification
 
-`tests/composer.test.ts` exercises all nine definitions directly, including
-protected entries, option schemas and validation, catalog additions, source
-checking, the read-before-rewrite gate, and cleanup on removal. Packaging tests
-ensure the public exports resolve from both ESM and CommonJS builds.
+`tests/composer.test.ts` exercises all nine definitions directly. The
+example-local suite then proves that the same definitions remain ordinary agent
+tools when mounted in a conversation loop.
+
+## Criterion → test
+
+| Criterion                       | Test file                                                                        | Coverage                                                                                                         |
+| ------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Self-modification A1–A3         | `tests/composer.test.ts`                                                         | All nine definitions, settled edit results, and the single plugin-list path.                                     |
+| Self-modification B1, B3–B4     | `tests/composer.test.ts`                                                         | Protected ids, catalog/options validation, schemas and operator-owned grants.                                    |
+| Self-modification D3, D6–D8     | `tests/composer.test.ts`                                                         | Source ownership, read-before-rewrite, exact granted stubs and checker declarations.                             |
+| Self-modification A4, C1–C4, E1 | `../../examples/shared/agent/tests/{composer,consequences,self-editing}.test.ts` | Definitions mounted in the example loop, including middleware, turn visibility and the end-to-end edit sequence. |
+
+The deleted `@tanstack/compose-agent` packaging test is intentionally not
+restored: the package whose ESM/CommonJS export shape it checked no longer
+exists. `@tanstack/compose-tools` keeps its own package build/publint checks.

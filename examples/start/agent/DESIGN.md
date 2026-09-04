@@ -111,3 +111,15 @@ no module-level request state.
 The workerd and browser checks require binding local ports. This sandbox cannot
 run them; the caller runs the documented commands outside it. Slice 10 remains
 unmarked until those caller runs are green.
+
+## Criterion → test
+
+| Criterion                 | Test file                                                      | Coverage                                                                                                     |
+| ------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Examples Harness (#9)     | `tests-workerd/agent.test.ts`                                  | A tenant writes an isolated fill, exposes and presses it, removes it, and restores it after object eviction. |
+| Agent A1–G1               | `../../shared/agent/tests/*.test.ts`                           | The complete example-local runtime suite in node and, where portable, jsdom.                                 |
+| Agent E6                  | `tests-workerd/cloudflare-agent.test.ts`                       | The loop writes, calls and removes a Dynamic Worker plugin without ambient network.                          |
+| Agent E5                  | `tests-workerd/credentials.test.ts`                            | Worker bindings feed the example credential plugin without consulting process state.                         |
+| Agent workerd portability | `tests-workerd/runtime-smoke.test.ts`                          | A scripted turn and tool call run under workerd.                                                             |
+| Self-modification D7–D8   | `../../shared/agent/tests/typescript-{composer,views}.test.ts` | Real TypeScript diagnostics use exactly the declarations for granted stubs and view handlers.                |
+| Browser follower          | `tests/chat.test.tsx`                                          | A hydrated snapshot follows a streamed scripted turn and renders the resulting chat state.                   |

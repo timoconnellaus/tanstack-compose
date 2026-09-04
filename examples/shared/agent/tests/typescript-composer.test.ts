@@ -1,5 +1,10 @@
 import { createClient } from '@tanstack/compose'
 import {
+  createTypeScriptChecker,
+  pluginDeclarations,
+} from '@tanstack/compose-typescript'
+import { describe, expect, it } from 'vitest'
+import {
   agentKey,
   agentStubs,
   composerPlugin,
@@ -13,13 +18,9 @@ import {
   toolsKey,
   toolsPlugin,
 } from '@tanstack/compose-example-agent-runtime'
-import { describe, expect, it } from 'vitest'
-import { createTypeScriptChecker, pluginDeclarations } from '../src/index'
+import type { ComposerResult } from '@tanstack/compose-tools'
 import type { Client } from '@tanstack/compose'
-import type {
-  ComposerResult,
-  SessionLog,
-} from '@tanstack/compose-example-agent-runtime'
+import type { SessionLog } from '@tanstack/compose-example-agent-runtime'
 
 /**
  * The model's first attempt. `handlerName` is not a property of the `tools`

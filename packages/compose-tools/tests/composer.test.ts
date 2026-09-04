@@ -3,6 +3,8 @@ import {
   createContextKey,
   createInProcessHost,
   createPlugin,
+  createStub,
+  stubDeclarations,
 } from '@tanstack/compose'
 import { describe, expect, it } from 'vitest'
 import {
@@ -42,6 +44,48 @@ const markerChecker: SourceChecker = {
 }
 
 describe('the framework-neutral composer definitions', () => {
+  it('refuses every mutation of a protected id, including using it for a catalog addition', async () => {
+    const fixed = createPlugin({
+      name: 'fixed',
+      validator: jsonSchemaValidator<Record<string, never>>({
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      }),
+      setup() {},
+    })
+    const client = createClient({ plugins: [{ id: 'fixed', plugin: fixed }] })
+    await client.settled()
+    const tools = createComposerTools({
+      client,
+      catalog: { fixed },
+      protected: ['fixed', 'reserved'],
+    })
+
+    const results = await Promise.all([
+      run(tools, 'disable_plugin', { id: 'fixed' }),
+      run(tools, 'configure_plugin', { id: 'fixed', options: {} }),
+      run(tools, 'remove_plugin', { id: 'fixed' }),
+      run(tools, 'add_from_catalog', {
+        id: 'reserved',
+        name: 'fixed',
+        options: {},
+      }),
+    ])
+
+    expect(results.map((result) => result.ok)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ])
+    expect(results.every((result) => result.error?.includes('protected'))).toBe(
+      true,
+    )
+    expect(client.pluginList.state.map((entry) => entry.id)).toEqual(['fixed'])
+    await client.destroy()
+  })
+
   it('lists status, protection, current options and described schemas', async () => {
     const banner = createPlugin({
       name: 'banner',
@@ -207,5 +251,69 @@ describe('the framework-neutral composer definitions', () => {
     expect(text).toContain('Protected entries: loop.')
     expect(text).toContain('The catalog offers: plain.')
     expect(text).toContain('next turn')
+  })
+
+  it('checks source against exactly the granted stubs and publishes those declarations', async () => {
+    const granted = createStub({
+      name: 'granted',
+      declarations: 'declare const granted: () => Promise<string>',
+      handler: () => 'yes',
+    })
+    const withheld = createStub({
+      name: 'withheld',
+      declarations: 'declare const withheld: () => Promise<string>',
+      handler: () => 'no',
+    })
+    const checks: Array<{
+      grants: ReadonlyArray<{ name: string; declarations: string }>
+      declarations: string
+    }> = []
+    const declarationCalls: Array<
+      ReadonlyArray<{ name: string; declarations: string }>
+    > = []
+    const checker: SourceChecker = {
+      declarations(grants) {
+        declarationCalls.push(grants)
+        return `checked:\n${grants
+          .map((grant) => grant.declarations)
+          .join('\n')}`
+      },
+      check(input) {
+        checks.push({
+          grants: input.grants,
+          declarations: input.declarations,
+        })
+        return { code: input.source }
+      },
+    }
+    const client = createClient({
+      checker,
+      hosts: { 'in-process': createInProcessHost({ grants: {} }) },
+    })
+    const tools = createComposerTools({ client, stubs: [granted] })
+
+    const listed = await run(tools, 'list_plugins', {})
+    const written = await run(tools, 'write_plugin', {
+      id: 'written',
+      source: 'export default function () {}',
+    })
+    const read = await run(tools, 'read_plugin', { id: 'written' })
+
+    const expected = [
+      { name: granted.name, declarations: granted.declarations },
+    ]
+    expect(declarationCalls).toEqual([expected, expected])
+    expect(checks).toHaveLength(2)
+    expect(checks).toEqual(
+      checks.map(() => ({
+        grants: expected,
+        declarations: stubDeclarations([granted]),
+      })),
+    )
+    expect(listed.declarations).toContain(granted.declarations)
+    expect(listed.declarations).not.toContain(withheld.declarations)
+    expect(written.ok).toBe(true)
+    expect(read.declarations).toBe(listed.declarations)
+    await client.destroy()
   })
 })

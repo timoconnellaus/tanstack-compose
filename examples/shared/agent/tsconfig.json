@@ -3,7 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "types": ["node"],
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "tests"]
 }

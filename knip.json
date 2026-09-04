@@ -1,6 +1,17 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
+    "examples/shared/agent": {
+      "entry": ["tests/**/*.test.ts"]
+    },
+    "examples/start/agent": {
+      "entry": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.test.tsx",
+        "tests-workerd/**/*.test.ts"
+      ],
+      "ignoreDependencies": ["cloudflare", "compose"]
+    },
     "packages/compose-cloudflare": {
       "entry": ["dev/worker.ts"],
       "ignoreDependencies": ["cloudflare"]
@@ -9,6 +20,9 @@
       "entry": ["tests/workerd/worker.ts", "tests/fixtures/base.ts"]
     }
   },
-  "ignoreWorkspaces": ["examples/**"],
+  "ignoreWorkspaces": [
+    "examples/react/self-modifying-agent",
+    "examples/start/showcase"
+  ],
   "ignore": ["spikes/**"]
 }
