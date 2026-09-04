@@ -1,10 +1,11 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
 import { TodoPage } from '../src/app/todo-page'
-import { press, pressInPanel, startPage } from './helpers/app'
-import type { StartedPage } from './helpers/app'
+import { todoApp } from '../src/apps'
+import { press, pressInPanel, startApp } from './helpers/app'
+import type { StartedApp } from './helpers/app'
 
-let page: StartedPage | undefined
+let page: StartedApp | undefined
 
 afterEach(async () => {
   await page?.stop()
@@ -18,7 +19,7 @@ const titles = (): Array<string> =>
 
 describe('the todo page', () => {
   test('adds and removes sorting and validation middleware', async () => {
-    page = await startPage(<TodoPage />)
+    page = await startApp(todoApp, <TodoPage />)
     await waitFor(() =>
       expect(titles()).toEqual(['Book dentist', 'Call Alice', 'Write report']),
     )

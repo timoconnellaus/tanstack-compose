@@ -8,6 +8,7 @@ import { useMemo, useState } from 'react'
 import { tableActions, tableKey } from '../base'
 import { exportCsvFixture } from '../fixtures'
 import { addWritten } from '../written'
+import { useApp } from './app-frame'
 import { useDeclareSlots } from './slots'
 import type { ReactNode } from 'react'
 
@@ -19,6 +20,7 @@ const messageOf = (error: unknown): string =>
 /** Page 1: add a server half and a view that fills the table toolbar. */
 export function TablePage(): ReactNode {
   const client = useClient()
+  const app = useApp()
   const table = useContextKey(tableKey)
   const entries = usePluginList()
   const declared = useMemo(() => [tableActions], [])
@@ -40,7 +42,7 @@ export function TablePage(): ReactNode {
           disabled={present}
           onClick={() => {
             setProblem(undefined)
-            void addWritten(client, exportCsvFixture).catch((error) =>
+            void addWritten(client, exportCsvFixture, app).catch((error) =>
               setProblem(messageOf(error)),
             )
           }}

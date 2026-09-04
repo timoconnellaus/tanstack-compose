@@ -9,7 +9,6 @@ import { Store } from '@tanstack/store'
 import type {
   ActionDefinition,
   AnyAction,
-  AnyStubGrant,
   Cleanup,
   ContextKey,
 } from '@tanstack/compose'
@@ -190,14 +189,6 @@ declare const actions: (request: {
 
 /** The two UI grants moved to `@tanstack/react-compose`. */
 export { serverStub, slotsStub }
-
-/** Every grant the paste panel can assign to a server-half entry. */
-export const grantsByName: Readonly<Partial<Record<string, AnyStubGrant>>> = {
-  data: dataStub,
-  actions: actionsStub,
-  slots: slotsStub,
-  server: serverStub,
-}
 
 /** Stable table rows used by the page and fixture tests. */
 export const demoRows: ReadonlyArray<Row> = [

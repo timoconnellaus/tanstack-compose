@@ -5,10 +5,7 @@ import {
   Scripts,
   createRootRoute,
 } from '@tanstack/react-router'
-import { ComposeProvider } from '@tanstack/react-compose'
-import { Suspense } from 'react'
-import { AppShell } from '../app/shell'
-import { getBrowserClient } from '../compose-client'
+import { SiteFrame } from '../app/shell'
 import styles from '../styles.css?url'
 import type { ReactNode } from 'react'
 
@@ -25,17 +22,6 @@ export const Route = createRootRoute({
   shellComponent: RootDocument,
 })
 
-function BrowserShell({ children }: { children: ReactNode }): ReactNode {
-  const client = getBrowserClient()
-  return (
-    <ComposeProvider client={client}>
-      <AppShell>
-        <Suspense fallback={<p>Starting client…</p>}>{children}</Suspense>
-      </AppShell>
-    </ComposeProvider>
-  )
-}
-
 function RootDocument({ children }: { children: ReactNode }): ReactNode {
   return (
     <html lang="en">
@@ -43,8 +29,8 @@ function RootDocument({ children }: { children: ReactNode }): ReactNode {
         <HeadContent />
       </head>
       <body>
-        <ClientOnly fallback={<p className="booting">Starting client…</p>}>
-          <BrowserShell>{children}</BrowserShell>
+        <ClientOnly fallback={<p className="booting">Starting…</p>}>
+          <SiteFrame>{children}</SiteFrame>
         </ClientOnly>
         <Scripts />
       </body>

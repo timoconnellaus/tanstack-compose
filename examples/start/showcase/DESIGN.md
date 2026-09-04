@@ -14,15 +14,22 @@ dataset and `table.export`. `todoPlugin` owns the todo store and the three todo
 actions. The store methods are ordinary base code; a hosted instance can reach
 only the grants on its entry.
 
-The browser constructs one client lazily in `src/compose-client.ts`. Tests use the same
-factory to get a fresh real client. The root route owns neither plugin setup nor
-cleanup: it only provides the browser client through `ComposeProvider`. Every
-route has `ssr: false`; server clients, following and server-rendered fills are
-slice 7.
+Every page is an **individual app** (`src/apps.ts`): its own client, its own
+trusted plugin list, the grants its paste panel may hand out and the slots a
+view may fill. The three apps share only the base module they draw from. Each
+route renders its app in an `AppFrame` (`src/app/app-frame.tsx`), which owns the
+`ComposeProvider`, the app's notifications and side slots, and **that app's**
+plugin panel; the root route holds the site header and navigation and no client.
+The browser keeps one client per app for the session (`src/browser-clients.ts`),
+so navigating away and back neither restarts an app nor lets one app see
+another's entries. Tests start an app's client with the same factory.
 
-The client starts exactly four trusted entries: `slotsPlugin`, `viewsPlugin`,
-`tablePlugin` and `todoPlugin`. React components declare the slots they render
-while mounted. They are not plugins.
+Every route has `ssr: false`; server clients, following and server-rendered
+fills are slice 7. Every app starts `slotsPlugin` and `viewsPlugin`; the table
+and hostile apps add `tablePlugin`, the todo app adds `todoPlugin`. The hostile
+app runs `tablePlugin` as the trusted sibling that must stay `active` whatever a
+hostile source does. React components declare the slots they render while
+mounted. They are not plugins.
 
 ## Hosted pairs and grants
 
@@ -88,10 +95,10 @@ No timeout, size limit or isolation claim is simulated in application code.
   buttons are disabled while their id is present, preventing accidental
   duplicate ids.
 
-## Why the client module is not `src/client.ts`
+## Why no module is named `src/client.ts`
 
 TanStack Start reads `src/client.tsx` (or `.ts`) as the application's custom
 **client entry** — the module that hydrates the router. A compose client module
 under that name is imported by Start's dev entry in place of hydration, and the
-page never leaves its "Starting client…" fallback. The module is therefore
-`src/compose-client.ts`, and Start uses its default entry.
+page never leaves its "Starting…" fallback. The browser clients therefore live in
+`src/browser-clients.ts`, and Start uses its default entry.

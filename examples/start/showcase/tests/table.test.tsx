@@ -1,11 +1,12 @@
 import { screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { TablePage } from '../src/app/table-page'
+import { tableApp } from '../src/apps'
 import { demoRows } from '../src/base'
-import { press, pressInPanel, startPage } from './helpers/app'
-import type { StartedPage } from './helpers/app'
+import { press, pressInPanel, startApp } from './helpers/app'
+import type { StartedApp } from './helpers/app'
 
-let page: StartedPage | undefined
+let page: StartedApp | undefined
 
 afterEach(async () => {
   await page?.stop()
@@ -16,7 +17,7 @@ afterEach(async () => {
 describe('the table page', () => {
   test('adds a CSV view without reload and removes the whole pair cleanly', async () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    page = await startPage(<TablePage />)
+    page = await startApp(tableApp, <TablePage />)
 
     expect(screen.getAllByTestId('table-row')).toHaveLength(demoRows.length)
     expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull()

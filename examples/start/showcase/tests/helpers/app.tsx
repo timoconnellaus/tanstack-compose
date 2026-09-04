@@ -1,25 +1,28 @@
-import { ComposeProvider } from '@tanstack/react-compose'
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
-import { AppShell } from '../../src/app/shell'
-import { createShowcaseClient } from '../../src/compose-client'
+import { AppFrame } from '../../src/app/app-frame'
+import { createAppClient } from '../../src/apps'
+import type { ShowcaseApp } from '../../src/apps'
 import type { Client } from '@tanstack/compose'
 import type { ReactNode } from 'react'
 
-/** A fresh real showcase client with one page rendered in the ordinary shell. */
-export interface StartedPage {
+/** A fresh real client for one app with its page rendered in the app frame. */
+export interface StartedApp {
   client: Client
   stop: () => Promise<void>
 }
 
-/** Start and settle the real client, then render one page. */
-export async function startPage(page: ReactNode): Promise<StartedPage> {
-  const client = createShowcaseClient()
+/** Start and settle one app's real client, then render one of its pages. */
+export async function startApp(
+  app: ShowcaseApp,
+  page: ReactNode,
+): Promise<StartedApp> {
+  const client = createAppClient(app)
   await client.settled()
   await act(async () => {
     render(
-      <ComposeProvider client={client}>
-        <AppShell navigation={false}>{page}</AppShell>
-      </ComposeProvider>,
+      <AppFrame app={app} client={client}>
+        {page}
+      </AppFrame>,
     )
     await Promise.resolve()
   })

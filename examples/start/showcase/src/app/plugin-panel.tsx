@@ -1,7 +1,7 @@
 import { useClient, useInstances, usePluginList } from '@tanstack/react-compose'
 import { useMemo, useState } from 'react'
-import { grantsByName } from '../base'
 import { addWritten, removeWritten, selectedStubs } from '../written'
+import { useApp } from './app-frame'
 import type { ReactNode } from 'react'
 
 const messageOf = (error: unknown): string =>
@@ -12,6 +12,7 @@ const messageOf = (error: unknown): string =>
 /** The shell panel for inspecting and editing the running plugin list. */
 export function PluginPanel(): ReactNode {
   const client = useClient()
+  const app = useApp()
   const entries = usePluginList()
   const instances = useInstances()
   const snapshots = useMemo(
@@ -104,12 +105,16 @@ export function PluginPanel(): ReactNode {
           void run(async () => {
             if (id.trim() === '') throw new Error('an id is required')
             if (source.trim() === '') throw new Error('source is required')
-            await addWritten(client, {
-              id: id.trim(),
-              source,
-              ...(view.trim() === '' ? {} : { view }),
-              stubs: selectedStubs(grants, grantsByName),
-            })
+            await addWritten(
+              client,
+              {
+                id: id.trim(),
+                source,
+                ...(view.trim() === '' ? {} : { view }),
+                stubs: selectedStubs(grants, app.grants),
+              },
+              app,
+            )
           })
         }}
       >
@@ -154,7 +159,7 @@ export function PluginPanel(): ReactNode {
               )
             }
           >
-            {Object.keys(grantsByName).map((name) => (
+            {Object.keys(app.grants).map((name) => (
               <option key={name} value={name}>
                 {name}
               </option>

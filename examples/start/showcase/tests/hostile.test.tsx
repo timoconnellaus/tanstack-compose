@@ -2,11 +2,12 @@ import { screen, waitFor, within } from '@testing-library/react'
 import { stubDeclarations } from '@tanstack/compose'
 import { afterEach, describe, expect, test } from 'vitest'
 import { HostilePage } from '../src/app/hostile-page'
+import { hostileApp } from '../src/apps'
 import { hostileFixtures } from '../src/fixtures'
-import { press, startPage } from './helpers/app'
-import type { StartedPage } from './helpers/app'
+import { press, startApp } from './helpers/app'
+import type { StartedApp } from './helpers/app'
 
-let page: StartedPage | undefined
+let page: StartedApp | undefined
 
 afterEach(async () => {
   await page?.stop()
@@ -23,7 +24,7 @@ describe('the hostile gallery', () => {
       one.id !== 'forges-instance-id',
   )) {
     test(`${hostile.id} ends in error while the base stays active`, async () => {
-      page = await startPage(<HostilePage />)
+      page = await startApp(hostileApp, <HostilePage />)
 
       await press(
         within(fixture(hostile.id)).getByRole('button', {
@@ -37,17 +38,18 @@ describe('the hostile gallery', () => {
       expect(fixture(hostile.id).textContent).toContain(
         hostile.expected.split(' — ').at(-1),
       )
-      expect(
-        page.client.inspect().find((one) => one.id === 'table')?.status,
-      ).toBe('active')
-      expect(
-        page.client.inspect().find((one) => one.id === 'todo')?.status,
-      ).toBe('active')
+      // Every trusted entry of this app is untouched by the hostile source.
+      for (const entry of hostileApp.plugins) {
+        expect(
+          page.client.inspect().find((one) => one.id === entry.id)?.status,
+          entry.id,
+        ).toBe('active')
+      }
     })
   }
 
   test('refuses forged identity through the stub closure', async () => {
-    page = await startPage(<HostilePage />)
+    page = await startApp(hostileApp, <HostilePage />)
     const hostile = hostileFixtures.find(
       (one) => one.id === 'forges-instance-id',
     )!
@@ -67,7 +69,7 @@ describe('the hostile gallery', () => {
   })
 
   test('keeps the page responsive after the unbounded in-process transfer', async () => {
-    page = await startPage(<HostilePage />)
+    page = await startApp(hostileApp, <HostilePage />)
     const hostile = hostileFixtures.find(
       (one) => one.id === 'oversized-payload',
     )!
@@ -92,7 +94,7 @@ describe('the hostile gallery', () => {
   })
 
   test('keeps ambient reach disabled and reverts to the last all-active list', async () => {
-    page = await startPage(<HostilePage />)
+    page = await startApp(hostileApp, <HostilePage />)
     const outsideFixture = hostileFixtures.find(
       (one) => one.id === 'reaches-outside',
     )!

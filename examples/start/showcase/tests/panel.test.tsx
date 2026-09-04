@@ -1,12 +1,13 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { TablePage } from '../src/app/table-page'
+import { tableApp } from '../src/apps'
 import { demoRows } from '../src/base'
 import { exportCsvSource, exportCsvView } from '../src/fixtures'
-import { press, startPage } from './helpers/app'
-import type { StartedPage } from './helpers/app'
+import { press, startApp } from './helpers/app'
+import type { StartedApp } from './helpers/app'
 
-let page: StartedPage | undefined
+let page: StartedApp | undefined
 
 afterEach(async () => {
   await page?.stop()
@@ -17,7 +18,7 @@ afterEach(async () => {
 describe('the paste-source panel', () => {
   test('adds the same checked CSV pair as the table fixture button', async () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    page = await startPage(<TablePage />)
+    page = await startApp(tableApp, <TablePage />)
 
     fireEvent.change(screen.getByLabelText('Plugin id'), {
       target: { value: 'manual-export' },

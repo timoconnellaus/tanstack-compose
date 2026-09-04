@@ -3,6 +3,7 @@ import { useClient, useInstances, usePluginList } from '@tanstack/react-compose'
 import { useEffect, useState } from 'react'
 import { hostileFixtures } from '../fixtures'
 import { addWritten } from '../written'
+import { useApp } from './app-frame'
 import type { PluginEntry } from '@tanstack/compose'
 import type { HostileFixture } from '../fixtures'
 import type { ReactNode } from 'react'
@@ -15,6 +16,7 @@ const messageOf = (error: unknown): string =>
 /** Page 3: show exactly what the in-process host does and does not enforce. */
 export function HostilePage(): ReactNode {
   const client = useClient()
+  const app = useApp()
   const entries = usePluginList()
   const instances = useInstances()
   const [lastGood, setLastGood] = useState<Array<PluginEntry>>(
@@ -53,7 +55,7 @@ export function HostilePage(): ReactNode {
       return next(input)
     })
     try {
-      await addWritten(client, fixture)
+      await addWritten(client, fixture, app)
       if (fixture.call !== undefined) {
         try {
           await client.callSource(fixture.id, fixture.call)

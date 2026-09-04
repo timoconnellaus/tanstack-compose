@@ -16,6 +16,7 @@ import {
 } from '../base'
 import { requireTitleFixture, sortByDueFixture } from '../fixtures'
 import { addWritten } from '../written'
+import { useApp } from './app-frame'
 import { useDeclareSlots } from './slots'
 import type { Todo } from '../base'
 import type { ReactNode } from 'react'
@@ -28,6 +29,7 @@ const messageOf = (error: unknown): string =>
 /** Page 2: wrap base actions without changing the page or base handlers. */
 export function TodoPage(): ReactNode {
   const client = useClient()
+  const app = useApp()
   const todos = useContextKey(todosKey, { suspend: true })
   const items = useStore(todos)
   const instances = useInstances()
@@ -56,7 +58,7 @@ export function TodoPage(): ReactNode {
   ): Promise<void> => {
     setProblem(undefined)
     try {
-      await addWritten(client, fixture)
+      await addWritten(client, fixture, app)
       await client.callSource(fixture.id, warm, input)
     } catch (error) {
       setProblem(messageOf(error))

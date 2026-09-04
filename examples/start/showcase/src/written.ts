@@ -1,20 +1,13 @@
 import { grantView, viewIdOf, viewStubs } from '@tanstack/react-compose'
-import { notifications, pageSide, tableActions, todoActions } from './base'
 import type { AnyStubGrant, Client, PluginEntry } from '@tanstack/compose'
+import type { ShowcaseApp } from './apps'
 import type { ShowcaseFixture } from './fixtures'
-
-/** Every slot a pasted S1 view may be granted. */
-export const viewSlotNames = [
-  tableActions.name,
-  todoActions.name,
-  notifications.name,
-  pageSide.name,
-]
 
 /** Turn a source/view pair into the two ordinary entries the client runs. */
 export function entriesForWritten(
   client: Client,
   fixture: ShowcaseFixture,
+  app: ShowcaseApp,
 ): Array<PluginEntry> {
   const server: PluginEntry = {
     id: fixture.id,
@@ -32,7 +25,7 @@ export function entriesForWritten(
     grants,
   })
   const narrowed = grantView(viewStubs, {
-    slots: viewSlotNames,
+    slots: app.viewSlots,
     ...(exported === undefined ? {} : { exports: exported }),
   })
   return [
@@ -45,11 +38,12 @@ export function entriesForWritten(
 export async function addWritten(
   client: Client,
   fixture: ShowcaseFixture,
+  app: ShowcaseApp,
 ): Promise<void> {
   const ids = new Set([fixture.id, viewIdOf(fixture.id)])
   await client.setPluginList([
     ...client.pluginList.state.filter((entry) => !ids.has(entry.id)),
-    ...entriesForWritten(client, fixture),
+    ...entriesForWritten(client, fixture, app),
   ])
 }
 

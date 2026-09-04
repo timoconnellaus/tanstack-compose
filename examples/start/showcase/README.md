@@ -1,9 +1,10 @@
 # TanStack Compose showcase
 
 The showcase is a TanStack Start application for pages 1–3 of the Compose
-example acceptance criteria. It runs one browser client with the in-process
-host: add the fixture plugins from the Table, Todo and Hostile gallery pages,
-or paste source and choose its grants in the plugin panel.
+example acceptance criteria. Each page is an individual app with its own
+browser client, plugin list and plugin panel, all on the in-process host: add
+the fixture plugins from the Table, Todo and Hostile gallery pages, or paste
+source and choose its grants in that app's panel.
 
 ```sh
 pnpm install
