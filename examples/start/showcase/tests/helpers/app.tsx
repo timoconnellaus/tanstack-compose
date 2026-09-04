@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { AppFrame } from '../../src/app/app-frame'
-import { createAppClient } from '../../src/apps'
+import { createAppClient } from '../../src/browser-clients'
 import type { ShowcaseApp } from '../../src/apps'
 import type { Client } from '@tanstack/compose'
 import type { ReactNode } from 'react'

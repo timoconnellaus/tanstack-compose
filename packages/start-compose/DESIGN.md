@@ -1,96 +1,152 @@
 # `@tanstack/start-compose` — design
 
-How a TanStack Start application renders a tenant's **plugin list** on the server, hydrates without
-a layout shift, follows changes while the page is open, and sends a **view**'s interactions back.
-Contract: [`docs/acceptance/ui.md`](../../docs/acceptance/ui.md) §E–§F as amended, and
-[`docs/acceptance/examples.md`](../../docs/acceptance/examples.md) staging S2. Stance:
-[ADR-0006](../../docs/adr/0006-an-extension-surface-on-ordinary-code.md). This document is written
-before the implementation; the implementer fills in what it leaves open and records the choice here.
+How a TanStack Start application renders one tenant/app **plugin list** on the
+server, hydrates without a layout shift, follows it while the page is open, and
+sends a **view**'s interactions back. Contract:
+[`docs/acceptance/ui.md`](../../docs/acceptance/ui.md) §E–§F as amended and the
+S2 staging in
+[`docs/acceptance/examples.md`](../../docs/acceptance/examples.md). The
+extension-surface stance is [ADR-0006](../../docs/adr/0006-an-extension-surface-on-ordinary-code.md).
 
-## The two clients
+## One authority and one follower
 
-|                 | Server client                                                                  | Browser client                                                                  |
-| --------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| Runs in         | the tenant's Durable Object                                                    | the page                                                                        |
-| Plugin list     | the authority; edited by the operator's UI, the tools, the agent               | a mirror; never edited directly — edits are sent up                             |
-| Trusted plugins | the base's server-side plugins (data, todos, storage handlers, grant handlers) | the shell: `slotsPlugin` and whatever the app registers for its own React fills |
-| Plugin source   | server halves **and view modules**, in `@tanstack/compose-cloudflare`          | none, ever                                                                      |
-| Fills           | produced by view modules through the `slots` grant; held as `ViewNode` data    | received as data; rendered by `<Slot>`                                          |
+The server client lives in a Durable Object. An application chooses the object
+id; the showcase uses `idFromName(`${tenantId}:${app.id}`)`, so each object owns
+exactly one client and one plugin list. This package does not multiplex apps
+inside a client.
 
-A view is data (`ViewNode` trees naming handlers by export name), so nothing about rendering it
-requires running its code where it is rendered. That is what makes the server the single place
-plugin source runs.
+The browser has a deliberately shallow client-shaped **follower**. It contains
+the mirrored `pluginList` and `instances` stores and the slot registry expected
+by `ComposeProvider`; it has no host and never starts either a trusted plugin or
+plugin source. `dispatch` and `callSource` are transport calls to the server,
+and every plugin-list mutation goes through `useComposeEdit()`. This preserves
+the existing shell components without creating a second authority.
 
-## The snapshot
+Server halves and view modules both run through the server client's host. A
+view module contributes a plain `ViewNode` tree through its `slots` grant. The
+browser renders that data; it never receives or evaluates the module's source.
+
+## Durable list and catalog boundary
+
+`createComposeDurableObject(options)` returns a Durable Object class extending
+the injected `base` constructor (`DurableObject` from `cloudflare:workers` in a
+real app). The app supplies:
+
+- initial serializable entries, or a function of the app id;
+- a catalog mapping persisted names to trusted plugin objects;
+- a grant catalog mapping persisted names to stub values;
+- an optional action catalog for the ordinary base actions the shell dispatches;
+- the host constructor and checker.
+
+The list is stored under `compose:plugin-list` before reconciliation. Its only
+durable form is `{ id, plugin: { catalog } | { source }, options, enabled,
+stubs: [names], host }`. Plugin objects and grant functions never enter
+storage. On eviction, initialization reads that list, resolves it against the
+current catalogs, and starts a new client. A functional initial list needs the
+app id only for the first `snapshot(appId)`; after persistence, the object id
+already isolates the app and no app discriminator is stored or accepted by
+edits.
+
+Explicitly narrowed `createSlotsStub({ slots })` grants also declare a missing
+allowed list slot when used in the headless server client. A mounted browser
+page's real declaration wins when present, retaining its cardinality and key
+function. An unrestricted slots grant still requires a page declaration. This
+is what lets an evicted DO reconstruct view fills before it renders a route.
+
+## Snapshot and publication
+
+`ComposeSnapshot` is the single transfer shape:
 
 ```ts
 interface ComposeSnapshot {
-  generation: number // monotonically increasing per server change; the follower ignores older ones
-  pluginList: Array<SerializedEntry> // catalog names and options, never plugin objects or source
-  instances: Array<InstanceSnapshot> // as `client.instances` publishes them
-  fills: Array<SerializedFill> // { id, instanceId, slot, order, key?, view: ViewNode }
+  generation: number
+  pluginList: Array<SnapshotEntry>
+  instances: Array<InstanceSnapshotWithSerializableError>
+  fills: Array<{ id; instanceId; slot; order; key?; view: ViewNode }>
 }
 ```
 
-One `ComposeSnapshot` is what a route loader fetches, what the HTML is rendered from, what the
-browser hydrates from, and what each live update carries (whole snapshot; diffs are an optimisation
-to be earned by a measurement). `pluginList` carries catalog names because the browser must not
-receive source (E1 amended) and cannot receive a plugin object; the serializable list is slice 8's
-work and this package consumes it.
+Catalog entries retain their catalog name. Source entries become
+`{ written: true }`; source is never in a route loader result, HTML, WebSocket
+message, or browser store. Instance errors retain only their message.
 
-## Server side
+`serializeFills()` reads only fills tagged by the hosted view grant. The tag
+holds the host-attached view instance id and its validated `ViewNode`.
+`applySnapshot()` replaces the follower's previous generation in one store
+batch, recreates renderers and binds every named callback to `press` with that
+tagged id. A caller cannot substitute an id through view data.
 
-- `composeHandler(env)` — a Durable Object method surface the app binds: `snapshot()`,
-  `edit(op)` (add from catalog / write source / enable / disable / configure / remove; the same
-  operations the composer tools perform), `press({ viewInstanceId, handler, input })`, and
-  `follow()` upgrading to a WebSocket that sends a snapshot on every publish.
-- `press` is the browser side of E3: the shell attaches `viewInstanceId` from the fill it rendered;
-  the DO calls the view module's named export through `client.callSource(viewInstanceId, handler,
-input)`. Plugin code never chooses the id.
-- The DO publishes a snapshot after every settle pass (`client.instances.subscribe`) and after
-  every fills change (the slot registry store), coalesced per microtask.
+The generation is stored under `compose:generation`, incremented before every
+whole-snapshot publication, and therefore remains monotonic across eviction.
+Instance-store and fill-store changes queue publication. Changes arriving
+while a publication is in progress queue another pass instead of being lost.
+During an `edit`, intermediate reconciliation notifications are held; the
+returned snapshot is produced only after `client.setPluginList()` settles.
 
-## Start integration
+`follow()` accepts a hibernatable WebSocket and immediately sends the current
+whole snapshot. `ComposeStart` opens it only after hydration, ignores an older
+generation, and reconnects with exponential backoff capped at five seconds.
+The first message after every reconnect is whole state, so reconvergence needs
+no missed-diff protocol.
 
-```ts
-// routes/__root.tsx
-export const Route = createRootRoute({
-  loader: () => getComposeSnapshot(), // a server function reading the tenant's DO
-  component: () => (
-    <ComposeStart snapshot={Route.useLoaderData()} follow="/api/compose/follow">
-      <Outlet />
-    </ComposeStart>
-  ),
-})
-```
+The same socket carries a `BrowserStatusReport` in the other direction. A
+followed fill reports `active` only after its React error boundary mounts; a
+render failure reports the source handler's own message and removes that fill.
+Reports name the snapshot generation, are held only for the lifetime of their
+socket (as a hibernation-safe WebSocket attachment), and are exposed to server
+integrations through `browserStatus()`. They are deliberately not stored in
+the Durable Object's plugin data: after disconnect no browser is known to be
+rendering that generation. A later agent-facing app can include this query in
+its composer results without teaching this package about agents.
 
-- `ComposeStart` creates the browser client once (module scope, guarded for SSR) with the shell
-  plugins, seeds the slot registry and the mirrored `instances` store from the snapshot **before**
-  first render, and provides the client. On the server the same component seeds a fresh registry
-  from the loader's snapshot and renders; `<Slot>` reads through `useSyncExternalStore` with
-  `getServerSnapshot` returning the seeded state, so server HTML and first client render are
-  identical by construction. There is no client-side fetch before first paint.
-- `follow` opens the WebSocket after hydration; each incoming snapshot with a higher `generation`
-  replaces the mirrored stores in one `batch()`. Reconnect with backoff; on reconnect the first
-  message is a full snapshot, which is what makes E2's "reconverge" true without special cases.
-- `useComposeEdit()` returns the edit operations as server-function calls that resolve when the DO
-  has settled and published; the UI shows the result from the next snapshot, not from the call.
-- Presses: the React renderer of `ViewNode` (`react-compose`'s `views.tsx`) takes a `callbacks`
-  map; here every handler name maps to `press({ viewInstanceId, handler, input })`. Input values
-  round-trip the server on change; a local echo is an optimisation to be earned.
+## Server calls and error ownership
 
-## What this package does not do
+The DO surface is `snapshot()`, `edit(op)`, `dispatch(...)`, `press(...)`, the
+operator-only `callSource(...)`, and `follow()`.
 
-- It never runs a host in the browser. `inProcessHost` stays for tests and for apps that choose a
-  browser-only client (slice 6).
-- It does not know what a page is. Pages are the app's routes; a fill renders wherever the app put
-  the `<Slot>`.
-- It does not persist anything. The plugin list's persistence and generations are the server
-  client's (slices 8–9); this package moves snapshots.
+Before calling a view export, `press` proves that the current snapshot contains
+a fill owned by `viewInstanceId` whose tree names that handler. It then calls
+that exact view instance. The view's `server` grant derives its paired server
+id from the host-attached view id, never from its input.
 
-## Criteria → tests (to be filled in by the implementer)
+Errors have two audiences. The host keeps its diagnostic wrapper and
+`SourceError` for operators. A product call receives the written handler's own
+message: `callSource` and the `server` grant rethrow that message with the host
+error on `cause`. Thus validation alerts and CSV failures do not acquire an
+`@tanstack/compose: call failed —` prefix.
 
-E1 mirror by content of snapshot; E2 reconnect and reconverge; E3 press carries the shell's id and
-a forged id is refused; E4 browser statuses visible on the server (a follower reports its render
-errors back on the same socket); F1–F3 as written; plus **no layout shift**: the server HTML for a
-page with fills equals the DOM after hydration (a jsdom test that renders both and compares).
+## SSR and hydration
+
+`ComposeStart` creates its follower during render and applies the loader's
+snapshot synchronously. The same component therefore seeds a fresh registry
+for server rendering and seeds the browser registry before hydration; no fetch
+is needed before first paint. Its `useSyncExternalStore` server snapshot is the
+same object as its first client snapshot. `useComposeSnapshot()` exposes later
+whole snapshots and `useComposeEdit()` sends authoritative edits.
+
+## Deliberate limits
+
+- Whole snapshots are preferred to diffs until measurement justifies another
+  protocol.
+- This package persists only the minimal plugin list and generation needed to
+  reconstruct the DO. It does not implement slice 8's other services or slice
+  9's version log/revert history.
+- The app owns tenant identity, routing, cookies, authorization, catalogs, and
+  deployment bindings.
+- There is no in-process fallback in the deployed browser. An app may keep a
+  separately selected browser-only development mode, as the showcase does.
+
+## Criteria → tests
+
+| Proof                                                                                      | Test                                                     |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| snapshot fills use the shell-owned id; a render failure reports and removes its fill       | `tests/snapshot.test.tsx`                                |
+| server HTML and hydrated DOM are identical                                                 | `tests/hydration.test.tsx`                               |
+| newer generations apply, older ones are ignored, and a closed follower reconnects          | `tests/follow.test.tsx`                                  |
+| mounted follower status returns on the same socket and disconnect removes server status    | `tests/follow.test.tsx`, `tests/durable-object.test.ts`  |
+| durable edits, source hiding, headless fills, presses, removal, and product error messages | `tests/durable-object.test.ts`                           |
+| the actual Table shell hydrates with 30 rows and an export fill unchanged                  | `examples/start/showcase/tests/hydration.test.tsx`       |
+| the facet-backed DO adds, presses, and removes the export pair                             | `examples/start/showcase/tests-workerd/deployed.test.ts` |
+
+The Cloudflare integration tests require `@cloudflare/vitest-pool-workers`; a
+run that cannot start workerd has not passed those rows.

@@ -12,6 +12,8 @@ export interface ShowcaseFixture {
 export interface HostileFixture extends ShowcaseFixture {
   label: string
   expected: string
+  /** What the deployed facet host proves when S1 intentionally differs. */
+  deployedExpected?: string
   disabled?: boolean
   call?: string
 }

@@ -1,16 +1,14 @@
 /// <reference types="vite/client" />
-import {
-  ClientOnly,
-  HeadContent,
-  Scripts,
-  createRootRoute,
-} from '@tanstack/react-router'
+import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { SiteFrame } from '../app/shell'
+import { ensureTenant } from '../compose-functions'
 import styles from '../styles.css?url'
 import type { ReactNode } from 'react'
 
 export const Route = createRootRoute({
-  ssr: false,
+  ssr: import.meta.env.MODE !== 'browser',
+  loader: () =>
+    import.meta.env.MODE === 'browser' ? undefined : ensureTenant(),
   head: () => ({
     meta: [
       { charSet: 'utf-8' },
@@ -29,9 +27,7 @@ function RootDocument({ children }: { children: ReactNode }): ReactNode {
         <HeadContent />
       </head>
       <body>
-        <ClientOnly fallback={<p className="booting">Starting…</p>}>
-          <SiteFrame>{children}</SiteFrame>
-        </ClientOnly>
+        <SiteFrame>{children}</SiteFrame>
         <Scripts />
       </body>
     </html>

@@ -1,4 +1,4 @@
-import { createContextKey, createStub } from '@tanstack/compose'
+import { createContextKey, createStub, sourceErrorOf } from '@tanstack/compose'
 import type {
   AnyStubGrant,
   Cleanup,
@@ -78,7 +78,12 @@ export interface ViewSlotRegistry {
   /** Register one fill; the returned cleanup removes it. */
   fill: (
     slot: ViewSlot,
-    fill: { order?: number; key?: string; render: unknown },
+    fill: {
+      order?: number
+      key?: string
+      render: unknown
+      serialized?: { instanceId: string; view: ViewNode }
+    },
   ) => Cleanup
 }
 
@@ -287,7 +292,12 @@ export function createSlotsStub(
       }
       const view = expectNode(given?.view, `the view of the fill of "${name}"`)
       const registry = instance.context.get(slotRegistryKey)
-      const slot = registry.slot(name)
+      // An explicit allow-list is also enough for a headless server client to
+      // declare its list slots. In a browser, the mounted page's declaration
+      // wins and carries any non-default cardinality or key function.
+      const slot =
+        registry.slot(name) ??
+        (allowed === undefined ? undefined : { name, cardinality: 'list' })
       if (!slot) {
         throw new Error(
           `@tanstack/react-compose: there is no slot named "${name}" on this page`,
@@ -314,6 +324,7 @@ export function createSlotsStub(
         ...(given?.order === undefined ? {} : { order: given.order }),
         ...(key === undefined ? {} : { key }),
         render,
+        serialized: { instanceId, view },
       })
       if (held) {
         const previous = held.remove
@@ -337,7 +348,7 @@ export function createServerStub(
   const grant = createStub<ViewServerCall, unknown>({
     name: 'server',
     declarations: serverDeclaration(config.exports),
-    handler: ({ input, instance, instanceId }) => {
+    handler: async ({ input, instance, instanceId }) => {
       const given = input as Partial<ViewServerCall> | null | undefined
       const handler = expectString(given?.handler, 'a server handler name')
       const plugin = pluginIdOf(instanceId)
@@ -346,7 +357,13 @@ export function createServerStub(
           `@tanstack/react-compose: the instance "${instanceId}" is not a view, so it has no server half to call`,
         )
       }
-      return instance.client.callSource(plugin, handler, given?.input)
+      try {
+        return await instance.client.callSource(plugin, handler, given?.input)
+      } catch (error) {
+        const source = sourceErrorOf(error)
+        if (!source) throw error
+        throw new Error(source.message, { cause: error })
+      }
     },
   })
   narrowers.set(grant, (one) => createServerStub({ exports: one.exports }))

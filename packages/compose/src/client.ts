@@ -145,7 +145,9 @@ class ClientImpl implements Client {
   #listeners = new Map<AnyEvent, Array<ListenerRegistration>>()
   #hosts = new Map<string, Host>([[inProcessHost.name, inProcessHost]])
   #hosted = new Map<string, HostedRecord>()
+  #hostDestroyers = new Map<string, Map<string, () => Promise<void>>>()
   #applied: Array<PluginEntry> = []
+  #destroying = false
   #queue: Promise<unknown> = Promise.resolve()
   #outstanding = 0
   #nextPass: Promise<void> | undefined
@@ -355,6 +357,12 @@ class ClientImpl implements Client {
       }
     }
 
+    if (!this.#destroying) {
+      for (const entry of this.#applied) {
+        if (!seen.has(entry.id)) await this.#destroyHosted(entry.id)
+      }
+    }
+
     for (const entry of desired.values()) {
       if (!this.#records.has(entry.id)) await this.#create(entry)
     }
@@ -525,6 +533,27 @@ class ClientImpl implements Client {
       options,
       stubs,
     })
+    if (hosted.hosted.destroy) {
+      let destroyers = this.#hostDestroyers.get(instance.id)
+      if (!destroyers) {
+        destroyers = new Map()
+        this.#hostDestroyers.set(instance.id, destroyers)
+      }
+      destroyers.set(hostName, hosted.hosted.destroy)
+    }
+  }
+
+  /** Delete every host's retained state only when the entry itself is gone. */
+  async #destroyHosted(instanceId: string): Promise<void> {
+    const destroyers = this.#hostDestroyers.get(instanceId)
+    this.#hostDestroyers.delete(instanceId)
+    for (const destroy of destroyers?.values() ?? []) {
+      try {
+        await destroy()
+      } catch (error) {
+        this.#report({ scope: 'cleanup', instanceId, error })
+      }
+    }
   }
 
   /**
@@ -1105,6 +1134,7 @@ class ClientImpl implements Client {
   }
 
   async destroy(): Promise<void> {
+    this.#destroying = true
     this.pluginList.setState(() => [])
     await this.settled()
     for (const record of [...this.#records.values()]) await this.#remove(record)

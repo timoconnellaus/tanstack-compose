@@ -2,6 +2,7 @@ import { forgesInstanceIdFixture } from './forges-instance-id'
 import { oversizedPayloadFixture } from './oversized-payload'
 import { reachesOutsideFixture } from './reaches-outside'
 import { smugglesAFunctionFixture } from './smuggles-a-function'
+import { spinsFixture } from './spins'
 import { throwsInHandlerFixture } from './throws-in-handler'
 import { throwsInSetupFixture } from './throws-in-setup'
 import type { HostileFixture } from './types'
@@ -12,6 +13,7 @@ export { oversizedPayloadFixture } from './oversized-payload'
 export { reachesOutsideFixture } from './reaches-outside'
 export { requireTitleFixture, requireTitleSource } from './require-title'
 export { smugglesAFunctionFixture } from './smuggles-a-function'
+export { spinsFixture } from './spins'
 export { sortByDueFixture, sortByDueSource } from './sort-by-due'
 export { throwsInHandlerFixture } from './throws-in-handler'
 export { throwsInSetupFixture } from './throws-in-setup'
@@ -25,4 +27,5 @@ export const hostileFixtures: ReadonlyArray<HostileFixture> = [
   oversizedPayloadFixture,
   forgesInstanceIdFixture,
   reachesOutsideFixture,
+  spinsFixture,
 ]

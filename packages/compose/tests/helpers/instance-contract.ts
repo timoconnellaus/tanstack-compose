@@ -179,6 +179,8 @@ export interface ContractArm {
   name: string
   hosts?: Record<string, Host>
   entry: (id: string, options: ProbeOptions) => PluginEntry
+  /** Run one assertion inside a host-owned context, such as a Durable Object. */
+  scope?: <T>(work: () => Promise<T>) => Promise<T>
 }
 
 /**
@@ -198,120 +200,133 @@ export function runInstanceContract(arm: ContractArm): void {
       return client
     }
 
+    const scoped = <T>(work: () => Promise<T>): Promise<T> =>
+      arm.scope?.(work) ?? work()
+
     beforeEach(() => {
       notes = []
       handlers.clear()
     })
 
-    it('starts, records what it registered, and is listed as an ordinary instance', async () => {
-      await start(arm.entry('a', { label: 'a' }))
+    it('starts, records what it registered, and is listed as an ordinary instance', () =>
+      scoped(async () => {
+        await start(arm.entry('a', { label: 'a' }))
 
-      const [snapshot] = client.inspect()
-      expect(snapshot?.id).toBe('a')
-      expect(snapshot?.status).toBe('active')
-      expect(snapshot?.missing).toEqual([])
-      expect(notes).toEqual(['start:a'])
+        const [snapshot] = client.inspect()
+        expect(snapshot?.id).toBe('a')
+        expect(snapshot?.status).toBe('active')
+        expect(snapshot?.missing).toEqual([])
+        expect(notes).toEqual(['start:a'])
 
-      const labels = client.resources('a')?.children.map((node) => node.label)
-      expect(labels).toContain('probe(a)')
-      expect(labels).toContain('late(a)')
-    })
+        const labels = client.resources('a')?.children.map((node) => node.label)
+        expect(labels).toContain('probe(a)')
+        expect(labels).toContain('late(a)')
+      }))
 
-    it('leaves no trace when it is removed, and removing twice is safe', async () => {
-      await start(
-        arm.entry('a', { label: 'a' }),
-        arm.entry('b', { label: 'b' }),
-      )
-      notes = []
+    it('leaves no trace when it is removed, and removing twice is safe', () =>
+      scoped(async () => {
+        await start(
+          arm.entry('a', { label: 'a' }),
+          arm.entry('b', { label: 'b' }),
+        )
+        notes = []
 
-      await Promise.all([client.removePlugin('a'), client.removePlugin('a')])
+        await Promise.all([client.removePlugin('a'), client.removePlugin('a')])
 
-      expect(notes).toEqual(['stop2:a', 'stop1:a'])
-      expect(client.inspect().map((one) => one.id)).toEqual(['b'])
-      expect(client.resources('a')).toBeUndefined()
-      expect(handlers.has('a:echo')).toBe(false)
-    })
+        expect(notes).toEqual(['stop2:a', 'stop1:a'])
+        expect(client.inspect().map((one) => one.id)).toEqual(['b'])
+        expect(client.resources('a')).toBeUndefined()
+        expect(handlers.has('a:echo')).toBe(false)
+      }))
 
-    it('runs a handler it registered, through whatever boundary it is behind', async () => {
-      await start(arm.entry('a', { label: 'a' }))
-      await expect(handlers.get('a:echo')?.('hi')).resolves.toBe('echo:hi')
-    })
+    it('runs a handler it registered, through whatever boundary it is behind', () =>
+      scoped(async () => {
+        await start(arm.entry('a', { label: 'a' }))
+        await expect(handlers.get('a:echo')?.('hi')).resolves.toBe('echo:hi')
+      }))
 
-    it('ends in error when it throws while starting, leaving siblings alone', async () => {
-      await start(
-        arm.entry('a', { label: 'a', fail: true }),
-        arm.entry('b', { label: 'b' }),
-      )
+    it('ends in error when it throws while starting, leaving siblings alone', () =>
+      scoped(async () => {
+        await start(
+          arm.entry('a', { label: 'a', fail: true }),
+          arm.entry('b', { label: 'b' }),
+        )
 
-      const [failed, sibling] = client.inspect()
-      expect(failed?.status).toBe('error')
-      expect(String((failed?.error as Error).message)).toContain('probe failed')
-      expect(sibling?.status).toBe('active')
-      // Nothing it half-registered survives.
-      expect(notes).toContain('stop1:a')
-      expect(handlers.has('a:echo')).toBe(false)
-      expect(client.resources('a')?.children).toEqual([])
-    })
+        const [failed, sibling] = client.inspect()
+        expect(failed?.status).toBe('error')
+        expect(String((failed?.error as Error).message)).toContain(
+          'probe failed',
+        )
+        expect(sibling?.status).toBe('active')
+        // Nothing it half-registered survives.
+        expect(notes).toContain('stop1:a')
+        expect(handlers.has('a:echo')).toBe(false)
+        expect(client.resources('a')?.children).toEqual([])
+      }))
 
-    it('stays pending until its dep is provided, and names what is missing', async () => {
-      await start(arm.entry('a', { label: 'a', needs: true }))
+    it('stays pending until its dep is provided, and names what is missing', () =>
+      scoped(async () => {
+        await start(arm.entry('a', { label: 'a', needs: true }))
 
-      expect(client.inspect()[0]?.status).toBe('pending')
-      expect(client.inspect()[0]?.missing).toEqual(['contract.gate'])
-      expect(notes).toEqual([])
+        expect(client.inspect()[0]?.status).toBe('pending')
+        expect(client.inspect()[0]?.missing).toEqual(['contract.gate'])
+        expect(notes).toEqual([])
 
-      await client.addPlugin({ id: 'gate', plugin: gatePlugin })
-      expect(client.inspect()[0]?.status).toBe('active')
-      expect(notes).toEqual(['start:a'])
-    })
+        await client.addPlugin({ id: 'gate', plugin: gatePlugin })
+        expect(client.inspect()[0]?.status).toBe('active')
+        expect(notes).toEqual(['start:a'])
+      }))
 
-    it('is cleaned up and returns to pending when its dep goes away', async () => {
-      await start(
-        { id: 'gate', plugin: gatePlugin },
-        arm.entry('a', { label: 'a', needs: true }),
-      )
-      notes = []
+    it('is cleaned up and returns to pending when its dep goes away', () =>
+      scoped(async () => {
+        await start(
+          { id: 'gate', plugin: gatePlugin },
+          arm.entry('a', { label: 'a', needs: true }),
+        )
+        notes = []
 
-      const probe = () => client.inspect().find((one) => one.id === 'a')
+        const probe = () => client.inspect().find((one) => one.id === 'a')
 
-      await client.setEnabled('gate', false)
-      expect(probe()?.status).toBe('pending')
-      expect(notes).toEqual(['stop2:a', 'stop1:a'])
+        await client.setEnabled('gate', false)
+        expect(probe()?.status).toBe('pending')
+        expect(notes).toEqual(['stop2:a', 'stop1:a'])
 
-      notes = []
-      await client.setEnabled('gate', true)
-      expect(probe()?.status).toBe('active')
-      expect(notes).toEqual(['start:a'])
-    })
+        notes = []
+        await client.setEnabled('gate', true)
+        expect(probe()?.status).toBe('active')
+        expect(notes).toEqual(['start:a'])
+      }))
 
-    it('restarts only itself when its options change', async () => {
-      await start(
-        arm.entry('a', { label: 'a' }),
-        arm.entry('b', { label: 'b' }),
-      )
-      notes = []
+    it('restarts only itself when its options change', () =>
+      scoped(async () => {
+        await start(
+          arm.entry('a', { label: 'a' }),
+          arm.entry('b', { label: 'b' }),
+        )
+        notes = []
 
-      await client.setOptions('a', { label: 'a2' })
+        await client.setOptions('a', { label: 'a2' })
 
-      expect(notes).toEqual(['stop2:a', 'stop1:a', 'start:a2'])
-      expect(client.inspect().map((one) => one.status)).toEqual([
-        'active',
-        'active',
-      ])
-    })
+        expect(notes).toEqual(['stop2:a', 'stop1:a', 'start:a2'])
+        expect(client.inspect().map((one) => one.status)).toEqual([
+          'active',
+          'active',
+        ])
+      }))
 
-    it('is removed by disabling its entry and restored by enabling it', async () => {
-      await start(arm.entry('a', { label: 'a' }))
-      notes = []
+    it('is removed by disabling its entry and restored by enabling it', () =>
+      scoped(async () => {
+        await start(arm.entry('a', { label: 'a' }))
+        notes = []
 
-      await client.setEnabled('a', false)
-      expect(client.inspect()).toEqual([])
-      expect(notes).toEqual(['stop2:a', 'stop1:a'])
+        await client.setEnabled('a', false)
+        expect(client.inspect()).toEqual([])
+        expect(notes).toEqual(['stop2:a', 'stop1:a'])
 
-      notes = []
-      await client.setEnabled('a', true)
-      expect(client.inspect()[0]?.status).toBe('active')
-      expect(notes).toEqual(['start:a'])
-    })
+        notes = []
+        await client.setEnabled('a', true)
+        expect(client.inspect()[0]?.status).toBe('active')
+        expect(notes).toEqual(['start:a'])
+      }))
   })
 }

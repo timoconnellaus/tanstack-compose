@@ -1,5 +1,9 @@
-export { createCloudflareHost } from './host'
-export type { CloudflareHostOptions, CloudflareLimits } from './host'
+export { createCloudflareHost, createFacetHost } from './host'
+export type {
+  CloudflareHostOptions,
+  CloudflareLimits,
+  FacetHostOptions,
+} from './host'
 export { bindingCredentials } from './credentials'
 export type { CredentialSource } from './credentials'
 export { ComposeStubLoopback } from './loopback'

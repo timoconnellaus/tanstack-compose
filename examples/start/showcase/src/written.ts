@@ -1,5 +1,6 @@
 import { grantView, viewIdOf, viewStubs } from '@tanstack/react-compose'
 import type { AnyStubGrant, Client, PluginEntry } from '@tanstack/compose'
+import type { SerializedEntry } from '@tanstack/start-compose'
 import type { ShowcaseApp } from './apps'
 import type { ShowcaseFixture } from './fixtures'
 
@@ -54,6 +55,29 @@ export async function removeWritten(client: Client, id: string): Promise<void> {
   await client.setPluginList(
     client.pluginList.state.filter((entry) => !ids.has(entry.id)),
   )
+}
+
+/** Persistable server/view entries for the deployed one-client-per-app DO. */
+export function serializedEntriesForWritten(
+  fixture: ShowcaseFixture,
+  app: ShowcaseApp,
+): Array<SerializedEntry> {
+  const server: SerializedEntry = {
+    id: fixture.id,
+    plugin: { source: fixture.source },
+    stubs: fixture.stubs.map((stub) => stub.name),
+    host: 'cloudflare',
+  }
+  if (fixture.view === undefined || fixture.view === '') return [server]
+  return [
+    server,
+    {
+      id: viewIdOf(fixture.id),
+      plugin: { source: fixture.view },
+      stubs: [`${app.id}.slots`, 'server'],
+      host: 'cloudflare',
+    },
+  ]
 }
 
 /** Resolve selected grant names into the stub values a panel entry receives. */

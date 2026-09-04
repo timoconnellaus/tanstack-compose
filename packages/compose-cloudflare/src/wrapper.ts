@@ -7,6 +7,9 @@ export const wrapperModule = 'compose-host.js'
 /** The entrypoint the wrapper exposes, and the only thing the client calls. */
 export const wrapperEntrypoint = 'ComposeHostedPlugin'
 
+/** The Durable Object class exported when the wrapper runs as a facet. */
+export const facetWrapperEntrypoint = 'ComposeHostedFacet'
+
 /**
  * What every wrapper method answers with. An envelope rather than a throw: RPC
  * carries an exception's message but not its own properties, and the phase a
@@ -158,6 +161,183 @@ export class ${wrapperEntrypoint} extends WorkerEntrypoint {
       // The isolate is going away; a cleanup that throws changes nothing.
     }
     return { ok: true }
+  }
+}
+`
+}
+
+/**
+ * The Dynamic Worker module used for a Durable Object facet. Storage and the
+ * single alarm are local to the facet; every other granted stub is a loopback.
+ */
+export function facetWrapperSource(stubNames: ReadonlyArray<string>): string {
+  return `import { DurableObject } from 'cloudflare:workers'
+
+const stubNames = ${JSON.stringify([...stubNames])}
+const dataPrefix = '\\0compose:data:'
+const alarmKey = '\\0compose:alarm'
+
+const failed = (phase, error) => ({
+  ok: false,
+  phase,
+  message:
+    error && typeof error.message === 'string' ? error.message : String(error),
+})
+
+class Tagged extends Error {
+  constructor(phase, error) {
+    super('tagged')
+    this.result = failed(phase, error)
+  }
+}
+
+const key = (value) => {
+  if (typeof value !== 'string') throw new Error('storage key must be a string')
+  return value
+}
+
+function stubsFrom(ctx, env) {
+  const stubs = Object.create(null)
+  for (const name of stubNames) {
+    if (name === 'storage' || name === 'schedule') continue
+    const loopback = env[name]
+    stubs[name] = async (input) => {
+      const answer = await loopback.stubCall(input)
+      if (!answer.ok) throw new Error(answer.message)
+      return answer.value
+    }
+  }
+  if (stubNames.includes('storage')) {
+    stubs.storage = Object.freeze({
+      get: (name) => ctx.storage.get(dataPrefix + key(name)),
+      set: (name, value) => ctx.storage.put(dataPrefix + key(name), value),
+      delete: (name) => ctx.storage.delete(dataPrefix + key(name)),
+      list: async (prefix = '') => {
+        const values = await ctx.storage.list({ prefix: dataPrefix + key(prefix) })
+        const result = {}
+        for (const [name, value] of values) {
+          result[name.slice(dataPrefix.length)] = value
+        }
+        return result
+      },
+    })
+  }
+  if (stubNames.includes('schedule')) {
+    const set = async (at, handler, every) => {
+      if (!Number.isFinite(at) || typeof handler !== 'string' || handler === '') {
+        throw new Error('schedule needs a finite time and a named export')
+      }
+      await ctx.storage.put(alarmKey, {
+        at,
+        handler,
+        ...(every === undefined ? {} : { every }),
+      })
+      await ctx.storage.setAlarm(at)
+    }
+    stubs.schedule = Object.freeze({
+      every: async (ms, handler) => {
+        if (!Number.isFinite(ms) || ms <= 0) {
+          throw new Error('schedule interval must be positive')
+        }
+        await set(Date.now() + ms, handler, ms)
+      },
+      at: (when, handler) =>
+        set(when instanceof Date ? when.getTime() : when, handler),
+      cancel: async () => {
+        await ctx.storage.delete(alarmKey)
+        await ctx.storage.deleteAlarm()
+      },
+    })
+  }
+  return Object.freeze(stubs)
+}
+
+export class ${facetWrapperEntrypoint} extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env)
+    // Every method awaits \`run\`; blocking concurrency on it in the constructor
+    // instead deadlocks the facet's first RPC under workerd.
+    this.run = this.start()
+    this.run.catch(() => {})
+  }
+
+  async start() {
+    let plugin
+    try {
+      plugin = await import('./${pluginModule}')
+    } catch (error) {
+      throw new Tagged(error && error.name === 'SyntaxError' ? 'parse' : 'load', error)
+    }
+    if (typeof plugin.default !== 'function') {
+      throw new Tagged(
+        'load',
+        new Error('plugin source must export a default setup function'),
+      )
+    }
+    try {
+      await plugin.default({
+        id: this.ctx.props.instanceId,
+        options: this.ctx.props.options,
+        stubs: stubsFrom(this.ctx, this.env),
+      })
+    } catch (error) {
+      throw new Tagged('setup', error)
+    }
+    const alarm = await this.ctx.storage.get(alarmKey)
+    if (alarm) await this.ctx.storage.setAlarm(alarm.at)
+    return { plugin }
+  }
+
+  async setup() {
+    try {
+      await this.run
+      return { ok: true }
+    } catch (error) {
+      return error instanceof Tagged ? error.result : failed('setup', error)
+    }
+  }
+
+  async call(name, input) {
+    let plugin
+    try {
+      ;({ plugin } = await this.run)
+    } catch (error) {
+      return error instanceof Tagged ? error.result : failed('setup', error)
+    }
+    const handler = plugin[name]
+    if (typeof handler !== 'function') {
+      return failed(
+        'call',
+        new Error('plugin source has no export named "' + name + '"'),
+      )
+    }
+    try {
+      return { ok: true, value: await handler(input) }
+    } catch (error) {
+      return failed('call', error)
+    }
+  }
+
+  async pause() {
+    await this.ctx.storage.deleteAlarm()
+    return { ok: true }
+  }
+
+  async alarm() {
+    const alarm = await this.ctx.storage.get(alarmKey)
+    if (!alarm) return
+    if (alarm.every === undefined) await this.ctx.storage.delete(alarmKey)
+    else {
+      alarm.at = Date.now() + alarm.every
+      await this.ctx.storage.put(alarmKey, alarm)
+      await this.ctx.storage.setAlarm(alarm.at)
+    }
+    const { plugin } = await this.run
+    const handler = plugin[alarm.handler]
+    if (typeof handler !== 'function') {
+      throw new Error('plugin source has no export named "' + alarm.handler + '"')
+    }
+    await handler({ scheduledAt: Date.now() })
   }
 }
 `

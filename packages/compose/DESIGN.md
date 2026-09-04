@@ -321,15 +321,18 @@ interface HostStartRequest {
 interface HostInstance {
   call: (name: string, input: unknown) => Promise<unknown>
   stop: () => Promise<void>
+  destroy?: () => Promise<void>
 }
 ```
 
 `start` is the whole of "load this and hand it its authority". `call` is the
 whole of "the client reaches into the plugin": one named export, one
-structured-clone-safe argument, one structured-clone-safe result. `stop` is the
-whole of teardown, and does not resolve until the host has released the
-instance. Everything else a host might want to do — caching by content hash,
-wall-clock limits, tails — is the host package's business and invisible here.
+structured-clone-safe argument, one structured-clone-safe result. `stop` ends
+one activation and does not resolve until the host has released its code;
+optional `destroy` permanently removes state the host retained for that entry.
+A host without `destroy` is stateless. Everything else a host might want to do
+— caching by content hash, wall-clock limits, tails — is the host package's
+business and invisible here.
 
 The contract deliberately does **not** carry a `restart`, an `abort` or a
 `status`. Restarting is the kernel's job: it stops the instance and starts a new
@@ -424,11 +427,30 @@ property it can read and no field it can overwrite that changes the
 approves, logs or refuses per instance exactly as it does for any other action
 (ADR-0003), and it sees the id before the handler does.
 
+### Host-local stateful grants
+
+Core exports `storageStub` and `scheduleStub`, including the `.d.ts` text a
+checker gives written source. Their `createStub` handlers deliberately throw
+`host required`: they declare host-local authority rather than a loopback to a
+client resource. The in-process host implements them as the oracle; a stateful
+remote host replaces them at its own boundary.
+
+In process, state is keyed by entry id outside an activation. `storage` is a
+`Map` of structured-cloned values with `get`, `set`, `delete`, and prefix
+`list`. `schedule` holds the one alarm an instance can own; `every`, `at`, and
+`cancel` use `setTimeout`, and a firing calls the current activation's named
+export with `{ scheduledAt }`. Stopping clears the live timer and call handle
+but retains its descriptor and values; a restart restores the call handle and
+re-arms it. Destroying clears both. Thus an options or source restart sees the
+same state, while remove followed by re-add starts empty.
+
 ### Termination
 
-`HostInstance.stop()` is the only teardown verb, and it is what a remote host's
-"terminate the isolate" looks like from here. On removal the hosted entry's
-instance runs two cleanups, in this order:
+`HostInstance.stop()` ends an activation, and it is what a remote host's
+"terminate the isolate" looks like from here. It runs when an instance is
+deactivated, restarted because its options/source/host changed, or its client
+is destroyed. On teardown the hosted entry's instance runs two cleanups, in
+this order:
 
 1. **revoke** — the client forgets the instance's host record. Every later
    `stubCallAction` dispatch for that id throws, wherever it came from,
@@ -449,6 +471,13 @@ during removal, and every call in or out is asynchronous — the in-process host
 reproduces the remote "terminated between two calls" case exactly (A7): after
 it, `call` rejects, stub calls reject, and every cleanup has run before removal
 reports done.
+
+`HostInstance.destroy?.()` is different: after `stop`, the kernel calls it only
+when the entry id disappears from the plugin list. Disabling an entry, changing
+its source/options/host and destroying the client preserve host state. The
+kernel retains one destroy callback per entry and host even while the entry is
+disabled, so removing a stopped entry still deletes its state; moving an entry
+between hosts leaves both retained states intact until that entry is removed.
 
 ### The evaluator, and workerd
 
@@ -684,15 +713,20 @@ parity oracle, and the two have different jobs.
 
 ### `docs/acceptance/hosts.md` §A
 
-| Id  | Test file                             | `it()` title                                                                                                                                                                                                                    |
-| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1  | `tests/hosts/contract.test.ts`        | `starts an entry with no host in-process and one that names a host there`                                                                                                                                                       |
-| A2  | `tests/hosts/instance-parity.test.ts` | every title under `plugin source in-process`, from `tests/helpers/instance-contract.ts`                                                                                                                                         |
-| A3  | `tests/hosts/contract.test.ts`        | `restarts the instance in the new host when an entry changes host` / `leaves an entry naming a host the client does not have in error`                                                                                          |
-| A4  | `tests/hosts/contract.test.ts`        | `hands a hosted plugin exactly the stubs its entry was granted` / `takes deps and provides for a hosted entry from the stubs it was granted`                                                                                    |
-| A5  | `tests/hosts/contract.test.ts`        | `carries only structured-clone-safe values across the boundary, in both directions`                                                                                                                                             |
-| A6  | `tests/hosts/contract.test.ts`        | `attaches the calling instance id to every stub call, where middleware sees it` / `cannot be told a different caller by the plugin it hosts`                                                                                    |
-| A7  | `tests/hosts/termination.test.ts`     | `stops between two calls, so calls after it fail and the code is released` / `revokes the stubs of a removed instance before the client reports done` / `does not report removal done until the host has released the instance` |
+| Id  | Test file                             | `it()` title                                                                                                                                                                                                                                                                                                                                                   |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | `tests/hosts/contract.test.ts`        | `starts an entry with no host in-process and one that names a host there`                                                                                                                                                                                                                                                                                      |
+| A2  | `tests/hosts/instance-parity.test.ts` | every title under `plugin source in-process`, from `tests/helpers/instance-contract.ts`                                                                                                                                                                                                                                                                        |
+| A3  | `tests/hosts/contract.test.ts`        | `restarts the instance in the new host when an entry changes host` / `leaves an entry naming a host the client does not have in error`                                                                                                                                                                                                                         |
+| A4  | `tests/hosts/contract.test.ts`        | `hands a hosted plugin exactly the stubs its entry was granted` / `takes deps and provides for a hosted entry from the stubs it was granted`                                                                                                                                                                                                                   |
+| A5  | `tests/hosts/contract.test.ts`        | `carries only structured-clone-safe values across the boundary, in both directions`                                                                                                                                                                                                                                                                            |
+| A6  | `tests/hosts/contract.test.ts`        | `attaches the calling instance id to every stub call, where middleware sees it` / `cannot be told a different caller by the plugin it hosts`                                                                                                                                                                                                                   |
+| A7  | `tests/hosts/termination.test.ts`     | `stops but does not destroy a host when an entry restarts` / `stops then destroys a stateful host when the entry is removed` / `stops between two calls, so calls after it fail and the code is released` / `revokes the stubs of a removed instance before the client reports done` / `does not report removal done until the host has released the instance` |
+
+The host-local `storage` and `schedule` oracle is covered by
+`tests/hosts/stateful-grants.test.ts`: state survives options/source restarts,
+removal destroys it, and an alarm invokes a named export with no request in
+flight.
 
 ### `docs/acceptance/self-modification.md` §D — the parts core owns
 

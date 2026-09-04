@@ -1,0 +1,74 @@
+import { DurableObject } from 'cloudflare:workers'
+import { createFacetHost } from '@tanstack/compose-cloudflare'
+import { createTypeScriptChecker } from '@tanstack/compose-typescript'
+import {
+  createServerStub,
+  createSlotsStub,
+  slotsPlugin,
+  viewsPlugin,
+} from '@tanstack/react-compose'
+import { createComposeDurableObject } from '@tanstack/start-compose'
+import {
+  actionsStub,
+  dataStub,
+  grantableActions,
+  tablePlugin,
+  todoPlugin,
+} from './base'
+import { appById, hostileApp, tableApp, todoApp } from './apps'
+import type { SerializedEntry } from '@tanstack/start-compose'
+
+/** Bindings held by the Start Worker and each tenant/app Durable Object. */
+export interface ShowcaseEnv {
+  LOADER: WorkerLoader
+  TENANT: DurableObjectNamespace
+}
+
+class TenantBase extends DurableObject<ShowcaseEnv> {}
+
+const initialEntries = (appId: string): Array<SerializedEntry> => {
+  const app = appById(appId)
+  return app.plugins.map((entry) => {
+    if (!entry.plugin) throw new Error('showcase: base entries are catalogued')
+    return {
+      id: entry.id,
+      plugin: { catalog: entry.plugin.name },
+      options: entry.options,
+      enabled: entry.enabled,
+      stubs: [],
+    }
+  })
+}
+
+const grants = {
+  actions: actionsStub,
+  data: dataStub,
+  server: createServerStub(),
+  'table.slots': createSlotsStub({ slots: tableApp.viewSlots }),
+  'todo.slots': createSlotsStub({ slots: todoApp.viewSlots }),
+  'hostile.slots': createSlotsStub({ slots: hostileApp.viewSlots }),
+}
+
+/** One Durable Object class; its object id is `${tenantId}:${app.id}`. */
+export const ShowcaseTenant = createComposeDurableObject<ShowcaseEnv>({
+  base: TenantBase,
+  initialPluginList: initialEntries,
+  catalog: {
+    slots: slotsPlugin,
+    views: viewsPlugin,
+    table: tablePlugin,
+    todo: todoPlugin,
+  },
+  grants,
+  actions: grantableActions,
+  checker: createTypeScriptChecker(),
+  hostName: 'cloudflare',
+  createHost: ({ ctx, env }) =>
+    createFacetHost({
+      ctx,
+      loader: env.LOADER,
+      compatibilityDate: '2026-05-01',
+      callTimeoutMs: 250,
+      limits: { cpuMs: 1000 },
+    }),
+})

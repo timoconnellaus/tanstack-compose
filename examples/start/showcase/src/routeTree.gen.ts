@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as HostileRouteImport } from './routes/hostile'
 import { Route as TableRouteImport } from './routes/table'
 import { Route as TodoRouteImport } from './routes/todo'
+import { Route as ApiComposeFollowRouteImport } from './routes/api.compose.follow'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +35,25 @@ const TodoRoute = TodoRouteImport.update({
   path: '/todo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiComposeFollowRoute = ApiComposeFollowRouteImport.update({
+  id: '/api/compose/follow',
+  path: '/api/compose/follow',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/hostile': typeof HostileRoute
   '/table': typeof TableRoute
   '/todo': typeof TodoRoute
+  '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/hostile': typeof HostileRoute
   '/table': typeof TableRoute
   '/todo': typeof TodoRoute
+  '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/hostile': typeof HostileRoute
   '/table': typeof TableRoute
   '/todo': typeof TodoRoute
+  '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/hostile' | '/table' | '/todo'
+  fullPaths: '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/hostile' | '/table' | '/todo'
-  id: '__root__' | '/' | '/hostile' | '/table' | '/todo'
+  to: '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
+  id: '__root__' | '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +76,7 @@ export interface RootRouteChildren {
   HostileRoute: typeof HostileRoute
   TableRoute: typeof TableRoute
   TodoRoute: typeof TodoRoute
+  ApiComposeFollowRoute: typeof ApiComposeFollowRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +109,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TodoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/compose/follow': {
+      id: '/api/compose/follow'
+      path: '/api/compose/follow'
+      fullPath: '/api/compose/follow'
+      preLoaderRoute: typeof ApiComposeFollowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   HostileRoute: HostileRoute,
   TableRoute: TableRoute,
   TodoRoute: TodoRoute,
+  ApiComposeFollowRoute: ApiComposeFollowRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

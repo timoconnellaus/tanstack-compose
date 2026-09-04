@@ -106,23 +106,41 @@ interface DataRequest {
   claimedInstanceId?: string
 }
 
+interface IdentityObservation {
+  claimedInstanceId: string
+  actualInstanceId: string
+}
+
 /** Read the table rows through one named grant. */
-export const dataStub = createStub<DataRequest, Array<Row>>({
+export const dataStub = createStub<
+  DataRequest,
+  Array<Row> | IdentityObservation
+>({
   name: 'data',
   declarations: `${rowDeclaration}
 
+/** Observe the host-attached identity on a deliberately forged request. */
+declare function data(request: {
+  operation: 'rows'
+  claimedInstanceId: string
+}): Promise<{ claimedInstanceId: string; actualInstanceId: string }>
+
 /** Read table data granted to this entry. */
-declare const data: (request: {
+declare function data(request: {
   operation: 'rows'
   payload?: unknown
-  claimedInstanceId?: string
-}) => Promise<Array<TableRow>>`,
+}): Promise<Array<TableRow>>`,
   deps: [tableKey],
-  handler: ({ input, instance }) => {
+  handler: ({ input, instance, instanceId }) => {
     if (input.operation !== 'rows') {
       throw new Error('@showcase/data: only the rows operation is granted')
     }
-    return [...instance.context.get(tableKey).rows]
+    return input.claimedInstanceId === undefined
+      ? [...instance.context.get(tableKey).rows]
+      : {
+          claimedInstanceId: input.claimedInstanceId,
+          actualInstanceId: instanceId,
+        }
   },
 })
 
@@ -417,36 +435,28 @@ export const tablePlugin = createPlugin({
   },
 })
 
-const initialTodos: Array<Todo> = [
+/** The fixed initial todos used by both the server base and the follower UI. */
+export const initialTodos: ReadonlyArray<Todo> = [
   { id: 'todo-1', title: 'Book dentist', due: '2026-09-10', done: false },
   { id: 'todo-2', title: 'Call Alice', done: false },
   { id: 'todo-3', title: 'Write report', due: '2026-09-05', done: false },
 ]
 
-/** The trusted todo plugin holding state and the default action handlers. */
-export const todoPlugin = createPlugin({
-  name: 'todo',
-  provides: [todosKey],
-  setup(instance) {
-    const store = new Store<Array<Todo>>(
-      initialTodos.map((todo) => ({ ...todo })),
-    )
-    let nextId = initialTodos.length + 1
-    const todos: TodoStore = Object.assign(store, {
-      add: (todo: Todo) => store.setState((items) => [...items, todo]),
-      update: (id: string, patch: Partial<Omit<Todo, 'id'>>) =>
-        store.setState((items) =>
-          items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-        ),
-      remove: (id: string) =>
-        store.setState((items) => items.filter((item) => item.id !== id)),
-    })
-    instance.provide(todosKey, todos)
-    instance.defineAction(listSortAction, ({ items }) =>
-      [...items].sort((left, right) => left.title.localeCompare(right.title)),
-    )
-    instance.defineAction(itemValidateAction, () => undefined)
-    instance.defineAction(itemCreateAction, (input) => {
+/** Make the ordinary todo store; deployed actions still run on the server. */
+export function createTodoStore(): TodoStore {
+  const store = new Store<Array<Todo>>(
+    initialTodos.map((todo) => ({ ...todo })),
+  )
+  let nextId = initialTodos.length + 1
+  return Object.assign(store, {
+    add: (todo: Todo) => store.setState((items) => [...items, todo]),
+    update: (id: string, patch: Partial<Omit<Todo, 'id'>>) =>
+      store.setState((items) =>
+        items.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      ),
+    remove: (id: string) =>
+      store.setState((items) => items.filter((item) => item.id !== id)),
+    next(input: { title: string; due?: string }): Todo {
       const todo: Todo = {
         id: `todo-${nextId}`,
         title: input.title,
@@ -456,6 +466,26 @@ export const todoPlugin = createPlugin({
         done: false,
       }
       nextId += 1
+      return todo
+    },
+  }) as TodoStore & { next: (input: { title: string; due?: string }) => Todo }
+}
+
+/** The trusted todo plugin holding state and the default action handlers. */
+export const todoPlugin = createPlugin({
+  name: 'todo',
+  provides: [todosKey],
+  setup(instance) {
+    const todos = createTodoStore() as TodoStore & {
+      next: (input: { title: string; due?: string }) => Todo
+    }
+    instance.provide(todosKey, todos)
+    instance.defineAction(listSortAction, ({ items }) =>
+      [...items].sort((left, right) => left.title.localeCompare(right.title)),
+    )
+    instance.defineAction(itemValidateAction, () => undefined)
+    instance.defineAction(itemCreateAction, (input) => {
+      const todo = todos.next(input)
       todos.add(todo)
       return todo
     })

@@ -6,14 +6,17 @@ export const forgesInstanceIdFixture: HostileFixture = {
   label: 'Forges instance id',
   expected:
     'Claimed “table”; stubCallAction observed “forges-instance-id” from the closure.',
+  call: 'observation',
   source: `
+let observed: { claimedInstanceId: string; actualInstanceId: string }
 const setup: Setup = async ({ stubs }) => {
-  await stubs.data({
+  observed = await stubs.data({
     operation: 'rows',
     claimedInstanceId: 'table',
   })
 }
 export default setup
+export function observation() { return observed }
 `.trim(),
   stubs: [dataStub],
 }

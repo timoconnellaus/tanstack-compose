@@ -1,5 +1,3 @@
-import { createClient } from '@tanstack/compose'
-import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import { slotsPlugin, viewsPlugin } from '@tanstack/react-compose'
 import {
   actionsStub,
@@ -13,7 +11,7 @@ import {
   todoActions,
   todoPlugin,
 } from './base'
-import type { AnyStubGrant, Client, PluginEntry } from '@tanstack/compose'
+import type { AnyStubGrant, PluginEntry } from '@tanstack/compose'
 
 /**
  * One showcase app: an individual setup with its own client, its own trusted
@@ -70,10 +68,9 @@ export const hostileApp: ShowcaseApp = {
   viewSlots: [tableActions.name, ...frameSlots],
 }
 
-/** A fresh, real client for one app — used by the browser and by the tests. */
-export function createAppClient(app: ShowcaseApp): Client {
-  return createClient({
-    checker: createTypeScriptChecker(),
-    plugins: [...app.plugins],
-  })
+/** Resolve the app id persisted beside one tenant's client. */
+export function appById(id: string): ShowcaseApp {
+  const app = [tableApp, todoApp, hostileApp].find((one) => one.id === id)
+  if (!app) throw new Error(`showcase: unknown app "${id}"`)
+  return app
 }

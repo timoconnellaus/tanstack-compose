@@ -6,6 +6,11 @@ const source = (name: string): string =>
     new URL(`../../../packages/${name}/src/index.ts`, import.meta.url),
   )
 
+const moduleSource = (name: string, module: string): string =>
+  fileURLToPath(
+    new URL(`../../../packages/${name}/src/${module}.ts`, import.meta.url),
+  )
+
 /**
  * The workspace packages export their `dist`, which a package build removes and
  * recreates and which is stale until one runs. Resolving them from source keeps
@@ -13,7 +18,13 @@ const source = (name: string): string =>
  * Shared by the Vite and Vitest configs so the two never disagree.
  */
 export const workspaceSourceAlias: Record<string, string> = {
+  '@tanstack/react-compose/view-runtime': moduleSource(
+    'react-compose',
+    'view-runtime',
+  ),
+  '@tanstack/compose-cloudflare': source('compose-cloudflare'),
   '@tanstack/compose-typescript': source('compose-typescript'),
   '@tanstack/react-compose': source('react-compose'),
+  '@tanstack/start-compose': source('start-compose'),
   '@tanstack/compose': source('compose'),
 }

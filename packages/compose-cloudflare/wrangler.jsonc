@@ -4,6 +4,10 @@
   "main": "./dev/worker.ts",
   "compatibility_date": "2026-05-01",
   "worker_loaders": [{ "binding": "LOADER" }],
+  "durable_objects": {
+    "bindings": [{ "name": "FACET_TEST", "class_name": "FacetTestObject" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["FacetTestObject"] }],
   // A var the credentials suite reads by name, standing in for a secret. A
   // real deployment binds a secret, which reaches `env` the same way.
   "vars": { "MODEL_CREDENTIAL": "binding-value" },

@@ -18,7 +18,9 @@ export {
 export {
   createStub,
   inProcessHost,
+  scheduleStub,
   sourceErrorOf,
+  storageStub,
   stubCallAction,
   stubDeclarations,
 } from './host'

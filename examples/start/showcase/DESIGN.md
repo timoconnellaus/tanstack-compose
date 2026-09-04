@@ -1,6 +1,6 @@
-# Showcase S1 — design
+# Showcase S1 and S2 — design
 
-This is slice 6 and implements pages 1–3 of
+This is slices 6–7 and implements pages 1–3 of
 [`docs/acceptance/examples.md`](../../../docs/acceptance/examples.md). The
 product shell and pages are ordinary React code. Only the explicitly declared
 actions, slots, context keys and grants are changeable by plugin source
@@ -24,12 +24,25 @@ The browser keeps one client per app for the session (`src/browser-clients.ts`),
 so navigating away and back neither restarts an app nor lets one app see
 another's entries. Tests start an app's client with the same factory.
 
-Every route has `ssr: false`; server clients, following and server-rendered
-fills are slice 7. Every app starts `slotsPlugin` and `viewsPlugin`; the table
-and hostile apps add `tablePlugin`, the todo app adds `todoPlugin`. The hostile
-app runs `tablePlugin` as the trusted sibling that must stay `active` whatever a
-hostile source does. React components declare the slots they render while
-mounted. They are not plugins.
+Production routes are SSR. An anonymous cookie supplies `tenantId`, and each
+route resolves exactly one Durable Object with
+`idFromName(`${tenantId}:${app.id}`)`. That object owns one server client built
+from only that app's base entries. The panel therefore still shows the current
+app's list, never a list multiplexed across pages.
+
+The root/page loader fetches a whole snapshot. `ComposeStart` seeds the server
+render and the hydration render from it, then follows the object's WebSocket.
+All panel, fixture, remove, enable, disable, and paste operations are serialized
+edits to the DO. The production browser has a follower with no host and runs no
+plugin source. Vite selects `browser-pages.browser.tsx` only in
+`dev:browser`; production resolves a placeholder module instead, keeping S1's
+in-process client out of the deployed graph while retaining the jsdom oracle.
+
+Every app's server client starts `slotsPlugin` and `viewsPlugin`; the table and
+hostile objects add `tablePlugin`, and the todo object adds `todoPlugin`. An
+explicit app slot allow-list lets hosted view modules fill the headless server
+registry before a React page is mounted. React components declare the same
+slots in browser-only mode. They are not plugins.
 
 ## Hosted pairs and grants
 
@@ -64,7 +77,10 @@ are called across the same instance's host boundary.
 - Hostile adds one source at a time and reports the real instance status and
   error. Its last-good list is page-local state and is updated only when the
   enabled entry ids and active instance ids agree exactly. Persisted
-  generations belong to slice 9.
+  generations belong to slice 9. The forged-id fixture asks `data` for an
+  identity observation; the grant returns the caller id from its host-attached
+  closure beside the claimed id, so the deployed follower shows a measured
+  result rather than inventing one in browser code.
 
 ## Honest S1 host limits
 
@@ -83,17 +99,55 @@ globals, impose CPU or transfer budgets, or interrupt code. Therefore:
 
 No timeout, size limit or isolation claim is simulated in application code.
 
+## S2 host and Worker shape
+
+`wrangler.jsonc` binds `LOADER` with `worker_loaders` and a SQLite-backed
+`TENANT` Durable Object. The generated Start server entry re-exports both
+`ShowcaseTenant` and `ComposeStubLoopback`. The tenant builds its client with
+`createTypeScriptChecker()` and `createFacetHost({ ctx, loader })`; each source
+entry, including every view module, is the facet named by its entry id.
+
+The facet's own storage implements `storage`, and its alarm implements
+`schedule`; ordinary grants are the only values in its Dynamic Worker `env`.
+A restart aborts the facet and retains state. Removing the entry stops it and
+then deletes the facet and its storage. The loopback refuses JSON-encoded input
+or output above 1 MiB.
+
+The deployed hostile gallery enables the two S1-only-disabled fixtures.
+`reaches-outside` attempts an ungranted fetch while the host has
+`globalOutbound: null` and no tenant bindings in `env`. `spins` is a true busy
+loop; the showcase gives the platform a 1000 ms CPU ceiling and the supervisor
+a 250 ms wall clock, so the named wall-clock limit wins and aborts only that
+facet. `oversized-payload` sends the same 50 MiB input and is refused by the
+1 MiB loopback limit. Siblings remain ordinary active entries.
+
+Server/view pairs are persisted as catalog names or source plus options,
+enabled state, host, and grant names. Snapshot entries disclose catalog names
+but replace source with `{ written: true }`. Generation and the list survive DO
+eviction; version history and last-known-good persistence remain slice 9.
+
+Product errors cross separately from host diagnostics. Base action middleware,
+the view `server` grant, and DO `press()` return the written handler's message
+to alerts/download behavior and retain the diagnostic wrapper on `cause`. The
+hostile status panel is an operator surface and may show the host diagnostic.
+
 ## Decisions where the criteria are silent
 
 - The demo table data and initial todos are deterministic literals so tests and
   screenshots have stable ordering.
 - Due-date ordering puts dated items first, ascending, and items without a due
   date last; ties keep title order.
-- The panel merges the plugin list with `client.instances`, keeping disabled
+- The panel merges the current app's list with `client.instances`, keeping disabled
   entries visible so they can be enabled again.
 - A source/view id already present is replaced as one list edit. Fixture page
   buttons are disabled while their id is present, preventing accidental
   duplicate ids.
+- Deployed edits write the two halves sequentially. Each individual list is
+  durable and valid; the whole-snapshot follower may briefly observe the server
+  half before its view, which renders no partial fill.
+- Production externalizes `cloudflare:workers` from the Start server build; it
+  is provided by workerd at runtime. The source-level workspace aliases keep
+  local packages independent of stale `dist` output.
 
 ## Why no module is named `src/client.ts`
 
@@ -101,4 +155,14 @@ TanStack Start reads `src/client.tsx` (or `.ts`) as the application's custom
 **client entry** — the module that hydrates the router. A compose client module
 under that name is imported by Start's dev entry in place of hydration, and the
 page never leaves its "Starting…" fallback. The browser clients therefore live in
-`src/browser-clients.ts`, and Start uses its default entry.
+`src/browser-clients.ts`, and Start uses its default entry. Production reaches
+that module only through the Vite alias selected by `--mode browser`.
+
+## Tests
+
+The original jsdom page suites still start fresh browser-only clients and cover
+pages 1–3. `tests/hydration.test.tsx` renders the real Table frame with 30 rows
+and an export fill to a string, hydrates the same snapshot, and compares the DOM
+byte for byte. `tests-workerd/deployed.test.ts` addresses the tenant DO directly:
+snapshot, add both export facets, observe the fill, press it for CSV, remove both
+entries, then prove the fill and callable facet are gone.

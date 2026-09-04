@@ -36,6 +36,8 @@ export interface HostInstance {
   call: (name: string, input: unknown) => Promise<unknown>
   /** Stop the instance; resolves only once the host has released it. */
   stop: () => Promise<void>
+  /** Permanently delete state the host kept for this entry, if it has any. */
+  destroy?: () => Promise<void>
 }
 
 /** What a stub handler is given when a hosted plugin calls it. */
@@ -115,6 +117,33 @@ export function createStub<TInput = unknown, TOutput = unknown>(definition: {
     handler: definition.handler,
   }
 }
+
+const localOnly = () => {
+  throw new Error('host required')
+}
+
+/** Persistent key-value storage supplied by the in-process and facet hosts. */
+export const storageStub: StubGrant = createStub({
+  name: 'storage',
+  declarations: `declare const storage: {
+  get<T=unknown>(key: string): Promise<T | undefined>
+  set(key: string, value: unknown): Promise<void>
+  delete(key: string): Promise<boolean>
+  list<T=unknown>(prefix?: string): Promise<Record<string, T>>
+}`,
+  handler: localOnly,
+})
+
+/** A single durable alarm supplied by the in-process and facet hosts. */
+export const scheduleStub: StubGrant = createStub({
+  name: 'schedule',
+  declarations: `declare const schedule: {
+  every(ms: number, handler: string): Promise<void>
+  at(when: number | Date, handler: string): Promise<void>
+  cancel(): Promise<void>
+}`,
+  handler: localOnly,
+})
 
 /**
  * The declarations an entry's plugin source is checked against and its author
@@ -320,6 +349,46 @@ function transfer(value: unknown, what: string): unknown {
   }
 }
 
+interface LocalAlarm {
+  at: number
+  every?: number
+  handler: string
+}
+
+interface LocalState {
+  values: Map<string, unknown>
+  alarm?: LocalAlarm
+  timer?: ReturnType<typeof setTimeout>
+  call?: (name: string, input: unknown) => Promise<unknown>
+}
+
+const localStates = new Map<string, LocalState>()
+
+const armAlarm = (state: LocalState): void => {
+  clearTimeout(state.timer)
+  if (!state.alarm || !state.call) return
+  state.timer = setTimeout(
+    () => {
+      const alarm = state.alarm
+      if (!alarm) return
+      if (alarm.every === undefined) delete state.alarm
+      else alarm.at = Date.now() + alarm.every
+      void state.call?.(alarm.handler, { scheduledAt: Date.now() }).then(
+        () => armAlarm(state),
+        () => armAlarm(state),
+      )
+    },
+    Math.max(0, state.alarm.at - Date.now()),
+  )
+}
+
+const keyOf = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    throw new Error('@tanstack/compose: storage key must be a string')
+  }
+  return value
+}
+
 /**
  * The in-process host: it ships in core, runs plugin source in the client's own
  * process, and presents it with the same interface a remote host does — stubs
@@ -335,8 +404,9 @@ export const inProcessHost: Host = {
   name: 'in-process',
   async start(request: HostStartRequest): Promise<HostInstance> {
     let stopped = false
-    const stubs: Record<string, (input: unknown) => Promise<unknown>> = {}
+    const stubs: Record<string, unknown> = {}
     for (const [name, stub] of Object.entries(request.stubs)) {
+      if (name === storageStub.name || name === scheduleStub.name) continue
       stubs[name] = async (input: unknown) => {
         if (stopped) {
           throw new Error(
@@ -346,6 +416,37 @@ export const inProcessHost: Host = {
         const result = await stub(transfer(input, `stub "${name}" input`))
         return transfer(result, `stub "${name}" result`)
       }
+    }
+
+    const stateful =
+      storageStub.name in request.stubs || scheduleStub.name in request.stubs
+    const fresh = stateful && !localStates.has(request.instanceId)
+    const state: LocalState | undefined = stateful
+      ? (localStates.get(request.instanceId) ?? {
+          values: new Map<string, unknown>(),
+        })
+      : undefined
+    if (state) localStates.set(request.instanceId, state)
+
+    if (storageStub.name in request.stubs) {
+      stubs.storage = Object.freeze({
+        get: async (key: unknown) =>
+          transfer(state!.values.get(keyOf(key)), 'storage result'),
+        set: async (key: unknown, value: unknown) => {
+          state!.values.set(keyOf(key), transfer(value, 'storage value'))
+        },
+        delete: async (key: unknown) => state!.values.delete(keyOf(key)),
+        list: async (prefix: unknown = '') => {
+          const start = keyOf(prefix)
+          const values: Record<string, unknown> = {}
+          for (const [key, value] of state!.values) {
+            if (key.startsWith(start)) {
+              values[key] = transfer(value, 'storage result')
+            }
+          }
+          return values
+        },
+      })
     }
 
     let namespace: Record<string, unknown>
@@ -375,6 +476,44 @@ export const inProcessHost: Host = {
       )
     }
 
+    if (scheduleStub.name in request.stubs) {
+      const schedule = async (
+        at: number,
+        handler: unknown,
+        every?: number,
+      ): Promise<void> => {
+        if (
+          !Number.isFinite(at) ||
+          typeof handler !== 'string' ||
+          handler === ''
+        ) {
+          throw new Error(
+            '@tanstack/compose: schedule needs a time and named export',
+          )
+        }
+        state!.alarm = {
+          at,
+          handler,
+          ...(every === undefined ? {} : { every }),
+        }
+        armAlarm(state!)
+      }
+      stubs.schedule = Object.freeze({
+        every: async (ms: number, handler: unknown) => {
+          if (!Number.isFinite(ms) || ms <= 0) {
+            throw new Error('@tanstack/compose: interval must be >0')
+          }
+          await schedule(Date.now() + ms, handler, ms)
+        },
+        at: async (when: number | Date, handler: unknown) =>
+          schedule(typeof when === 'number' ? when : when.getTime(), handler),
+        cancel: async () => {
+          delete state!.alarm
+          clearTimeout(state!.timer)
+        },
+      })
+    }
+
     let moduleCleanup: Cleanup | undefined
     try {
       const result: unknown = await (
@@ -386,10 +525,22 @@ export const inProcessHost: Host = {
       })
       if (typeof result === 'function') moduleCleanup = result as Cleanup
     } catch (error) {
+      if (fresh) localStates.delete(request.instanceId)
       throw sourceError('setup', error, locationOf(error))
     }
 
-    return {
+    if (state) {
+      state.call = async (name, input) => {
+        const handler = namespace[name]
+        if (typeof handler !== 'function') {
+          throw new Error(`plugin source has no export named "${name}"`)
+        }
+        return await (handler as (value: unknown) => unknown)(input)
+      }
+      armAlarm(state)
+    }
+
+    const hosted: HostInstance = {
       async call(name: string, input: unknown): Promise<unknown> {
         if (stopped) {
           throw new Error(
@@ -415,8 +566,21 @@ export const inProcessHost: Host = {
       async stop(): Promise<void> {
         if (stopped) return
         stopped = true
+        if (state) {
+          state.call = undefined
+          clearTimeout(state.timer)
+        }
         await moduleCleanup?.()
       },
     }
+    if (state) {
+      hosted.destroy = async () => {
+        clearTimeout(state.timer)
+        if (localStates.get(request.instanceId) === state) {
+          localStates.delete(request.instanceId)
+        }
+      }
+    }
+    return hosted
   },
 }

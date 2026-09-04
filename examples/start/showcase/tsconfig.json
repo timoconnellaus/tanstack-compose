@@ -4,8 +4,15 @@
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
     "module": "ESNext",
     "skipLibCheck": true,
-    "types": ["vite/client"],
+    "types": [
+      "vite/client",
+      "@cloudflare/workers-types/experimental",
+      "@cloudflare/vitest-pool-workers/types"
+    ],
     "moduleResolution": "Bundler",
+    "paths": {
+      "#showcase-browser-pages": ["./src/app/browser-pages.production.tsx"]
+    },
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -16,5 +23,12 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "tests", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "tests-workerd",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "vitest.workerd.config.ts"
+  ]
 }

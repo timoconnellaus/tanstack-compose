@@ -36,6 +36,7 @@ import {
 } from '../src/index'
 
 export { ComposeStubLoopback } from '../src/index'
+export { FacetTestObject } from './facet-test-object'
 
 /** What the plugin the agent would have written looks like. */
 const source = `

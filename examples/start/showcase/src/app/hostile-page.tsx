@@ -2,8 +2,7 @@ import { stubCallAction } from '@tanstack/compose'
 import { useClient, useInstances, usePluginList } from '@tanstack/react-compose'
 import { useEffect, useState } from 'react'
 import { hostileFixtures } from '../fixtures'
-import { addWritten } from '../written'
-import { useApp } from './app-frame'
+import { useAppOperations } from './app-frame'
 import type { PluginEntry } from '@tanstack/compose'
 import type { HostileFixture } from '../fixtures'
 import type { ReactNode } from 'react'
@@ -16,7 +15,7 @@ const messageOf = (error: unknown): string =>
 /** Page 3: show exactly what the in-process host does and does not enforce. */
 export function HostilePage(): ReactNode {
   const client = useClient()
-  const app = useApp()
+  const operations = useAppOperations()
   const entries = usePluginList()
   const instances = useInstances()
   const [lastGood, setLastGood] = useState<Array<PluginEntry>>(
@@ -24,6 +23,9 @@ export function HostilePage(): ReactNode {
   )
   const [observed, setObserved] = useState<ReadonlyMap<string, string>>(
     new Map(),
+  )
+  const [lastGoodIds, setLastGoodIds] = useState<ReadonlySet<string>>(
+    new Set(client.pluginList.state.map((entry) => entry.id)),
   )
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export function HostilePage(): ReactNode {
       )
     ) {
       setLastGood(entries)
+      setLastGoodIds(new Set(entries.map((entry) => entry.id)))
     }
   }, [entries, instances])
 
@@ -55,24 +58,32 @@ export function HostilePage(): ReactNode {
       return next(input)
     })
     try {
-      await addWritten(client, fixture, app)
+      await operations.add(fixture)
+      let result: unknown
       if (fixture.call !== undefined) {
         try {
-          await client.callSource(fixture.id, fixture.call)
+          result = await client.callSource(fixture.id, fixture.call)
         } catch {
           // The instance status and attached SourceError are the proof.
         }
       }
       if (fixture.id === 'forges-instance-id') {
+        const identity = result as
+          { claimedInstanceId?: string; actualInstanceId?: string } | undefined
         setObserved((current) =>
           new Map(current).set(
             fixture.id,
-            `Claimed “${claimedId}”; stubCallAction observed “${actualId}” from the closure.`,
+            `Claimed “${identity?.claimedInstanceId ?? claimedId ?? 'unseen'}”; stubCallAction observed “${identity?.actualInstanceId ?? actualId ?? 'unseen'}” from the closure.`,
           ),
         )
       } else if (fixture.id === 'oversized-payload') {
         setObserved((current) =>
-          new Map(current).set(fixture.id, fixture.expected),
+          new Map(current).set(
+            fixture.id,
+            operations.deployed
+              ? (fixture.deployedExpected ?? fixture.expected)
+              : fixture.expected,
+          ),
         )
       }
     } finally {
@@ -88,14 +99,15 @@ export function HostilePage(): ReactNode {
         <div>
           <p className="eyebrow">Page 3 · fail closed</p>
           <h2>Hostile gallery</h2>
-          <p>
-            These are real source entries. S1 reports the in-process host's
-            limits without simulating isolation.
-          </p>
+          <p>These are real source entries running beside the server client.</p>
         </div>
         <button
           type="button"
-          onClick={() => void client.setPluginList(lastGood)}
+          onClick={() =>
+            void (operations.deployed
+              ? operations.revert(lastGoodIds)
+              : client.setPluginList(lastGood))
+          }
         >
           Revert to last good
         </button>
@@ -108,13 +120,19 @@ export function HostilePage(): ReactNode {
           return (
             <article data-testid={`hostile-${fixture.id}`} key={fixture.id}>
               <h3>{fixture.label}</h3>
-              <p>{fixture.expected}</p>
+              <p>
+                {operations.deployed
+                  ? (fixture.deployedExpected ?? fixture.expected)
+                  : fixture.expected}
+              </p>
               <button
                 type="button"
-                disabled={fixture.disabled === true || present}
+                disabled={
+                  (fixture.disabled === true && !operations.deployed) || present
+                }
                 onClick={() => void add(fixture)}
               >
-                {fixture.disabled
+                {fixture.disabled && !operations.deployed
                   ? 'Requires isolating host'
                   : `Run: ${fixture.label}`}
               </button>

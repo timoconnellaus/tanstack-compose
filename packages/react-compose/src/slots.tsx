@@ -97,6 +97,8 @@ export interface Fill<TProps = any> {
   readonly key?: string
   /** The component rendered with the slot's props. */
   readonly render: ComponentType<TProps>
+  /** Plain data retained when this fill came from a hosted view. */
+  readonly serialized?: { instanceId: string; view: unknown }
 }
 
 /** What `fill` is given: an optional order, a key for a keyed slot, a renderer. */
@@ -106,7 +108,9 @@ export type FillInput<
 > = {
   order?: number
   render: ComponentType<TProps>
-} & (TCardinality extends 'keyed' ? { key: string } : { key?: string })
+} & (TCardinality extends 'keyed' ? { key: string } : { key?: string }) & {
+    serialized?: { instanceId: string; view: unknown }
+  }
 
 /** The registry's observable state: the fills per slot, and the slots declared. */
 export interface SlotsState {
@@ -210,6 +214,7 @@ export function createSlotRegistry(): SlotRegistry {
         order: input.order ?? 0,
         key: input.key,
         render: input.render as ComponentType<any>,
+        serialized: input.serialized,
       }
       remember(slot)
       // Only this slot's array changes identity, so a renderer of another slot

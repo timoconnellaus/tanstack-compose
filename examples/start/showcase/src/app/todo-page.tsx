@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-compose'
 import { useEffect, useMemo, useState } from 'react'
 import {
+  createTodoStore,
   itemCreateAction,
   itemValidateAction,
   listSortAction,
@@ -15,8 +16,7 @@ import {
   todosKey,
 } from '../base'
 import { requireTitleFixture, sortByDueFixture } from '../fixtures'
-import { addWritten } from '../written'
-import { useApp } from './app-frame'
+import { useAppOperations } from './app-frame'
 import { useDeclareSlots } from './slots'
 import type { Todo } from '../base'
 import type { ReactNode } from 'react'
@@ -29,8 +29,10 @@ const messageOf = (error: unknown): string =>
 /** Page 2: wrap base actions without changing the page or base handlers. */
 export function TodoPage(): ReactNode {
   const client = useClient()
-  const app = useApp()
-  const todos = useContextKey(todosKey, { suspend: true })
+  const operations = useAppOperations()
+  const remoteTodos = useContextKey(todosKey)
+  const localTodos = useMemo(() => createTodoStore(), [])
+  const todos = remoteTodos ?? localTodos
   const items = useStore(todos)
   const instances = useInstances()
   const entries = usePluginList()
@@ -53,13 +55,10 @@ export function TodoPage(): ReactNode {
 
   const addFixture = async (
     fixture: typeof sortByDueFixture | typeof requireTitleFixture,
-    warm: string,
-    input: unknown,
   ): Promise<void> => {
     setProblem(undefined)
     try {
-      await addWritten(client, fixture, app)
-      await client.callSource(fixture.id, warm, input)
+      await operations.add(fixture)
     } catch (error) {
       setProblem(messageOf(error))
     }
@@ -77,7 +76,7 @@ export function TodoPage(): ReactNode {
           <button
             type="button"
             disabled={entries.some((entry) => entry.id === sortByDueFixture.id)}
-            onClick={() => void addFixture(sortByDueFixture, 'byDue', [])}
+            onClick={() => void addFixture(sortByDueFixture)}
           >
             Add: sort by due date
           </button>
@@ -86,11 +85,7 @@ export function TodoPage(): ReactNode {
             disabled={entries.some(
               (entry) => entry.id === requireTitleFixture.id,
             )}
-            onClick={() =>
-              void addFixture(requireTitleFixture, 'requireTitle', {
-                title: 'warm middleware',
-              })
-            }
+            onClick={() => void addFixture(requireTitleFixture)}
           >
             Add: block empty titles
           </button>
@@ -110,7 +105,8 @@ export function TodoPage(): ReactNode {
             const input = { title, ...(due === '' ? {} : { due }) }
             try {
               await client.dispatch(itemValidateAction, input)
-              await client.dispatch(itemCreateAction, input)
+              const created = await client.dispatch(itemCreateAction, input)
+              if (!remoteTodos) localTodos.add(created)
               setTitle('')
               setDue('')
             } catch (error) {

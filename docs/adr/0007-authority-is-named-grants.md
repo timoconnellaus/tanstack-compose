@@ -19,4 +19,10 @@ We rejected passing platform bindings into the plugin's environment (ambient aut
 - Each grant is one `createStub` with `.d.ts` text and a client-side handler; on Cloudflare the handler wraps a binding behind a `WorkerEntrypoint` whose `props` carry the instance id, which is the platform's own documented pattern.
 - The declarations a plugin is checked against are exactly the grants it holds, so a plugin cannot name a capability it was not given.
 - `storage` is the reason a rewrite can replace code without losing what the plugin remembered; the composer's rewrite runs the previous code's cleanups but does not touch storage.
-- On Cloudflare a server half is mounted as a Durable Object **facet** of the tenant.s object (see `docs/research/cloudflare-os-gadgets.md`): `storage` and `schedule` are the facet.s own storage and alarm, implemented in the host.s wrapper module, so the written plugin.s API is the same in every host. A rewrite remounts code over the same storage; removal deletes the facet. The host contract therefore distinguishes `stop` (release the code, keep the state) from `destroy` (remove both).
+- On Cloudflare a server half is mounted as a Durable Object **facet** of the tenant's object (see `docs/research/cloudflare-os-gadgets.md`): `storage` and `schedule` are the facet's own storage and alarm, implemented in the host's wrapper module, so the written plugin's API is the same in every host. A rewrite remounts code over the same storage; removal deletes the facet. The host contract therefore distinguishes `stop` (release the code, keep the state) from `destroy` (remove both).
+- Host diagnostics are not product messages. When a written handler rejects,
+  the product surface receives that handler's own message. A host prefix such
+  as `@tanstack/compose: call failed —` remains on `error.cause` for operators;
+  grants that call back into source (`server`, action middleware, and the
+  host-local `storage`/`schedule` path) and the tenant DO's `press()` preserve
+  this split.

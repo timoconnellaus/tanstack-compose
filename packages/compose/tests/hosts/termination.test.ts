@@ -7,6 +7,7 @@ import {
   inProcessHost,
   stubCallAction,
 } from '../../src/index'
+import type { Host } from '../../src/index'
 
 const seenKey = createContextKey<Array<string>>('seen')
 
@@ -48,6 +49,74 @@ interface Stashed {
 const stash = (): Stashed => globalThis as unknown as Stashed
 
 describe('stopping a hosted instance', () => {
+  it('stops but does not destroy a host when an entry restarts', async () => {
+    const calls: Array<string> = []
+    const host: Host = {
+      name: 'stateful',
+      start: ({ options }) => {
+        calls.push(`start:${String(options)}`)
+        return Promise.resolve({
+          call: () => Promise.resolve(undefined),
+          stop: () => {
+            calls.push('stop')
+            return Promise.resolve()
+          },
+          destroy: () => {
+            calls.push('destroy')
+            return Promise.resolve()
+          },
+        })
+      },
+    }
+    const client = createClient({
+      hosts: { stateful: host },
+      plugins: [
+        {
+          id: 'a',
+          source: 'export default function () {}',
+          host: 'stateful',
+          options: 'one',
+        },
+      ],
+    })
+    await client.settled()
+
+    await client.setOptions('a', 'two')
+
+    expect(calls).toEqual(['start:one', 'stop', 'start:two'])
+    await client.destroy()
+  })
+
+  it('stops then destroys a stateful host when the entry is removed', async () => {
+    const calls: Array<string> = []
+    const host: Host = {
+      name: 'stateful',
+      start: () =>
+        Promise.resolve({
+          call: () => Promise.resolve(undefined),
+          stop: () => {
+            calls.push('stop')
+            return Promise.resolve()
+          },
+          destroy: () => {
+            calls.push('destroy')
+            return Promise.resolve()
+          },
+        }),
+    }
+    const client = createClient({
+      hosts: { stateful: host },
+      plugins: [
+        { id: 'a', source: 'export default function () {}', host: 'stateful' },
+      ],
+    })
+    await client.settled()
+
+    await client.removePlugin('a')
+
+    expect(calls).toEqual(['stop', 'destroy'])
+  })
+
   it('stops between two calls, so calls after it fail and the code is released', async () => {
     stash().stashedStubs = undefined
     stash().stashedCleanup = undefined

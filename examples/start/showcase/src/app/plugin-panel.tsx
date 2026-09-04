@@ -1,7 +1,7 @@
-import { useClient, useInstances, usePluginList } from '@tanstack/react-compose'
+import { useInstances, usePluginList } from '@tanstack/react-compose'
 import { useMemo, useState } from 'react'
-import { addWritten, removeWritten, selectedStubs } from '../written'
-import { useApp } from './app-frame'
+import { selectedStubs } from '../written'
+import { useApp, useAppOperations } from './app-frame'
 import type { ReactNode } from 'react'
 
 const messageOf = (error: unknown): string =>
@@ -11,8 +11,8 @@ const messageOf = (error: unknown): string =>
 
 /** The shell panel for inspecting and editing the running plugin list. */
 export function PluginPanel(): ReactNode {
-  const client = useClient()
   const app = useApp()
+  const operations = useAppOperations()
   const entries = usePluginList()
   const instances = useInstances()
   const snapshots = useMemo(
@@ -70,7 +70,7 @@ export function PluginPanel(): ReactNode {
                   type="button"
                   disabled={enabled}
                   onClick={() =>
-                    void run(() => client.setEnabled(entry.id, true))
+                    void run(() => operations.setEnabled(entry.id, true))
                   }
                 >
                   Enable
@@ -79,16 +79,14 @@ export function PluginPanel(): ReactNode {
                   type="button"
                   disabled={!enabled}
                   onClick={() =>
-                    void run(() => client.setEnabled(entry.id, false))
+                    void run(() => operations.setEnabled(entry.id, false))
                   }
                 >
                   Disable
                 </button>
                 <button
                   type="button"
-                  onClick={() =>
-                    void run(() => removeWritten(client, entry.id))
-                  }
+                  onClick={() => void run(() => operations.remove(entry.id))}
                 >
                   Remove
                 </button>
@@ -105,16 +103,12 @@ export function PluginPanel(): ReactNode {
           void run(async () => {
             if (id.trim() === '') throw new Error('an id is required')
             if (source.trim() === '') throw new Error('source is required')
-            await addWritten(
-              client,
-              {
-                id: id.trim(),
-                source,
-                ...(view.trim() === '' ? {} : { view }),
-                stubs: selectedStubs(grants, app.grants),
-              },
-              app,
-            )
+            await operations.add({
+              id: id.trim(),
+              source,
+              ...(view.trim() === '' ? {} : { view }),
+              stubs: selectedStubs(grants, app.grants),
+            })
           })
         }}
       >

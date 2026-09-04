@@ -1,14 +1,8 @@
-import {
-  Slot,
-  useClient,
-  useContextKey,
-  usePluginList,
-} from '@tanstack/react-compose'
+import { Slot, useContextKey, usePluginList } from '@tanstack/react-compose'
 import { useMemo, useState } from 'react'
-import { tableActions, tableKey } from '../base'
+import { demoRows, tableActions, tableKey } from '../base'
 import { exportCsvFixture } from '../fixtures'
-import { addWritten } from '../written'
-import { useApp } from './app-frame'
+import { useAppOperations } from './app-frame'
 import { useDeclareSlots } from './slots'
 import type { ReactNode } from 'react'
 
@@ -19,8 +13,7 @@ const messageOf = (error: unknown): string =>
 
 /** Page 1: add a server half and a view that fills the table toolbar. */
 export function TablePage(): ReactNode {
-  const client = useClient()
-  const app = useApp()
+  const operations = useAppOperations()
   const table = useContextKey(tableKey)
   const entries = usePluginList()
   const declared = useMemo(() => [tableActions], [])
@@ -28,30 +21,30 @@ export function TablePage(): ReactNode {
   const [problem, setProblem] = useState<string>()
   const present = entries.some((entry) => entry.id === exportCsvFixture.id)
 
-  if (!table) return <p>Starting table…</p>
+  const rows = table?.rows ?? demoRows
   return (
     <section className="page" data-testid="table-page">
       <div className="page-heading">
         <div>
           <p className="eyebrow">Page 1 · add UI</p>
           <h2>Invoices</h2>
-          <p>{table.rows.length} fixed rows from ordinary base code.</p>
+          <p>{rows.length} fixed rows from ordinary base code.</p>
         </div>
         <button
           type="button"
           disabled={present}
           onClick={() => {
             setProblem(undefined)
-            void addWritten(client, exportCsvFixture, app).catch((error) =>
-              setProblem(messageOf(error)),
-            )
+            void operations
+              .add(exportCsvFixture)
+              .catch((error) => setProblem(messageOf(error)))
           }}
         >
           Add: export to CSV
         </button>
       </div>
       <div className="slot-toolbar" aria-label="Table actions">
-        <Slot of={tableActions} props={{ rows: table.rows }} />
+        <Slot of={tableActions} props={{ rows }} />
       </div>
       {problem === undefined ? null : <p className="error">{problem}</p>}
       <div className="table-wrap">
@@ -66,7 +59,7 @@ export function TablePage(): ReactNode {
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row) => (
+            {rows.map((row) => (
               <tr data-testid="table-row" key={row.id}>
                 <td>{row.id}</td>
                 <td>{row.name}</td>

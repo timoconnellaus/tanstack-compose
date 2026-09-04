@@ -144,11 +144,13 @@ nothing to it.
 
 ## The view runtime and renderer
 
-A **view** — the part of a plugin that runs in the browser — cannot hand the
-page a renderer, because a function does not cross a **host** boundary. It
-describes what it puts in a **slot** as plain data instead. The declaration
-text, validation, fill ownership, slot narrowing and server-half calls are UI
-concerns and therefore live here, not in the agent layer (ADR-0006).
+A **view module** cannot hand the page a renderer, because a function does not
+cross a **host** boundary. It describes what it puts in a **slot** as plain data
+instead. In a browser-only client the module and renderer happen to share the
+browser; in the served shape the module runs in the server host and only its
+`ViewNode` reaches the browser. The declaration text, validation, fill
+ownership, slot narrowing and server-half calls are UI concerns and therefore
+live here, not in the agent layer (ADR-0006).
 
 `viewsPlugin` publishes the slot registry and React renderer under the two
 framework-neutral context keys the view stubs depend on. `createViewRenderer()`
@@ -163,6 +165,22 @@ type ViewRenderer = (
 const renderer = createViewRenderer()
 const Fill = renderer(tree, callbacks) as ComponentType
 ```
+
+Hosted fills retain optional `{ instanceId, view }` serialization metadata on
+their `Fill` record. Ordinary React fills omit it. `@tanstack/start-compose`
+uses only tagged fills to build a snapshot and reconstructs their callbacks
+from the host-attached instance id.
+
+An explicitly narrowed `createSlotsStub({ slots })` can fill an allowed list
+slot before a page is mounted: if the server registry does not contain that
+name, the allow-list is itself the trusted declaration and the fill declares a
+default list slot. If the page already declared it, its actual cardinality and
+key function win. The unrestricted grant still refuses an undeclared name.
+
+`createServerStub()` derives the paired server id from the view instance id. If
+that server handler rejects, the grant rethrows its source message for the view
+and retains the host diagnostic on `cause`; product errors therefore never
+gain a host-prefix at this hop.
 
 | Node            | Renders as                                                         |
 | --------------- | ------------------------------------------------------------------ |

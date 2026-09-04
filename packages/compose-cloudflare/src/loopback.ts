@@ -26,6 +26,23 @@ export interface StubAnswer {
   message?: string
 }
 
+const maxLoopbackBytes = 1024 * 1024
+const payloadBytes = (value: unknown): number => {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength
+  } catch {
+    return Number.POSITIVE_INFINITY
+  }
+}
+
+const tooLarge = (value: unknown): StubAnswer | undefined =>
+  payloadBytes(value) > maxLoopbackBytes
+    ? {
+        ok: false,
+        message: `stub payload exceeds the ${maxLoopbackBytes}-byte loopback limit`,
+      }
+    : undefined
+
 /**
  * The one entrypoint a hosted plugin can reach: a stub, arriving as a loopback
  * binding in the Dynamic Worker's `env` (ADR-0005). Re-export it from your
@@ -42,6 +59,8 @@ export class ComposeStubLoopback extends WorkerEntrypoint {
    * carry rather than anything the caller supplied.
    */
   async stubCall(input: unknown): Promise<StubAnswer> {
+    const refused = tooLarge(input)
+    if (refused) return refused
     const props = this.ctx.props as StubProps | undefined
     if (!props) {
       return {
@@ -58,7 +77,8 @@ export class ComposeStubLoopback extends WorkerEntrypoint {
       }
     }
     try {
-      return { ok: true, value: await stub(input) }
+      const value = await stub(input)
+      return tooLarge(value) ?? { ok: true, value }
     } catch (error) {
       const message = (error as { message?: unknown } | null)?.message
       return {

@@ -1,8 +1,17 @@
-import { createAppClient } from './apps'
+import { createClient } from '@tanstack/compose'
+import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import type { ShowcaseApp } from './apps'
 import type { Client } from '@tanstack/compose'
 
 const clients = new Map<ShowcaseApp['id'], Client>()
+
+/** A fresh in-process client for S1 tests and `dev:browser` only. */
+export function createAppClient(app: ShowcaseApp): Client {
+  return createClient({
+    checker: createTypeScriptChecker(),
+    plugins: [...app.plugins],
+  })
+}
 
 /**
  * The browser's one client per app, created on first use and kept for the

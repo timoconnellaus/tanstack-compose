@@ -87,15 +87,62 @@ Why this, and not something larger:
   kernel bound for that one instance.
 - Revocation is a delete, which is what makes B3 mean something.
 
-The known consequence is that **a loopback call reaches the client in a
-different I/O context from the request that created it.** Plain JavaScript is
-fine across that line; a stub handler that touches a platform object captured
-from another request's context is not. Everything the kernel and the agent layer
-do in a handler is plain JavaScript. An application whose handlers do I/O of
-their own wants the client in a Durable Object instead, with the DO holding the
-registry — the same table, one I/O context, and no change to anything else here.
-That is the shape to reach for in a real deployment; it is not needed to satisfy
-any criterion in this slice, so it is not built.
+With `createCloudflareHost`, a loopback call reaches the client in a different
+I/O context from the request that created it. Plain JavaScript is fine across
+that line, but a handler must not capture a request-scoped platform object. The
+served shape avoids that restriction: its client and registry live in one
+Durable Object and `createFacetHost` mounts each written instance as that
+object's facet.
+
+## Durable Object facets
+
+`createFacetHost({ ctx, loader, compatibilityDate, ... })` has the same
+`Host` surface and limit options as `createCloudflareHost`. It loads the
+generated facet wrapper as a Dynamic Worker, obtains its Durable Object class
+with `getDurableObjectClass`, and mounts it with:
+
+```ts
+ctx.facets.get(instanceId, () => ({ class: facetClass }))
+```
+
+The facet name is exactly the instance id. The Dynamic Worker cache id still
+contains the content hash, so aborting and starting after an options or source
+change constructs that named facet from the new class while retaining its
+facet storage.
+
+The facet wrapper imports `plugin.js` in its constructor path and calls its
+default export with exactly `{ id, options, stubs }`. Its `env` contains only
+the loopback stubs minted for ordinary grants. `storage` and `schedule` are not
+loopbacks and never appear in `env`:
+
+- `storage` prefixes keys in the facet's `ctx.storage` and implements `get`,
+  `set`, `delete`, and prefix `list` with the Durable Object KV API;
+- `schedule` persists one named alarm descriptor and uses
+  `ctx.storage.setAlarm`; `alarm()` calls that named export, then clears a
+  one-shot descriptor or advances a recurring one.
+
+These operations throw their own capability messages inside the wrapper. If a
+product call ultimately rejects, the source detail retains that message and
+the host diagnostic remains available as the outer `cause` after the Start
+boundary unwraps it.
+
+`HostInstance.stop()` revokes loopbacks, asks the wrapper to delete the armed
+platform alarm while retaining its descriptor, and calls
+`ctx.facets.abort(name, ...)`: the activation is gone and storage remains. On
+restart the constructor re-arms a retained descriptor after setup. `destroy()` calls
+`ctx.facets.delete(name)`, which removes the facet and its storage. Core invokes
+the latter only after stop and only when the entry id leaves the plugin list.
+Options changes, source rewrites, disable, and client destruction are stop-only.
+If setup itself fails, `start` cannot return a `HostInstance` whose destroy
+callback the kernel could retain, so the host deletes that failed facet and any
+partial setup state immediately. Successful rewrites retain storage; a failed
+rewrite is fail-closed and starts empty when repaired.
+
+The installed `@cloudflare/workers-types` 5.20260830.1 exposes
+`DurableObjectState.facets`, `get`, `abort`, and `delete`, and the installed
+Worker Loader type exposes `getDurableObjectClass`. The implementation uses
+those APIs directly; only the generated facet's RPC handle is narrowed to the
+wrapper methods that this package itself generated.
 
 ## The wrapper module
 
@@ -172,6 +219,11 @@ the entrypoint, overridable through `limits` (D3). A stub call is a subrequest,
 so the subrequest budget is what bounds how much a plugin can ask of the client
 in one invocation.
 
+The loopback refuses an input or result whose JSON encoding is larger than
+1,048,576 bytes. The limit is checked on both sides of the stub handler and is
+reported as ordinary `{ ok: false, message }` data, so written code may catch
+it. This is a wire budget in addition to structured-clone validation.
+
 `callTimeoutMs` defaults to 5000 and wraps every `setup`, `call` and `stop` in a
 client-side wall clock, independent of anything the platform enforces. A `setup`
 that runs out of clock fails the start, so the instance ends in `error` naming
@@ -182,18 +234,21 @@ a plugin that has already answered once stays `active`.
 The timeout error carries no `SourceError`: the limit is the host's, not a fault
 in the written source, and `sourceErrorOf` says so by returning nothing.
 
-There is no abort. The contract has no `abort` verb and the platform has no way
-to tear down an isolate on demand; a timed-out call is abandoned, the instance
-is revoked and stopped, and the runtime lets the isolate go when nothing is
-holding it.
+The standalone Dynamic Worker host has no platform abort: a timed-out call is
+abandoned, the instance is revoked and stopped, and the runtime lets the
+isolate go when nothing is holding it. The facet host does have a platform
+abort and uses it for every `stop`.
 
-**B2 is proved with code that hangs, not code that spins.** A plugin whose
+The standalone-host B2 suite uses code that hangs rather than a busy loop. A plugin whose
 `setup` never returns is what the wall clock is for, and the suite uses one that
 waits on a long timer. A busy loop is deliberately not tested: the local runtime
 does not enforce `cpuMs`, and a `while (true)` inside a Dynamic Worker wedges it
 permanently — not the call, the whole runtime, for the rest of the run. The
 criterion is about the client-side limit, which a polite hang exercises exactly;
 the platform limit is set on every load and is the platform's to enforce.
+The showcase's facet-host gallery separately uses a true `while (true)` fixture:
+the supervisor's 250 ms wall clock aborts that facet, while its platform CPU
+limit is set higher so the named product limit is the observed one.
 
 ## Teardown
 
@@ -241,12 +296,12 @@ instance's status cannot wait for a log to arrive.
 
 ## What B5 covers, and what it cannot
 
-`tests/parity.test.ts` runs core's `runInstanceContract` — the parameterised
-suite in `packages/compose/tests/helpers/instance-contract.ts` — with this host
-as a third arm, alongside the ordinary-plugin control arm. No new assertions:
-the same probe, the same rules, one line of setup. The helper is imported across
-the package boundary by path rather than copied or re-exported from core, so
-there is one suite and no chance of the arms drifting; core is unchanged.
+`tests/parity.test.ts` runs core's `runInstanceContract` against the standalone
+Dynamic Worker host. `tests/facet-parity.test.ts` runs the same source arm
+against `createFacetHost`, inside `runInDurableObject` so every assertion owns a
+real supervisor context. The shared helper's optional `scope` wraps a complete
+test without changing any assertion. It is imported across the package boundary
+by path rather than copied, so all three implementations use one contract.
 
 What it does not reach:
 
@@ -297,6 +352,12 @@ when the bundled runtime does.
 Coverage is not collected for this package: the pool runs the suite inside
 workerd, where the coverage provider the rest of the workspace uses does not
 instrument.
+
+`dev/facet-test-object.ts` is the test supervisor exported from the same Worker.
+`tests/facets.test.ts` proves that options and source restarts retain storage,
+remove/delete clears it, and an alarm calls a named export with no request in
+flight. The lifecycle sequence doubles as the facet host's stop-versus-destroy
+proof. `tests/facet-parity.test.ts` is the third parity arm.
 
 ## Workers AI
 
