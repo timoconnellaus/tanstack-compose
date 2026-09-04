@@ -36,6 +36,8 @@ earlier slices' criteria continue to hold.
 
 ## E. Following a server (5b)
 
+> **Amended 2026-09-04 (ADR-0006, `examples.md`)**: the browser client holds each active view.s _fills_ — `ViewNode` data the server.s view module produced — never the view.s source. View modules run in the server.s host beside their server halves; the shell renders fills on the server first and follows them live. E1–E3 read with "view source" replaced by "view fills" and "the view.s handler" running server-side.
+
 - **E1** A browser client follows a server client: for every active server entry with a view it holds one entry with that view's source, keyed by content hash; entries without views and browser-only shell entries are unaffected. Changes to the server's plugin list arrive as a plugin-list edit in the browser and reconcile with the kernel's semantics.
 - **E2** The follow is resilient: the browser reconnects and reconverges after a dropped connection, and never runs a view whose content hash the server does not currently list.
 - **E3** A view calls its plugin's server handlers through a stub that crosses the connection; the calling instance id is attached by the shell, not by the view, and middleware on the server sees it.

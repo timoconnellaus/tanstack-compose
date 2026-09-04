@@ -2,7 +2,7 @@
 
 # TanStack Compose
 
-> **Status: scaffold.** The packages here export typed placeholders only. Nothing is implemented yet.
+> **Status: pre-release.** The kernel, the agent layer, self-modification, the Cloudflare host and the browser UI are implemented and tested; the API is not yet stable. See [ROADMAP.md](./ROADMAP.md).
 
 A framework-agnostic **composable plugin runtime**: an application is assembled from
 plugins that can be added, removed, replaced and reconfigured while it runs — with full
