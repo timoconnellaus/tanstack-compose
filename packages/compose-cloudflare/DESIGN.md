@@ -96,7 +96,7 @@ object's facet.
 
 ## Durable Object facets
 
-`createFacetHost({ ctx, loader, compatibilityDate, ... })` has the same
+`createFacetHost({ ctx, self, loader, compatibilityDate, ... })` has the same
 `Host` surface and limit options as `createCloudflareHost`. It loads the
 generated facet wrapper as a Dynamic Worker, obtains its Durable Object class
 with `getDurableObjectClass`, and mounts it with:
@@ -111,27 +111,49 @@ change constructs that named facet from the new class while retaining its
 facet storage.
 
 The facet wrapper imports `plugin.js` in its constructor path and calls its
-default export with exactly `{ id, options, stubs }`. Its `env` contains only
-the loopback stubs minted for ordinary grants. `storage` and `schedule` are not
-loopbacks and never appear in `env`:
+default export with exactly `{ id, options, stubs }`. Its `env` contains the
+loopback stubs minted for ordinary grants and the host-provided `schedule`
+loopback. `storage` alone stays inside the facet:
 
 - `storage` prefixes keys in the facet's `ctx.storage` and implements `get`,
   `set`, `delete`, and prefix `list` with the Durable Object KV API;
-- `schedule` persists one named alarm descriptor and uses
-  `ctx.storage.setAlarm`; `alarm()` calls that named export, then clears a
-  one-shot descriptor or advances a recurring one.
+- `schedule` calls back to the facet host, which stores one descriptor per
+  instance under `\0compose:schedule:<instanceId>` in the parent Durable
+  Object. The host arms the parent's single alarm for the earliest descriptor,
+  dispatches every due descriptor through the facet's ordinary `call` path,
+  then removes a one-shot or advances a recurring descriptor.
+
+A loopback handler is not inside the Durable Object request that created the
+host. It must not touch that object's storage: the schedule loopback calls
+`self.composeSchedule(operation)`, and that RPC delegates to `host.schedule`
+only after it has re-entered the parent object. `FacetHost.schedule()` and
+`FacetHost.alarm()` are therefore object-internal entrypoints. Facet-local
+`storage` is unaffected because its operations execute inside the facet's own
+request, and the parent's alarm may call a facet because that is an RPC into a
+different object rather than captured request I/O.
+
+The parent owns scheduling because SQLite-backed facets in local workerd cannot
+set alarms (`setAlarm` rejects with "alarms are not yet implemented for
+SQLite-backed Durable Objects"). It also multiplexes all written instances onto
+one alarm per tenant, which is cheaper than one alarm per facet. A schedule is
+therefore retained when a facet stops for an options or source change and is
+deleted only by `schedule.cancel()` or when the entry is removed.
+
+The facet constructor starts the written module and stores that promise, and
+every RPC awaits it. It must not pass that start promise to
+`ctx.blockConcurrencyWhile`: local workerd deadlocks the facet's first RPC when
+construction blocks concurrency on work which that RPC must drive.
 
 These operations throw their own capability messages inside the wrapper. If a
 product call ultimately rejects, the source detail retains that message and
 the host diagnostic remains available as the outer `cause` after the Start
 boundary unwraps it.
 
-`HostInstance.stop()` revokes loopbacks, asks the wrapper to delete the armed
-platform alarm while retaining its descriptor, and calls
-`ctx.facets.abort(name, ...)`: the activation is gone and storage remains. On
-restart the constructor re-arms a retained descriptor after setup. `destroy()` calls
-`ctx.facets.delete(name)`, which removes the facet and its storage. Core invokes
-the latter only after stop and only when the entry id leaves the plugin list.
+`HostInstance.stop()` revokes loopbacks and calls `ctx.facets.abort(name, ...)`:
+the activation is gone, while facet storage and the parent's schedule descriptor
+remain. `destroy()` deletes the parent descriptor, re-arms the parent's alarm,
+and calls `ctx.facets.delete(name)`, which removes the facet and its storage.
+Core invokes the latter only after stop and only when the entry id leaves the plugin list.
 Options changes, source rewrites, disable, and client destruction are stop-only.
 If setup itself fails, `start` cannot return a `HostInstance` whose destroy
 callback the kernel could retain, so the host deletes that failed facet and any
@@ -197,11 +219,12 @@ instance's life.
 ## Isolate identity
 
 ```
-`${instanceId}:${sha256(code + options + sorted grant names)}`
+`${instanceId}:${sha256(hostId + code + options + sorted grant names)}`
 ```
 
-Everything that decides what the isolate would do is in the hash; the instance
-id is in the key so two instances of the same source never share one. Re-adding
+Everything that decides what the isolate would do is in the hash, including the
+`hostId` carried by its loopbacks; the instance id is in the key so two
+instances of the same source never share one. Re-adding
 an unchanged plugin lands on the same id and the load callback does not run
 again; changing the source, the options or the grants produces a new id and a
 new isolate (D2). A content hash, not a counter: a counter would make a
@@ -483,3 +506,6 @@ stream — instead. `COMPOSE_WORKERS_AI_SMOKE=1` turns remote bindings back on a
 un-skips `tests/workers-ai-smoke.test.ts`, which is the one test that runs a real
 model. The pool prints a warning per test file about AI bindings being remote;
 silencing it means marking the binding remote, which is the thing being avoided.
+
+`self` is a factory, not a stub: an RPC stub is bound to the request that minted it, and the schedule loopback runs in
+the facet's request, so the host mints a fresh stub per operation (`options.self()`).

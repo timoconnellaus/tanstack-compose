@@ -42,7 +42,7 @@ describe('code that does not finish', () => {
     })
 
     const client = createClient({
-      hosts: { cloudflare: testHost({ callTimeoutMs: 100 }) },
+      hosts: { cloudflare: testHost({ callTimeoutMs: 1000 }) },
       plugins: [
         {
           id: 'hung',
@@ -63,7 +63,7 @@ describe('code that does not finish', () => {
     const [hung, busy] = client.inspect()
     expect(hung?.status).toBe('error')
     expect(String((hung?.error as Error).message)).toContain(
-      'exceeded the 100ms callTimeoutMs wall-clock limit',
+      'exceeded the 1000ms callTimeoutMs wall-clock limit',
     )
 
     // The client and its other instances are untouched.
@@ -86,7 +86,7 @@ describe('code that does not finish', () => {
     })
 
     const client = createClient({
-      hosts: { cloudflare: testHost({ callTimeoutMs: 100 }) },
+      hosts: { cloudflare: testHost({ callTimeoutMs: 1000 }) },
       plugins: [
         {
           id: 'slow',
@@ -113,7 +113,7 @@ export function hang() {
     // Answer once, so the plugin is past the first call the kernel promotes.
     await expect(ping?.(null)).resolves.toBe('pong')
     await expect(hang?.(null)).rejects.toThrow(
-      'exceeded the 100ms callTimeoutMs wall-clock limit',
+      'exceeded the 1000ms callTimeoutMs wall-clock limit',
     )
     // One call running out of wall clock is not the instance's whole story.
     expect(client.inspect()[0]?.status).toBe('active')
@@ -123,7 +123,7 @@ export function hang() {
 
   it('names the limit as the source of the failure, not the plugin', async () => {
     const client = createClient({
-      hosts: { cloudflare: testHost({ callTimeoutMs: 100 }) },
+      hosts: { cloudflare: testHost({ callTimeoutMs: 1000 }) },
       plugins: [
         {
           id: 'hung',

@@ -25,8 +25,17 @@ interface DurableObjectConstructor<TEnv> {
   new (ctx: DurableObjectState, env: TEnv): object
 }
 
+interface ComposeDurableObjectHost extends Host {
+  alarm: () => Promise<void>
+  schedule: (operation: unknown) => Promise<void>
+}
+
 /** RPC and WebSocket surface owned by one tenant/app Durable Object. */
 export interface ComposeDurableObject {
+  /** Call only as an RPC into the object: apply a host schedule operation. */
+  composeSchedule: (operation: unknown) => Promise<void>
+  /** Call only from inside the object: forward its platform alarm. */
+  alarm: () => Promise<void>
   snapshot: (appId?: string) => Promise<ComposeSnapshot>
   edit: (operation: ComposeEdit) => Promise<ComposeSnapshot>
   press: (request: ComposePress) => Promise<unknown>
@@ -69,8 +78,14 @@ export interface ComposeDurableObjectOptions<TEnv> {
   grants: Readonly<Record<string, AnyStubGrant>>
   /** Base actions the browser shell may dispatch, keyed by public name. */
   actions?: Readonly<Record<string, AnyAction>>
+  /** Mint an RPC stub for the same Durable Object as `ctx`; called per use. */
+  self: (input: { ctx: DurableObjectState; env: TEnv }) => DurableObjectStub
   /** The host mounted against this particular Durable Object state. */
-  createHost: (input: { ctx: DurableObjectState; env: TEnv }) => Host
+  createHost: (input: {
+    ctx: DurableObjectState
+    env: TEnv
+    self: () => DurableObjectStub
+  }) => ComposeDurableObjectHost
   checker?: SourceChecker
   hostName?: string
 }
@@ -145,6 +160,7 @@ export function createComposeDurableObject<TEnv>(
     #publishQueued = false
     #reconciling = false
     #hostName = options.hostName ?? 'cloudflare'
+    #host!: ComposeDurableObjectHost
     #browserStatus = new Map<WebSocket, BrowserStatusReport>()
 
     constructor(ctx: DurableObjectState, env: TEnv) {
@@ -179,11 +195,15 @@ export function createComposeDurableObject<TEnv>(
       this.#generation =
         (await this.ctx.storage.get<number>(generationKey)) ?? 0
       await this.ctx.storage.put(listKey, this.#entries)
-      const host = options.createHost({ ctx: this.ctx, env: this.env })
-      this.#hostName = options.hostName ?? host.name
+      const input = { ctx: this.ctx, env: this.env }
+      this.#host = options.createHost({
+        ...input,
+        self: () => options.self(input),
+      })
+      this.#hostName = options.hostName ?? this.#host.name
       this.#client = createClient({
         checker: options.checker,
-        hosts: { [this.#hostName]: host },
+        hosts: { [this.#hostName]: this.#host },
         plugins: this.#materialize(this.#entries),
       })
       await this.#client.settled()
@@ -197,6 +217,19 @@ export function createComposeDurableObject<TEnv>(
       this.#client.instances.subscribe(() => this.#schedulePublish())
       this.#registry.state.subscribe(() => this.#schedulePublish())
       await this.#publishNow()
+    }
+
+    /** Apply a schedule operation after RPC re-enters this object. */
+    async composeSchedule(operation: unknown): Promise<void> {
+      // Setup can schedule while #initialize is awaiting that facet's setup;
+      // waiting on #ready here would make the two RPCs wait on each other.
+      await this.#host.schedule(operation)
+    }
+
+    /** Forward the tenant's one platform alarm to its host. */
+    async alarm(): Promise<void> {
+      await this.#ensure()
+      await this.#host.alarm()
     }
 
     #materialize(entries: ReadonlyArray<SerializedEntry>): Array<PluginEntry> {

@@ -167,15 +167,14 @@ export class ${wrapperEntrypoint} extends WorkerEntrypoint {
 }
 
 /**
- * The Dynamic Worker module used for a Durable Object facet. Storage and the
- * single alarm are local to the facet; every other granted stub is a loopback.
+ * The Dynamic Worker module used for a Durable Object facet. Storage is local
+ * to the facet; every other granted stub is a loopback to the parent object.
  */
 export function facetWrapperSource(stubNames: ReadonlyArray<string>): string {
   return `import { DurableObject } from 'cloudflare:workers'
 
 const stubNames = ${JSON.stringify([...stubNames])}
 const dataPrefix = '\\0compose:data:'
-const alarmKey = '\\0compose:alarm'
 
 const failed = (phase, error) => ({
   ok: false,
@@ -223,30 +222,21 @@ function stubsFrom(ctx, env) {
     })
   }
   if (stubNames.includes('schedule')) {
-    const set = async (at, handler, every) => {
-      if (!Number.isFinite(at) || typeof handler !== 'string' || handler === '') {
-        throw new Error('schedule needs a finite time and a named export')
-      }
-      await ctx.storage.put(alarmKey, {
-        at,
-        handler,
-        ...(every === undefined ? {} : { every }),
-      })
-      await ctx.storage.setAlarm(at)
+    const loopback = env.schedule
+    const call = async (input) => {
+      const answer = await loopback.stubCall(input)
+      if (!answer.ok) throw new Error(answer.message)
+      return answer.value
     }
     stubs.schedule = Object.freeze({
-      every: async (ms, handler) => {
-        if (!Number.isFinite(ms) || ms <= 0) {
-          throw new Error('schedule interval must be positive')
-        }
-        await set(Date.now() + ms, handler, ms)
-      },
+      every: (ms, handler) => call({ method: 'every', ms, handler }),
       at: (when, handler) =>
-        set(when instanceof Date ? when.getTime() : when, handler),
-      cancel: async () => {
-        await ctx.storage.delete(alarmKey)
-        await ctx.storage.deleteAlarm()
-      },
+        call({
+          method: 'at',
+          at: when instanceof Date ? when.getTime() : when,
+          handler,
+        }),
+      cancel: () => call({ method: 'cancel' }),
     })
   }
   return Object.freeze(stubs)
@@ -283,8 +273,6 @@ export class ${facetWrapperEntrypoint} extends DurableObject {
     } catch (error) {
       throw new Tagged('setup', error)
     }
-    const alarm = await this.ctx.storage.get(alarmKey)
-    if (alarm) await this.ctx.storage.setAlarm(alarm.at)
     return { plugin }
   }
 
@@ -318,27 +306,6 @@ export class ${facetWrapperEntrypoint} extends DurableObject {
     }
   }
 
-  async pause() {
-    await this.ctx.storage.deleteAlarm()
-    return { ok: true }
-  }
-
-  async alarm() {
-    const alarm = await this.ctx.storage.get(alarmKey)
-    if (!alarm) return
-    if (alarm.every === undefined) await this.ctx.storage.delete(alarmKey)
-    else {
-      alarm.at = Date.now() + alarm.every
-      await this.ctx.storage.put(alarmKey, alarm)
-      await this.ctx.storage.setAlarm(alarm.at)
-    }
-    const { plugin } = await this.run
-    const handler = plugin[alarm.handler]
-    if (typeof handler !== 'function') {
-      throw new Error('plugin source has no export named "' + alarm.handler + '"')
-    }
-    await handler({ scheduledAt: Date.now() })
-  }
 }
 `
 }

@@ -63,9 +63,11 @@ export const ShowcaseTenant = createComposeDurableObject<ShowcaseEnv>({
   actions: grantableActions,
   checker: createTypeScriptChecker(),
   hostName: 'cloudflare',
-  createHost: ({ ctx, env }) =>
+  self: ({ ctx, env }) => env.TENANT.get(ctx.id),
+  createHost: ({ ctx, env, self }) =>
     createFacetHost({
       ctx,
+      self,
       loader: env.LOADER,
       compatibilityDate: '2026-05-01',
       callTimeoutMs: 250,

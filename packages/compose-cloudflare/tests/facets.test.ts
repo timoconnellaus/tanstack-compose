@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:test'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { FacetTestObject } from '../dev/facet-test-object'
 
 const testObject = (name: string) =>
@@ -21,9 +21,72 @@ describe('the Durable Object facet host', () => {
     const object = testObject('scheduled-export')
     await object.scheduleOnce()
 
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     await expect(object.events()).resolves.toEqual(['fired'])
+    await object.stopClient()
+  })
+
+  it('runs a recurring schedule until it is cancelled', async () => {
+    const object = testObject('recurring-schedule')
+    await object.scheduleEvery()
+
+    await vi.waitFor(
+      async () => {
+        expect(
+          (await object.events()).filter((event) => event === 'tick').length,
+        ).toBeGreaterThanOrEqual(2)
+      },
+      { timeout: 1000 },
+    )
+    await object.cancelRecurring()
+    const afterCancel = await object.events()
+
+    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    await expect(object.events()).resolves.toEqual(afterCancel)
+    await object.stopClient()
+  })
+
+  it('keeps a schedule over restart and rewrite, then deletes it on removal', async () => {
+    const object = testObject('schedule-lifecycle')
+    await object.scheduleThroughRestartAndRewrite()
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
+    await expect(object.events()).resolves.toEqual(['survived'])
+    await object.armSurvivor()
+    await object.removeScheduled('survivor')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await expect(object.events()).resolves.toEqual(['survived'])
+    await object.stopClient()
+  })
+
+  it("dispatches each instance's schedule in its own facet", async () => {
+    const object = testObject('two-schedules')
+    await object.schedulePair()
+
+    await vi.waitFor(
+      async () => {
+        const events = await object.events()
+        expect(events).toContain('left')
+        expect(events).toContain('right')
+      },
+      { timeout: 1000 },
+    )
+    await object.removeScheduled('left')
+    const before = await object.events()
+    const left = before.filter((event) => event === 'left').length
+    const right = before.filter((event) => event === 'right').length
+
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const after = await object.events()
+    expect(after.filter((event) => event === 'left')).toHaveLength(left)
+    expect(after.filter((event) => event === 'right').length).toBeGreaterThan(
+      right,
+    )
+    await object.removeScheduled('right')
     await object.stopClient()
   })
 })

@@ -5,7 +5,7 @@ import {
   slotsPlugin,
   viewsPlugin,
 } from '@tanstack/react-compose'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createComposeDurableObject } from '../src'
 import type { SerializedEntry } from '../src'
 
@@ -46,19 +46,27 @@ const sourceEntry = (id: string, source: string, stubs: Array<string>) => ({
 describe('createComposeDurableObject', () => {
   it('persists edits, snapshots fills, presses their owner and unwraps source errors', async () => {
     const state = fakeState()
+    const alarm = vi.fn()
+    const schedule = vi.fn()
     const Tenant = createComposeDurableObject({
       base: FakeDurableObject,
+      self: () => ({}) as DurableObjectStub,
       initialPluginList: baseEntries,
       catalog: { slots: slotsPlugin, views: viewsPlugin },
       grants: {
         slots: createSlotsStub({ slots: ['toolbar'] }),
         server: createServerStub(),
       },
-      createHost: () => inProcessHost,
+      createHost: () => ({ ...inProcessHost, alarm, schedule }),
     })
     const object = new Tenant(state.ctx, {})
 
     await object.snapshot()
+    const operation = { method: 'cancel' }
+    await object.composeSchedule(operation)
+    expect(schedule).toHaveBeenCalledWith(operation)
+    await object.alarm()
+    expect(alarm).toHaveBeenCalledOnce()
     await object.edit({
       type: 'write',
       entry: sourceEntry(

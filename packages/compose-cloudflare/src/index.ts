@@ -2,6 +2,7 @@ export { createCloudflareHost, createFacetHost } from './host'
 export type {
   CloudflareHostOptions,
   CloudflareLimits,
+  FacetHost,
   FacetHostOptions,
 } from './host'
 export { bindingCredentials } from './credentials'

@@ -107,6 +107,45 @@ describe('which isolate a written plugin lands in', () => {
     await client.destroy()
   })
 
+  it('does not reuse an isolate whose loopbacks belong to another host', async () => {
+    const first = countingLoader()
+    const second = countingLoader()
+    const entry = {
+      id: 'greeter',
+      source: source('hello'),
+      host: 'cloudflare',
+      stubs: [noteStub],
+    }
+    const firstClient = createClient({
+      hosts: {
+        cloudflare: createCloudflareHost({
+          loader: first.loader,
+          compatibilityDate,
+          hostId: 'first',
+        }),
+      },
+      plugins: [entry],
+    })
+    await firstClient.settled()
+    await firstClient.destroy()
+
+    const secondClient = createClient({
+      hosts: {
+        cloudflare: createCloudflareHost({
+          loader: second.loader,
+          compatibilityDate,
+          hostId: 'second',
+        }),
+      },
+      plugins: [entry],
+    })
+    await secondClient.settled()
+
+    expect(first.ids[0]).not.toBe(second.ids[0])
+    expect(second.loads).toHaveLength(1)
+    await secondClient.destroy()
+  })
+
   it('answers to the name entries ask for it by', () => {
     expect(testHost().name).toBe('cloudflare')
     expect(testHost({ name: 'isolated' }).name).toBe('isolated')
