@@ -97,6 +97,16 @@ describe('the Workers AI model provider', () => {
     ])
   })
 
+  it('gives up on a model that goes quiet for longer than stallMs', async () => {
+    const ai = fakeAi([
+      { frames: [frame({ response: 'thinking' })], hold: true },
+    ])
+    await expect(
+      collect(createWorkersAiModel({ binding: ai.binding, stallMs: 50 })),
+    ).rejects.toThrow('the model sent nothing for 50 ms')
+    expect(ai.cancelled()).toBe(1)
+  })
+
   it('forwards prompt, tools and provider settings', async () => {
     const ai = fakeAi([{ frames: nativeAnswer(['done']) }])
     await collect(

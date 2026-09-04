@@ -16,6 +16,7 @@ import {
   errorOf,
   foldToolCalls,
   textOf,
+  withinStall,
 } from './frames'
 import { defaultWorkersAiModel } from './workers-ai'
 import type { PartialCall } from './frames'
@@ -32,6 +33,11 @@ export interface ChatCompletionsOptions {
    * can spend the account's inference on.
    */
   cors?: boolean
+  /**
+   * How long the binding may go quiet, before answering or between frames,
+   * before the request fails. Defaults to 30 000 ms; `0` waits forever.
+   */
+  stallMs?: number
 }
 
 /** The body the chat-completions protocol sends. */
@@ -129,9 +135,13 @@ export async function handleChatCompletions(
       : { temperature: body.temperature }),
   }
 
+  const stallMs = options.stallMs ?? 30_000
   let answer: unknown
   try {
-    answer = await binding.run(model, inputs, { signal: request.signal })
+    answer = await withinStall(
+      binding.run(model, inputs, { signal: request.signal }),
+      stallMs,
+    )
   } catch (error) {
     return failure(
       502,
@@ -142,7 +152,7 @@ export async function handleChatCompletions(
   if (body.stream !== true) {
     let text = ''
     const partials = new Map<number, PartialCall>()
-    for await (const each of aiFrames(answer, request.signal)) {
+    for await (const each of aiFrames(answer, request.signal, stallMs)) {
       const failed = errorOf(each)
       if (failed !== undefined) return failure(502, failed, options)
       text += textOf(each)
@@ -186,7 +196,7 @@ export async function handleChatCompletions(
       const partials = new Map<number, PartialCall>()
       try {
         controller.enqueue(frame(chunkOf({ role: 'assistant', content: '' })))
-        for await (const each of aiFrames(answer, request.signal)) {
+        for await (const each of aiFrames(answer, request.signal, stallMs)) {
           const failed = errorOf(each)
           if (failed !== undefined) {
             // A failure that arrives mid-stream is a frame, not a status: the
