@@ -20,7 +20,7 @@ are covered by the test suite. Terms are as defined in
 - **B2** The plugin that provides the self-modification tools is itself protected by construction, so the agent can always undo an edit it made.
 - **B3** The agent adds pre-built plugins only from the plugin catalog, by name, with options validated by that plugin's validator; an unknown name or invalid options return an error result and change nothing.
 - **B4** Which entries are protected, what the catalog contains, which stubs a written plugin receives and which host it runs in are decided by the operator when assembling the client, not by anything the model can call.
-- **B5** A model provider entry is protected in the reference assembly, and the composer's documentation says why: reconfiguring a provider's endpoint would send its credential elsewhere. A test shows `set_plugin_options` on a provider entry is refused and the endpoint unchanged.
+- **B5** A model provider entry is protected in the reference assembly, and the composer's documentation says why: reconfiguring a provider's endpoint would send its credential elsewhere. A test shows `configure_plugin` on a provider entry is refused and the endpoint unchanged.
 
 ## C. Consequences are visible and recoverable
 

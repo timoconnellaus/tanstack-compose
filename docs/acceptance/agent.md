@@ -1,9 +1,12 @@
-# Agent layer acceptance criteria — `@tanstack/compose-agent`
+# Agent example acceptance criteria
 
-The agent layer is done when every criterion below holds and is covered by the
-test suite. Criteria are observable from outside the package and say nothing
-about how they are met. Terms are as defined in [CONTEXT.md](../../CONTEXT.md);
-the kernel's criteria in [kernel.md](./kernel.md) continue to hold.
+The example-local agent runtime is done when every criterion below holds and is
+covered by the example suites. It lives under `examples/shared/agent`, while
+the framework-neutral composer surface lives in `@tanstack/compose-tools`.
+Neither the conversation loop nor its registries are Compose library code.
+Criteria are observable from outside the example and say nothing about how
+they are met. Terms are as defined in [CONTEXT.md](../../CONTEXT.md); the
+kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 
 ## A. Everything is a plugin
 
@@ -40,10 +43,10 @@ the kernel's criteria in [kernel.md](./kernel.md) continue to hold.
 
 - **E1** A model provider streams its response; each chunk is appended to the session as it arrives and the complete assistant message is appended when the stream ends, whether it ended normally, with an error, or by cancellation.
 - **E2** The `model` key is a registry provided by one plugin; provider plugins register into it and their cleanup unregisters. Adding, removing or selecting a provider takes effect at the next turn open, without the loop or any other plugin restarting. If the provider a turn is using is removed mid-turn, that step ends with an error entry and the turn closes; the next turn uses the current provider.
-- **E3** The package ships a scripted provider for tests that replays a given sequence of responses, including tool calls and mid-stream failures.
-- **E4** One real provider package exists, speaking the OpenAI-compatible chat-completions protocol over `fetch` with no vendor SDK; its keyless tests run in CI and its with-key smoke test skips itself when no key is present.
+- **E3** The example runtime includes a scripted provider for tests that replays a given sequence of responses, including tool calls and mid-stream failures.
+- **E4** The example runtime includes an OpenAI-compatible chat-completions provider over `fetch` with no vendor SDK; its keyless tests run in CI and its with-key smoke test skips itself when no key is present.
 - **E5** A provider holds no secret in its options: it names a credential, and reads the value through the `credentials` context key when it starts. The plugin list, `inspect()`, the session, tool results and devtools never contain a secret value. The `credentials` key is provided by one operator plugin per runtime (process environment, Worker bindings); a provider whose credential is missing ends in `error` naming the credential, not the value.
-- **E6** A second real provider runs on Cloudflare Workers AI through the `AI` binding, needing no credential; its tests run against a scripted binding in the workerd project, and its with-binding smoke test skips itself when no account is available. A small Worker route exposes the same binding in the OpenAI-compatible protocol, so a browser client uses it through the OpenAI provider with no credential.
+- **E6** The Cloudflare host provides a Workers AI implementation over the `AI` binding, needing no credential; the example-local wrapper registers it into the model registry. Its tests run against a scripted binding, and its with-binding smoke test skips itself when no account is available. A small Worker route exposes the same binding in the OpenAI-compatible protocol, so the browser-only example can use it without a credential.
 
 ## F. Types
 

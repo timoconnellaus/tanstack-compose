@@ -1,5 +1,5 @@
 import { createPlugin } from '@tanstack/compose'
-import { toolCallAction } from '@tanstack/compose-agent'
+import { toolCallAction } from '@tanstack/compose-example-agent-runtime'
 import { slotsKey, useStore } from '@tanstack/react-compose'
 import { Store } from '@tanstack/store'
 import { cancelAction, sendAction } from '../actions'

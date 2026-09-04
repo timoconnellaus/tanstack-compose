@@ -1,18 +1,20 @@
 import { createClient } from '@tanstack/compose'
 import {
+  agentStub,
   agentStubs,
   composerPlugin,
+  createSlotsStub,
   credentialsPlugin,
   loopPlugin,
   modelsPlugin,
+  openaiModelPlugin,
   promptPlugin,
   scriptedModelPlugin,
   sessionPlugin,
+  sessionStub,
   staticCredentials,
   toolsPlugin,
-  viewStubs,
-} from '@tanstack/compose-agent'
-import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
+} from '@tanstack/compose-example-agent-runtime'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import { slotsPlugin, viewsPlugin } from '@tanstack/react-compose'
 import { actionLogPlugin } from './plugins/action-log'
@@ -28,7 +30,7 @@ import { stopButtonPlugin } from './plugins/stop-button'
 import { workingIndicatorPlugin } from './plugins/working-indicator'
 import { summariserSource, summariserView } from './written'
 import type { Client, PluginEntry } from '@tanstack/compose'
-import type { ScriptedResponse } from '@tanstack/compose-agent'
+import type { ScriptedResponse } from '@tanstack/compose-example-agent-runtime'
 
 /**
  * A canned conversation, so the app runs with no key and no network. Responses
@@ -54,7 +56,7 @@ export const cannedConversation: Array<ScriptedResponse> = [
   },
   {
     chunks: ['Putting the stop button back.'],
-    toolCalls: [{ name: 'add_plugin', args: { name: 'stop-button' } }],
+    toolCalls: [{ name: 'add_from_catalog', args: { name: 'stop-button' } }],
   },
   { chunks: ['It is back beside Send, and nothing else re-rendered.'] },
   {
@@ -68,8 +70,7 @@ export const cannedConversation: Array<ScriptedResponse> = [
         name: 'write_plugin',
         args: {
           id: 'summariser',
-          source: summariserSource,
-          view: summariserView,
+          source: `${summariserSource}\n${summariserView}`,
         },
       },
     ],
@@ -106,6 +107,7 @@ export const protectedIds: ReadonlySet<string> = new Set([
   'loop',
   'slots',
   'views',
+  'composer',
 ])
 
 /** The Workers AI model the app's own `/ai` route serves by default. */
@@ -151,11 +153,11 @@ export function createAppClient(options: AppClientOptions = {}): Client {
   const script = options.script ?? cannedConversation
 
   return createClient({
-    // Every plugin the agent writes, and every view, is type-checked against
+    // Every plugin the agent writes is type-checked against
     // the declarations of exactly the stubs its entry was granted.
     checker: createTypeScriptChecker(),
     plugins: [
-      // The agent: six entries, exactly as `@tanstack/compose-agent` assembles
+      // The agent: six entries, exactly as `@tanstack/compose-example-agent-runtime` assembles
       // them outside a browser.
       { id: 'session', plugin: sessionPlugin },
       { id: 'tools', plugin: toolsPlugin },
@@ -198,23 +200,18 @@ export function createAppClient(options: AppClientOptions = {}): Client {
             'send-on-ctrl-enter': sendOnCtrlEnterPlugin,
           },
           protected: [...protectedIds],
-          stubs: agentStubs,
-          // The stubs a written **view** is granted, and the **slots** it may
-          // fill. `root` is not among them: the page frame is the operator's,
-          // and a view that could replace it could replace the whole page.
-          viewStubs,
-          viewSlots: [
-            'chat.input.actions',
-            'chat.side',
-            'chat.main',
-            'chat.list.trailer',
-            'page.title',
+          // One source module owns both its tool and its serialized fill.
+          stubs: [
+            ...agentStubs,
+            createSlotsStub({ slots: ['chat.input.actions'] }),
+            agentStub,
+            sessionStub,
           ],
         },
       },
 
-      // The **shell**: the slot registry, the glue that publishes it and the
-      // React renderer to written **views**, and the page itself.
+      // The **shell**: the slot registry, the React renderer for serialized
+      // fills from written source, and the page itself.
       { id: 'slots', plugin: slotsPlugin },
       { id: 'views', plugin: viewsPlugin },
       { id: 'page-frame', plugin: pageFramePlugin },

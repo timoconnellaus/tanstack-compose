@@ -1,5 +1,5 @@
 import { createPlugin } from '@tanstack/compose'
-import { agentKey, modelKey } from '@tanstack/compose-agent'
+import { agentKey, modelKey } from '@tanstack/compose-example-agent-runtime'
 import { slotsKey, usePluginList } from '@tanstack/react-compose'
 import { chatSideSlot } from '../slots'
 import type { ReactNode } from 'react'

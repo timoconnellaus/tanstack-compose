@@ -3,8 +3,8 @@
 A chat page where **every element is a plugin**. The page frame, the message
 list, the input box, the send **action**, the stop button, the plugin panel, the
 model picker and the action log are each one **plugin entry**, and disabling any
-of them takes it off the page while the rest keeps working. The plugin that lets
-a **view** the agent writes fill a **slot** is another entry — which is how the
+of them takes it off the page while the rest keeps working. A source plugin the
+agent writes can fill a **slot** with serializable view data — which is how the
 agent adds UI to the page it is made of. The **source checker** is client
 infrastructure, so editing the plugin list cannot bypass it.
 
@@ -78,7 +78,7 @@ They also run from the root, as part of `pnpm test:ci`.
   and a client that is still running perfectly well.
 - **Ask the agent to put it back.** `stop-button`, `model-picker`, `page-title`,
   `markdown`, `working-indicator` and the two `send-on-*` entries are in the
-  **plugin catalog**, so the model can `add_plugin` any of them.
+  **plugin catalog**, so the model can `add_from_catalog` any of them.
 - **Disable `markdown`.** The agent's replies fall back to plain paragraphs.
   Markdown is a later fill of the same two keys of `chat.message`, and the
   latest fill for a key wins; the message list is untouched either way.
@@ -90,10 +90,10 @@ They also run from the root, as part of `pnpm test:ci`.
   path.
 - **Watch the agent write itself a button.** Keep sending messages: the canned
   conversation reaches a turn where the model calls `write_plugin` with a
-  **view** — a Summarise button that appears beside Stop, with no reload. Press
-  it: the view reads the end of the **session**, calls its own plugin's handler
-  through the `server` **stub**, and fills the same place again with the answer.
-  Remove `summariser` in the panel and both halves go, the button with them.
+  source plugin — a Summarise button appears beside Stop, with no reload. Press
+  it: the same source reads the end of the **session**, calls its own export,
+  and fills the same place again with the answer. Remove `summariser` in the
+  panel and its tool and fill go with it.
 - **Pick a model.** With `/ai` in use, both providers are registered and the
   picker swaps between them through `select_model`, which restarts nothing.
 
@@ -137,32 +137,35 @@ so the model reads what you did as a plain fact at its next request.
 is a fill, not a change to the message list. An entry of a kind nothing fills —
 the turn and step boundaries — renders nothing.
 
-## Views: the agent adds UI by writing a plugin
+## The agent adds UI by writing one plugin
 
-`write_plugin { id, source, view }` writes **two** plugin entries: `summariser`,
-the server half, and `summariser.view`, the part that runs in the browser. Both
-are type-checked by the client's `createTypeScriptChecker()` before either is
-started, against the **plugin declarations** derived from exactly the **stubs**
-the entry was granted — so a view calling a handler its plugin does not export,
-or filling a slot the operator did not grant it, is a diagnostic in the tool
-result rather than a failure on the page.
+`write_plugin { id, source }` writes one source entry. `summariser` contributes
+both its tool and a serialized fill, with callbacks naming exports of that same
+module. It is type-checked by the client's `createTypeScriptChecker()` before
+it starts, against the **plugin declarations** derived from exactly the
+**stubs** it was granted — so calling a missing stub method or filling a slot
+the operator did not grant is a diagnostic in the tool result rather than a
+failure on the page.
 
-What this app grants a view, in `src/client.ts`:
+What this app grants written source, in `src/client.ts`:
 
 ```ts
-viewStubs,                                              // slots, server, agent, session
-viewSlots: ['chat.input.actions', 'chat.side', 'chat.main'],
+agentStubs,
+createSlotsStub({ slots: ['chat.input.actions'] }),
+agentStub,
+sessionStub,
 ```
 
 `root` is not in the list: the page frame is the operator's, and a view that
 could replace it could replace the whole page.
 
-A view describes its fill as plain data — a tree of `text`, `button`, `input`,
+A source plugin describes its fill as plain data — a tree of `text`, `button`, `input`,
 `row` and `stack`, with the _name_ of one of its own exports where a callback
 would be, because a function cannot cross a **host** boundary.
 `viewsPlugin` from `@tanstack/react-compose` turns that tree into a component
-and publishes it with this page's **slot** registry. That entry is
-**protected**: a view that could remove it could take every view off the page.
+and publishes it with this page's **slot** registry. The renderer entry is
+**protected**: source that could remove it could take every written fill off the
+page.
 
 The source the canned conversation writes is in
 [`src/written.ts`](./src/written.ts), so you can read what the model "wrote".

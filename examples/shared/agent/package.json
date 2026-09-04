@@ -1,0 +1,21 @@
+{
+  "name": "@tanstack/compose-example-agent-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cloudflare": "./src/cloudflare.ts"
+  },
+  "scripts": {
+    "test:types": "tsc",
+    "test:eslint": "eslint ./src"
+  },
+  "dependencies": {
+    "@tanstack/compose": "workspace:*",
+    "@tanstack/compose-cloudflare": "workspace:*",
+    "@tanstack/compose-tools": "workspace:*",
+    "@tanstack/react-compose": "workspace:*",
+    "@tanstack/store": "^0.11.1"
+  }
+}

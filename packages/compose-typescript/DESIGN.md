@@ -293,8 +293,8 @@ recovered.
 about views. It compiles the source in the same language service `check` uses
 for those grants, walks the module symbol's exports, and prints each one's type
 with `typeToString`. Whoever asked turns the result into declarations —
-`@tanstack/compose-agent` builds `interface ServerHandlers { … }` and hangs the
-`server` stub off it — so this package never learns what a view is, and any
+the caller can build `interface ServerHandlers { … }` and hang a `server` stub
+off it — so this package never learns what a view is, and any
 other pairing of two written modules gets the same answer for free.
 
 Two rules keep the printed text honest in a file that is _not_ the module it

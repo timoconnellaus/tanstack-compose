@@ -65,16 +65,21 @@ Authority is explicit ([ADR-0007](./docs/adr/0007-authority-is-named-grants.md))
    └─────────────────────────────────────────────────────────────────────┘
 ```
 
-| Package                                                             | Description                                                                                                                                         |
-| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`@tanstack/compose`](./packages/compose)                           | The framework-agnostic kernel: plugin list, dependency graph, actions and middleware, events, resources, hosts.                                     |
-| [`@tanstack/compose-typescript`](./packages/compose-typescript)     | Type-checks and transpiles written plugin source against the declarations of its granted stubs.                                                     |
-| [`@tanstack/compose-cloudflare`](./packages/compose-cloudflare)     | Runs written source isolated on Cloudflare: Dynamic Worker isolates, Durable Object facets, loopback stubs, limits.                                 |
-| [`@tanstack/react-compose`](./packages/react-compose)               | React adapter: provider, hooks, slots, and the framework-neutral view runtime.                                                                      |
-| [`@tanstack/start-compose`](./packages/start-compose)               | TanStack Start integration: the tenant Durable Object, snapshot SSR and hydration, follower socket, edits.                                          |
-| [`@tanstack/compose-devtools`](./packages/compose-devtools)         | Instances, unmet deps, resources, plugin list, context and errors on TanStack Devtools.                                                             |
-| [`@tanstack/compose-agent`](./packages/compose-agent)               | The composer tool surface an agent operates, plus an agent loop used by an example. The loop is example code and is being moved out of the library. |
-| [`@tanstack/compose-agent-openai`](./packages/compose-agent-openai) | An OpenAI-compatible model provider for that example.                                                                                               |
+| Package                                                         | Description                                                                                                         |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| [`@tanstack/compose`](./packages/compose)                       | The framework-agnostic kernel: plugin list, dependency graph, actions and middleware, events, resources, hosts.     |
+| [`@tanstack/compose-typescript`](./packages/compose-typescript) | Type-checks and transpiles written plugin source against the declarations of its granted stubs.                     |
+| [`@tanstack/compose-cloudflare`](./packages/compose-cloudflare) | Runs written source isolated on Cloudflare: Dynamic Worker isolates, Durable Object facets, loopback stubs, limits. |
+| [`@tanstack/react-compose`](./packages/react-compose)           | React adapter: provider, hooks, slots, and the framework-neutral view runtime.                                      |
+| [`@tanstack/start-compose`](./packages/start-compose)           | TanStack Start integration: the tenant Durable Object, snapshot SSR and hydration, follower socket, edits.          |
+| [`@tanstack/compose-devtools`](./packages/compose-devtools)     | Instances, unmet deps, resources, plugin list, context and errors on TanStack Devtools.                             |
+| [`@tanstack/compose-tools`](./packages/compose-tools)           | Framework-neutral composer definitions for listing, editing, reading and writing a client's plugin entries.         |
+
+The conversation loop, session, prompt/tool/model registries, credentials and
+OpenAI-compatible provider are example-local code in
+[`examples/shared/agent`](./examples/shared/agent). The deployed
+[`examples/start/agent`](./examples/start/agent) runs that loop in its tenant
+Durable Object; Compose does not run the agent.
 
 ## A taste
 

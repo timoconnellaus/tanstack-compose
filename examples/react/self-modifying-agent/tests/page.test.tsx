@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey } from '@tanstack/compose-example-agent-runtime'
 import { press, pressInPanel, sendMessage, startApp } from './helpers/app'
 import type { StartedApp } from './helpers/app'
 

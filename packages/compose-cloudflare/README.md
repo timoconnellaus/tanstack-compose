@@ -105,48 +105,6 @@ export async function add({ a, b }) {
 
 Outbound network is off unconditionally and is not an option.
 
-## Credentials from bindings
-
-A Worker has no process environment. Its vars and secrets arrive on `env`, so
-this package also ships the **credential source** that reads them:
-
-```ts
-import { createClient } from '@tanstack/compose'
-import { credentialsPlugin } from '@tanstack/compose-agent'
-import { bindingCredentials } from '@tanstack/compose-cloudflare'
-import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
-
-export default {
-  async fetch(request: Request, env: Env) {
-    const client = createClient({
-      plugins: [
-        {
-          id: 'credentials',
-          plugin: credentialsPlugin,
-          options: { source: bindingCredentials(env) },
-        },
-        // Names the credential; never holds it.
-        {
-          id: 'model',
-          plugin: openaiModelPlugin,
-          options: { model: 'gpt-4o-mini', credential: 'OPENAI_API_KEY' },
-        },
-        // …the rest of the agent
-      ],
-    })
-  },
-}
-```
-
-```sh
-pnpm --filter your-worker exec wrangler secret put OPENAI_API_KEY
-```
-
-It reads string bindings by name — a var or a secret. A binding that is not a
-string, such as the Worker Loader itself, reads as `undefined`. `env` is held in
-the source's closure: no value reaches the plugin list, a store, the session or
-a tool result, and there is no way to list what is bound.
-
 ## A model, with no credential
 
 The package also ships a **model provider** over a Workers AI binding, so an
@@ -163,41 +121,28 @@ for the page to hold.
 }
 ```
 
-### On the server: the binding directly
+### On the server: the host-level provider
 
 ```ts
-import {
-  agentKey,
-  loopPlugin,
-  modelsPlugin,
-  promptPlugin,
-  sessionPlugin,
-  toolsPlugin,
-} from '@tanstack/compose-agent'
-import { workersAiModelPlugin } from '@tanstack/compose-cloudflare'
+import { createWorkersAiModel } from '@tanstack/compose-cloudflare'
 
-const client = createClient({
-  plugins: [
-    { id: 'session', plugin: sessionPlugin },
-    { id: 'tools', plugin: toolsPlugin },
-    { id: 'prompt', plugin: promptPlugin },
-    { id: 'models', plugin: modelsPlugin },
-    {
-      id: 'model',
-      plugin: workersAiModelPlugin,
-      options: { binding: env.AI, options: { max_tokens: 1024 } },
-    },
-    { id: 'loop', plugin: loopPlugin },
-  ],
+const provider = createWorkersAiModel({
+  binding: env.AI,
+  options: { max_tokens: 1024 },
 })
 ```
 
-| Option    | Default                                    | What it is                                    |
-| --------- | ------------------------------------------ | --------------------------------------------- |
-| `binding` | —                                          | the `AI` binding from `env`                   |
-| `model`   | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | any model with streaming and function calling |
-| `name`    | the model                                  | the name it registers under in the registry   |
-| `options` | none                                       | `max_tokens`, `temperature`, sent every step  |
+The provider has only `name` and `stream(request, signal)`. An agent runtime can
+register that structural value in its own model registry; the host package has
+no dependency on an agent loop. The deployed agent example supplies the small
+plugin wrapper under `examples/shared/agent`.
+
+| Option    | Default                     | What it is                                    |
+| --------- | --------------------------- | --------------------------------------------- |
+| `binding` | —                           | the `AI` binding from `env`                   |
+| `model`   | `@cf/zai-org/glm-5.3-flash` | any model with streaming and function calling |
+| `name`    | the model                   | the provider's structural name                |
+| `options` | none                        | `max_tokens`, `temperature`, sent every step  |
 
 The default model's own `max_tokens` is 256, which is short for an agent — pass
 more, as above.
@@ -219,7 +164,7 @@ if (new URL(request.url).pathname === '/ai/chat/completions') {
 
 ```ts
 // the page
-import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
+import { openaiModelPlugin } from '@tanstack/compose-example-agent-runtime'
 
 {
   id: 'model',
@@ -255,9 +200,9 @@ curl -X POST http://localhost:8787/ai/chat/completions \
 ```
 
 `dev/worker.ts` is a loader Worker that starts one written plugin, calls the
-handler it registered through a stub, and reports what the plugin logged. It also
-serves both halves of the model provider: `/ask` runs an agent on the binding,
-and `/ai/chat/completions` is the route a browser client talks to.
+handler it registered through a stub, and reports what the plugin logged. It
+also exercises the structural provider at `/ask`, while
+`/ai/chat/completions` is the route a browser client talks to.
 
 The suite runs against a fake binding and needs no account. The one test that
 runs a real model asks for itself by name:

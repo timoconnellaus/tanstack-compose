@@ -50,6 +50,8 @@ export interface ComposeSnapshot {
     Omit<InstanceSnapshot, 'error'> & { error?: { message: string } }
   >
   fills: Array<SerializedFill>
+  /** Optional application-owned plain state carried by every whole snapshot. */
+  state?: ComposeValue
 }
 
 /** One browser's observed render state for a followed view instance. */

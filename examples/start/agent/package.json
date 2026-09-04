@@ -1,0 +1,41 @@
+{
+  "name": "@tanstack/compose-example-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port=3062",
+    "build": "vite build",
+    "test:types": "tsc",
+    "test:eslint": "eslint ./src ./tests ./tests-workerd",
+    "test:lib": "vitest run"
+  },
+  "dependencies": {
+    "@tanstack/compose": "workspace:*",
+    "@tanstack/compose-cloudflare": "workspace:*",
+    "@tanstack/compose-example-agent-runtime": "workspace:*",
+    "@tanstack/compose-tools": "workspace:*",
+    "@tanstack/compose-typescript": "workspace:*",
+    "@tanstack/react-compose": "workspace:*",
+    "@tanstack/react-router": "^1.170.32",
+    "@tanstack/react-start": "^1.168.49",
+    "@tanstack/start-compose": "workspace:*",
+    "@tanstack/store": "^0.11.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.54.4",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260830.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "jsdom": "^29.0.2",
+    "vite": "^8.0.8",
+    "vitest": "^4.1.4",
+    "wrangler": "^4.129.0"
+  }
+}

@@ -12,11 +12,14 @@ import {
   toolCallAction,
   toolsKey,
   toolsPlugin,
-} from '@tanstack/compose-agent'
+} from '@tanstack/compose-example-agent-runtime'
 import { describe, expect, it } from 'vitest'
 import { createTypeScriptChecker, pluginDeclarations } from '../src/index'
 import type { Client } from '@tanstack/compose'
-import type { ComposerResult, SessionLog } from '@tanstack/compose-agent'
+import type {
+  ComposerResult,
+  SessionLog,
+} from '@tanstack/compose-example-agent-runtime'
 
 /**
  * The model's first attempt. `handlerName` is not a property of the `tools`

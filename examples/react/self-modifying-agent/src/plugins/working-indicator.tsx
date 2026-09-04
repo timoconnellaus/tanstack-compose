@@ -1,5 +1,8 @@
 import { createPlugin } from '@tanstack/compose'
-import { agentKey, optionsSchema } from '@tanstack/compose-agent'
+import {
+  agentKey,
+  optionsSchema,
+} from '@tanstack/compose-example-agent-runtime'
 import { slotsKey, useStore } from '@tanstack/react-compose'
 import { chatListTrailerSlot } from '../slots'
 import type { ReactNode } from 'react'
@@ -9,7 +12,7 @@ import type { ReactNode } from 'react'
  * no text is arriving: between tool calls, or while the model is still
  * thinking. It fills the list's trailer slot, so the list knows nothing of it,
  * and it goes when this entry is disabled. What it says is an **option**, so
- * `set_plugin_options` changes the words and the row restarts with them.
+ * `configure_plugin` changes the words and the row restarts with them.
  */
 export const workingIndicatorPlugin = createPlugin({
   name: 'working-indicator',

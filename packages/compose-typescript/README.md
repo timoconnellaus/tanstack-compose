@@ -103,8 +103,8 @@ const declarations = pluginDeclarations([
 
 The returned checker's `SourceChecker.declarations` is the same function, so a
 composer holding the checker gets this text without importing this package —
-`@tanstack/compose-agent`'s composer shows it on `list_plugins` and
-`read_plugin`, and an agent writing against it is writing against the check.
+`@tanstack/compose-tools` shows it on `list_plugins` and `read_plugin`, and an
+agent writing against it is writing against the check.
 
 It is the base declarations — the module shape, `Setup`, `SetupArgument`,
 `Cleanup`, `Handler` — then each grant's own `.d.ts` text in grant order, then a

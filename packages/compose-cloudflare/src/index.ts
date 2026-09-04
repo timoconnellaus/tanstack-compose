@@ -6,13 +6,16 @@ export type {
   FacetHostOptions,
   TextAiBinding,
 } from './host'
-export { bindingCredentials } from './credentials'
-export type { CredentialSource } from './credentials'
 export { ComposeStubLoopback } from './loopback'
 export type { StubAnswer, StubProps } from './loopback'
-export { defaultWorkersAiModel, workersAiModelPlugin } from './workers-ai'
+export { createWorkersAiModel, defaultWorkersAiModel } from './workers-ai'
 export type {
+  ModelChunk,
+  ModelMessage,
+  ModelRequest,
+  ModelToolCall,
   WorkersAiBinding,
+  WorkersAiModel,
   WorkersAiModelSettings,
   WorkersAiOptions,
 } from './workers-ai'

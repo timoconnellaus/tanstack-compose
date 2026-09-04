@@ -225,8 +225,8 @@ Three decisions worth stating:
 There is nothing about agents, chat, sessions, models or tools in this package
 (B1). Views are an application UI extension surface, so the vocabulary, grants
 and their shell plugin do not need an agent in order to exist. The non-React
-subpath keeps the grant runtime usable by `@tanstack/compose-agent` without
-making that package import React code.
+subpath keeps the grant runtime usable by example-local agent code without
+making that code import React components.
 
 ## UI events are actions
 

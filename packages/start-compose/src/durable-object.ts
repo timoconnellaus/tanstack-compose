@@ -1,5 +1,8 @@
-import { createClient, sourceErrorOf } from '@tanstack/compose'
-import { resolvePluginList } from '@tanstack/compose/catalog'
+import { createClient, reconcileAction, sourceErrorOf } from '@tanstack/compose'
+import {
+  resolvePluginList,
+  serializePluginList,
+} from '@tanstack/compose/catalog'
 import {
   appendGeneration,
   lastKnownGood,
@@ -12,6 +15,7 @@ import type {
   AnyAction,
   AnyPlugin,
   AnyStubGrant,
+  Cleanup,
   Client,
   Host,
   InstanceSnapshot,
@@ -26,6 +30,7 @@ import type {
   ComposeEdit,
   ComposePress,
   ComposeSnapshot,
+  ComposeValue,
   SerializedEntry,
 } from './snapshot'
 
@@ -109,7 +114,12 @@ export interface ComposeDurableObjectOptions<TEnv> {
     | ReadonlyArray<SerializedEntry>
     | ((appId: string) => ReadonlyArray<SerializedEntry>)
   /** Trusted plugin objects named by serialized catalog references. */
-  catalog: Readonly<Record<string, AnyPlugin>>
+  catalog:
+    | Readonly<Record<string, AnyPlugin>>
+    | ((input: {
+        ctx: DurableObjectState
+        env: TEnv
+      }) => Readonly<Record<string, AnyPlugin>>)
   /** Stub values named by the serialized grant names. */
   grants: Readonly<Record<string, AnyStubGrant>>
   /**
@@ -142,6 +152,10 @@ export interface ComposeDurableObjectOptions<TEnv> {
   /** Select a checker carrying the declarations for a dynamic base version. */
   createChecker?: (baseVersion: string) => SourceChecker
   hostName?: string
+  /** Optional application state added to each whole follower snapshot. */
+  snapshotState?: (client: Client) => ComposeValue | undefined
+  /** Subscribe application stores that should trigger a follower snapshot. */
+  subscribeSnapshot?: (client: Client, publish: () => void) => Cleanup
 }
 
 const generationsKey = 'compose:generations'
@@ -220,11 +234,15 @@ export function createComposeDurableObject<TEnv>(
     #baseVersion = ''
     #published!: ComposeSnapshot
     #publishing?: Promise<ComposeSnapshot>
+    #internalSettlement: Promise<void> = Promise.resolve()
     #publishQueued = false
     #reconciling = false
+    #publicReconcile = false
     #hostName = options.hostName ?? 'cloudflare'
     #host!: ComposeDurableObjectHost
+    #catalog!: Readonly<Record<string, AnyPlugin>>
     #browserStatus = new Map<WebSocket, BrowserStatusReport>()
+    #externalCleanups: Array<Cleanup> = []
 
     constructor(ctx: DurableObjectState, env: TEnv) {
       super(ctx, env)
@@ -278,6 +296,10 @@ export function createComposeDurableObject<TEnv>(
       this.#entries = cloneEntries(this.#log.at(-1)!.entries)
       await this.#persistLog()
       const input = { ctx: this.ctx, env: this.env }
+      this.#catalog =
+        typeof options.catalog === 'function'
+          ? options.catalog(input)
+          : options.catalog
       this.#host = options.createHost({
         ...input,
         self: () => options.self(input),
@@ -291,6 +313,44 @@ export function createComposeDurableObject<TEnv>(
       })
       await this.#client.settled()
       await this.#recordHead()
+      this.#externalCleanups.push(
+        this.#client.use(
+          reconcileAction,
+          async ({ input: next, next: run }) => {
+            if (this.#publicReconcile) return await run(next)
+            this.#entries = serializePluginList(next, {
+              plugins: this.#catalog,
+              stubs: options.grants,
+            })
+            this.#log = appendGeneration(this.#log, {
+              entries: this.#entries,
+              baseVersion: this.#baseVersion,
+            })
+            const generation = this.#log.at(-1)!.n
+            await this.#persistLog()
+            this.#reconciling = true
+            try {
+              await run(next)
+            } finally {
+              const settlement = this.#internalSettlement.then(async () => {
+                try {
+                  // `instances` is published by the client after reconcile
+                  // middleware returns, so outcome recording must wait for the
+                  // enclosing pass rather than only `run(next)`.
+                  await this.#client.settled()
+                  await this.#recordGeneration(generation)
+                } finally {
+                  this.#reconciling = false
+                  this.#schedulePublish()
+                  if (this.#publishing) await this.#publishing
+                }
+              })
+              this.#internalSettlement = settlement
+              this.ctx.waitUntil(settlement)
+            }
+          },
+        ),
+      )
       const registry = this.#client.getContext(slotsKey)
       if (!registry) {
         throw new Error(
@@ -301,6 +361,13 @@ export function createComposeDurableObject<TEnv>(
       this.#client.instances.subscribe(() => this.#schedulePublish())
       this.#registry.state.subscribe(() => this.#schedulePublish())
       this.#publishNow()
+      if (options.subscribeSnapshot) {
+        this.#externalCleanups.push(
+          options.subscribeSnapshot(this.#client, () =>
+            this.#schedulePublish(),
+          ),
+        )
+      }
     }
 
     /** Dispatch a loopback call after RPC re-enters this object. */
@@ -361,7 +428,7 @@ export function createComposeDurableObject<TEnv>(
           }
           if ('catalog' in entry.plugin) {
             return resolvePluginList([entry], {
-              plugins: options.catalog,
+              plugins: this.#catalog,
               stubs: options.grants,
             })[0]!
           }
@@ -389,6 +456,9 @@ export function createComposeDurableObject<TEnv>(
         pluginList: publicEntries(this.#entries),
         instances: serialInstances(this.#client.inspect()),
         fills: serializeFills(this.#registry),
+        ...(options.snapshotState === undefined
+          ? {}
+          : { state: options.snapshotState(this.#client) }),
       }
     }
 
@@ -423,12 +493,14 @@ export function createComposeDurableObject<TEnv>(
     /** The current full tenant/app snapshot. */
     async snapshot(appId?: string): Promise<ComposeSnapshot> {
       await this.#ensure(appId)
+      await this.#internalSettlement
       return this.#published
     }
 
     /** Persist and reconcile one serializable plugin-list edit. */
     async edit(operation: ComposeEdit): Promise<ComposeSnapshot> {
       await this.#ensure()
+      await this.#internalSettlement
       switch (operation.type) {
         case 'add':
         case 'write':
@@ -466,9 +538,11 @@ export function createComposeDurableObject<TEnv>(
       })
       await this.#persistLog()
       this.#reconciling = true
+      this.#publicReconcile = true
       try {
         await this.#client.setPluginList(await this.#materialize(this.#entries))
       } finally {
+        this.#publicReconcile = false
         this.#reconciling = false
         await this.#recordHead()
       }
@@ -483,19 +557,25 @@ export function createComposeDurableObject<TEnv>(
     async #recordHead(): Promise<void> {
       const head = this.#log.at(-1)
       if (!head || head.outcome !== 'pending') return
-      this.#log = recordOutcome(this.#log, head.n, this.#client.inspect())
+      await this.#recordGeneration(head.n)
+    }
+
+    async #recordGeneration(n: number): Promise<void> {
+      this.#log = recordOutcome(this.#log, n, this.#client.inspect())
       await this.#persistLog()
     }
 
     /** The complete persisted generation history, with no live values. */
     async generations(): Promise<Array<Generation<SerializedEntry>>> {
       await this.#ensure()
+      await this.#internalSettlement
       return cloneGenerations(this.#log)
     }
 
     /** Reconcile an earlier list as a new generation under the current base. */
     async revert(n: number): Promise<ComposeSnapshot> {
       await this.#ensure()
+      await this.#internalSettlement
       const next = revertTo(this.#log, n)
       if (next.length === this.#log.length) {
         throw new Error(`@tanstack/start-compose: there is no generation ${n}`)
@@ -504,9 +584,11 @@ export function createComposeDurableObject<TEnv>(
       this.#entries = cloneEntries(this.#log.at(-1)!.entries)
       await this.#persistLog()
       this.#reconciling = true
+      this.#publicReconcile = true
       try {
         await this.#client.setPluginList(await this.#materialize(this.#entries))
       } finally {
+        this.#publicReconcile = false
         this.#reconciling = false
         await this.#recordHead()
       }
@@ -517,10 +599,14 @@ export function createComposeDurableObject<TEnv>(
     /** Destroy and reconstruct only the in-memory client, retaining history. */
     async reset(appId?: string): Promise<ComposeSnapshot> {
       await this.#ensure(appId)
+      await this.#internalSettlement
       this.#reconciling = true
+      this.#publicReconcile = true
       try {
+        for (const cleanup of this.#externalCleanups.splice(0)) await cleanup()
         await this.#client.destroy()
       } finally {
+        this.#publicReconcile = false
         this.#reconciling = false
       }
       this.#ready = undefined
@@ -563,6 +649,7 @@ export function createComposeDurableObject<TEnv>(
           request.handler,
           request.input,
         )
+        await this.#internalSettlement
         await Promise.resolve()
         if (this.#publishing) await this.#publishing
         return result
@@ -582,12 +669,15 @@ export function createComposeDurableObject<TEnv>(
           `@tanstack/start-compose: the action catalog has no "${request.action}"`,
         )
       }
-      return await this.#client.dispatch(action, request.input)
+      const result = await this.#client.dispatch(action, request.input)
+      await this.#internalSettlement
+      return result
     }
 
     /** Upgrade to a follower socket and immediately send the whole snapshot. */
     async follow(): Promise<Response> {
       await this.#ensure()
+      await this.#internalSettlement
       const pair = new WebSocketPair()
       const client = pair[0]
       const server = pair[1]
