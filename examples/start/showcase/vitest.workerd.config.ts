@@ -15,5 +15,8 @@ export default defineConfig({
     name: `${packageJson.name}-workerd`,
     dir: './tests-workerd',
     watch: false,
+    // The pool's fallback service cannot serve TypeScript's 9 MB CommonJS
+    // module, so bundle it into the test Worker before workerd starts.
+    deps: { optimizer: { ssr: { enabled: true, include: ['typescript'] } } },
   },
 })

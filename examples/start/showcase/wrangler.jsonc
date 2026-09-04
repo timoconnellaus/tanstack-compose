@@ -1,10 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tanstack-compose-showcase",
-  "main": "./dist/server/server.js",
+  "main": "./src/server.ts",
   "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": { "directory": "./dist/client" },
   "worker_loaders": [{ "binding": "LOADER" }],
   "durable_objects": {
     "bindings": [{ "name": "TENANT", "class_name": "ShowcaseTenant" }],

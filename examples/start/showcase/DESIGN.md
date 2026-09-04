@@ -102,10 +102,29 @@ No timeout, size limit or isolation claim is simulated in application code.
 ## S2 host and Worker shape
 
 `wrangler.jsonc` binds `LOADER` with `worker_loaders` and a SQLite-backed
-`TENANT` Durable Object. The generated Start server entry re-exports both
-`ShowcaseTenant` and `ComposeStubLoopback`. The tenant builds its client with
+`TENANT` Durable Object. Its `main` is the Start server entry, which re-exports
+both `ShowcaseTenant` and `ComposeStubLoopback`. The tenant builds its client with
 `createTypeScriptChecker()` and `createFacetHost({ ctx, loader })`; each source
 entry, including every view module, is the facet named by its entry id.
+
+`@cloudflare/vite-plugin` owns the `ssr` Vite environment. In development that
+environment runs in workerd with the same Durable Object and Dynamic Worker
+bindings as deployment, so the deployed pages work under `vite dev` and do not
+need a separate `wrangler dev` process. `dev:browser` remains the explicit S1
+browser-only mode used by the jsdom suites. During `vite build`, the plugin
+bundles for Workers and emits the deployable Worker config in the `ssr`
+environment's TanStack Start output directory, `dist/server`; that generated
+config points at `dist/client`, and `vite preview` serves the same shape in
+workerd.
+
+The previous Node SSR build bundled TypeScript's CommonJS package and Rolldown
+emitted `createRequire(import.meta.url)`. Workerd has no usable `import.meta.url`
+for that generated expression, so the Worker failed at startup. Building the
+server as the plugin's Worker environment avoids that Node-targeted CommonJS
+shape. The workerd Vitest pool separately pre-bundles `typescript`: its fallback
+service cannot serve the package's 9 MB CommonJS module, while the checker still
+loads the compiler lazily and temporarily selects TypeScript's browser-like
+in-memory path.
 
 The facet's own storage implements `storage`, and its alarm implements
 `schedule`; ordinary grants are the only values in its Dynamic Worker `env`.
@@ -145,9 +164,9 @@ hostile status panel is an operator surface and may show the host diagnostic.
 - Deployed edits write the two halves sequentially. Each individual list is
   durable and valid; the whole-snapshot follower may briefly observe the server
   half before its view, which renders no partial fill.
-- Production externalizes `cloudflare:workers` from the Start server build; it
-  is provided by workerd at runtime. The source-level workspace aliases keep
-  local packages independent of stale `dist` output.
+- The Cloudflare Vite environment recognizes `cloudflare:workers` as a runtime
+  built-in and owns dependency bundling. The source-level workspace aliases
+  keep local packages independent of stale `dist` output.
 
 ## Why no module is named `src/client.ts`
 

@@ -1,11 +1,16 @@
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
+import { cloudflare } from '@cloudflare/vite-plugin'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { workspaceSourceAlias } from './workspace-alias'
 
 export default defineConfig(({ mode }) => ({
-  plugins: [tanstackStart(), react()],
+  plugins: [
+    tanstackStart(),
+    cloudflare({ viteEnvironment: { name: 'ssr' } }),
+    react(),
+  ],
   resolve: {
     alias: {
       '#showcase-browser-pages': fileURLToPath(
@@ -20,6 +25,4 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: { port: 3061 },
-  ssr: { noExternal: ['typescript'] },
-  build: { rolldownOptions: { external: ['cloudflare:workers'] } },
 }))
