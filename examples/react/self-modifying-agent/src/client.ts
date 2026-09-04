@@ -88,6 +88,25 @@ export const cannedConversation: Array<ScriptedResponse> = [
   },
 ]
 
+/**
+ * The entries the composer refuses to disable or remove: the agent's own parts
+ * and the two the page cannot render without. The panel shows them as such.
+ */
+export const protectedIds: ReadonlySet<string> = new Set([
+  'session',
+  'tools',
+  'prompt',
+  'models',
+  'credentials',
+  'model',
+  'loop',
+  'slots',
+  'views',
+])
+
+/** The Workers AI model the app's own `/ai` route serves by default. */
+export const defaultWorkersAiModel = '@cf/zai-org/glm-5.3-flash'
+
 /** What {@link createAppClient} lets a caller — a test, mostly — decide. */
 export interface AppClientOptions {
   /** The scripted conversation. Defaults to {@link cannedConversation}. */
@@ -109,7 +128,7 @@ function modelEntry(script: Array<ScriptedResponse>): PluginEntry {
       id: 'model',
       plugin: openaiModelPlugin,
       options: {
-        model: env.VITE_OPENAI_MODEL ?? 'gpt-4o-mini',
+        model: env.VITE_OPENAI_MODEL ?? defaultWorkersAiModel,
         baseUrl: env.VITE_OPENAI_BASE_URL,
         credential: null,
       },
@@ -169,17 +188,7 @@ export function createAppClient(options: AppClientOptions = {}): Client {
             'stop-button': stopButtonPlugin,
             'model-picker': modelPickerPlugin,
           },
-          protected: [
-            'session',
-            'tools',
-            'prompt',
-            'models',
-            'credentials',
-            'model',
-            'loop',
-            'slots',
-            'views',
-          ],
+          protected: [...protectedIds],
           stubs: agentStubs,
           // The stubs a written **view** is granted, and the **slots** it may
           // fill. `root` is not among them: the page frame is the operator's,
