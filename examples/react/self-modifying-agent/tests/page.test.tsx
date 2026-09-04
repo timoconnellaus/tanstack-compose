@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
+import { agentKey } from '@tanstack/compose-agent'
 import { pressInPanel, startApp } from './helpers/app'
 import type { StartedApp } from './helpers/app'
 
@@ -76,10 +77,16 @@ describe('disabling one element of the page', () => {
     await waitFor(() => expect(screen.getByTestId('stop-button')).toBeDefined())
   })
 
-  test('refuses to disable an entry the operator protected', async () => {
+  test('a protected entry offers no buttons, and the composer refuses it anyway', async () => {
     app = await startApp()
 
-    await pressInPanel('loop', 'Disable')
+    const row = screen.getByTestId('plugin-loop')
+    expect(row.textContent).toContain('protected')
+    expect(row.querySelector('button')).toBeNull()
+
+    const agent = app.client.getContext(agentKey)
+    expect(agent).toBeDefined()
+    await agent!.invoke('disable_plugin', { id: 'loop' })
 
     await waitFor(() =>
       expect(
