@@ -1,12 +1,41 @@
 import { createPlugin } from '@tanstack/compose'
-import { sessionKey } from '@tanstack/compose-agent'
-import { Slot, slotsKey, useStore } from '@tanstack/react-compose'
+import { agentKey, sessionKey } from '@tanstack/compose-agent'
+import {
+  Slot,
+  slotsKey,
+  useContextKey,
+  useStore,
+} from '@tanstack/react-compose'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Store } from '@tanstack/store'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { chatMainSlot, chatMessageSlot } from '../slots'
 import type { ReactNode } from 'react'
 import type { ChatMessageProps, ToolResultEntry } from '../slots'
+
+/**
+ * A quiet row at the end of the list while a turn is running and no text is
+ * arriving — between tool calls, or while the model is still thinking. Read
+ * through the adapter's context hook so the list survives the loop's absence.
+ */
+const idle = new Store<'idle' | 'running'>('idle')
+
+const WorkingRow = ({ streaming }: { streaming: boolean }): ReactNode => {
+  const agent = useContextKey(agentKey)
+  const status = useStore(agent?.status ?? idle)
+  if (!agent || status !== 'running' || streaming) return null
+  return (
+    <li className="working" data-testid="agent-working" aria-live="polite">
+      <span className="working-dots" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      Agent is working
+    </li>
+  )
+}
 
 const AssistantText = ({ text }: { text: string }): ReactNode => (
   <div className="message message-assistant">
@@ -307,6 +336,7 @@ export const messageListPlugin = createPlugin({
                 </li>
               )
             })}
+            <WorkingRow streaming={streamingText.size > 0} />
           </ol>
           {!following ? (
             <button
