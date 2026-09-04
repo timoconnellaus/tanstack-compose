@@ -20,5 +20,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: { port: 3061 },
+  ssr: { noExternal: ['typescript'] },
   build: { rolldownOptions: { external: ['cloudflare:workers'] } },
 }))

@@ -126,9 +126,9 @@ const write = (view: string) => ({
 })
 
 describe('a view checked against the plugin it belongs to', () => {
-  it('recovers the named exports of plugin source with the type of each', () => {
+  it('recovers the named exports of plugin source with the type of each', async () => {
     const checker = createTypeScriptChecker()
-    const exported = checker.exports!({
+    const exported = await checker.exports!({
       source: plugin,
       grants: agentStubs.map((grant) => ({
         name: grant.name,

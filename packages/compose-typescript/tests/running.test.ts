@@ -23,16 +23,15 @@ describe('source that type-checks', () => {
     expect(client.inspect().map((one) => one.id)).toEqual(['registry'])
   })
 
-  it('hands the host plain JavaScript, not the TypeScript it was given', () => {
-    const result = createTypeScriptChecker().check({
+  it('hands the host plain JavaScript, not the TypeScript it was given', async () => {
+    const result = await createTypeScriptChecker().check({
       instanceId: 'written',
       source: adder,
       declarations: toolsStub.declarations,
       grants: [{ name: 'tools', declarations: toolsStub.declarations }],
     })
 
-    expect(result).not.toBeInstanceOf(Promise)
-    const code = (result as { code?: string }).code!
+    const code = result.code!
     expect(code).not.toContain(': Setup')
     expect(code).not.toContain('input: { a: number; b: number }')
     expect(code).toContain('export default setup')

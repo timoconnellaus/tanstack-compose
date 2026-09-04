@@ -12,18 +12,18 @@ import type { AnyStubGrant, SourceDiagnostic } from '@tanstack/compose'
 const grantsOf = (...stubs: Array<AnyStubGrant>) =>
   stubs.map((stub) => ({ name: stub.name, declarations: stub.declarations }))
 
-const check = (
+const check = async (
   source: string,
   grants: Array<{ name: string; declarations: string }>,
-): Array<SourceDiagnostic> =>
-  (
-    createTypeScriptChecker().check({
-      instanceId: 'draft',
-      source,
-      declarations: grants.map((one) => one.declarations).join('\n'),
-      grants,
-    }) as { diagnostics?: Array<SourceDiagnostic> }
-  ).diagnostics ?? []
+): Promise<Array<SourceDiagnostic>> => {
+  const result = await createTypeScriptChecker().check({
+    instanceId: 'draft',
+    source,
+    declarations: grants.map((one) => one.declarations).join('\n'),
+    grants,
+  })
+  return result.diagnostics ?? []
+}
 
 /** The type names a declaration text declares at its top level. */
 function declaredTypes(text: string): Array<string> {
@@ -70,7 +70,7 @@ describe('the declarations a written plugin is shown', () => {
     )
   })
 
-  it('are exactly what the check compiles against', () => {
+  it('are exactly what the check compiles against', async () => {
     // Every type the text declares is in scope during a check, and a name it
     // does not declare is not: the text is the environment, not a description
     // of one.
@@ -91,17 +91,19 @@ describe('the declarations a written plugin is shown', () => {
       ...probes,
     ].join('\n')
 
-    expect(check(source, grants)).toEqual([])
-    expect(check(`${source}\ntype Absent = NotDeclared`, grants)).toEqual([
-      {
-        line: probes.length + 3,
-        column: 15,
-        message: "Cannot find name 'NotDeclared'.",
-      },
-    ])
+    expect(await check(source, grants)).toEqual([])
+    expect(await check(`${source}\ntype Absent = NotDeclared`, grants)).toEqual(
+      [
+        {
+          line: probes.length + 3,
+          column: 15,
+          message: "Cannot find name 'NotDeclared'.",
+        },
+      ],
+    )
   })
 
-  it('say what the entry may reach, not a shared vocabulary', () => {
+  it('say what the entry may reach, not a shared vocabulary', async () => {
     const source = [
       'const setup: Setup = async ({ stubs }) => {',
       "  await stubs.log('hello')",
@@ -109,13 +111,13 @@ describe('the declarations a written plugin is shown', () => {
       'export default setup',
     ].join('\n')
 
-    expect(check(source, grantsOf(logStub))).toEqual([])
-    expect(check(source, grantsOf(toolsStub))).toHaveLength(1)
-    expect(check(source, [])).toHaveLength(1)
+    expect(await check(source, grantsOf(logStub))).toEqual([])
+    expect(await check(source, grantsOf(toolsStub))).toHaveLength(1)
+    expect(await check(source, [])).toHaveLength(1)
   })
 
-  it('let a plugin written against them run with no casts', () => {
+  it('let a plugin written against them run with no casts', async () => {
     expect(adder).not.toContain(' as ')
-    expect(check(adder, grantsOf(toolsStub))).toEqual([])
+    expect(await check(adder, grantsOf(toolsStub))).toEqual([])
   })
 })

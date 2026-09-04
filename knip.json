@@ -4,6 +4,9 @@
     "packages/compose-cloudflare": {
       "entry": ["dev/worker.ts"],
       "ignoreDependencies": ["cloudflare"]
+    },
+    "packages/compose-typescript": {
+      "entry": ["tests/workerd/worker.ts"]
     }
   },
   "ignoreWorkspaces": ["examples/**"],

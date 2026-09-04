@@ -262,7 +262,30 @@ came from:
 The member is optional on the seam: a checker without it costs the caller
 nothing but precision.
 
-## Caching
+## Loading and caching
+
+Creating or importing the checker does not import TypeScript. The compiler is
+roughly 9 MB before compression, and evaluating it while a Worker is loading
+spends the Worker's small startup CPU budget even when no written entry needs a
+check. The first `check` (or `exports`, which needs the same compiler) starts one
+cached `import('typescript')`; concurrent callers await that promise, and a
+consumer bundler can keep the literal dynamic import as its own chunk. This is
+part of the package implementation, not a `define` or alias a particular
+consumer must remember to configure.
+
+TypeScript 6.0.2 decides that workerd is Node-like under `nodejs_compat` and
+constructs `ts.sys` while its module evaluates. Workerd supplies `process`,
+`require`, and the `fs`, `path`, `os`, `crypto`, and `perf_hooks` built-ins that
+path probes. It does not supply CommonJS's lexical `__filename` and `__dirname`,
+so the loader temporarily adds those two global names as `/typescript.js` and
+`/` before the dynamic import and removes them once evaluation settles. The
+shim lives in this package and therefore works with any Worker bundler.
+
+The checker never reads `ts.sys`: every program operation goes through its
+explicit in-memory `LanguageServiceHost`, including current directory, file
+existence, file reads, module resolution, and the generated declaration
+library. `ts.sys` only has to initialise safely because TypeScript constructs it
+as an import-time side effect.
 
 Per-edit latency is the thing being optimised: a model rewrites a 30-line plugin
 several times in a turn, and each rewrite is a check.
@@ -301,14 +324,16 @@ are in the README.
 | First check, cold (the declaration library is parsed once) | ~200 ms |
 | Each check after, ~30 lines, warm                          | ~15 ms  |
 
-The suite runs under `node` and again under `jsdom` in CI; both are green. Bun
-is not a CI runner here, but the checker was run by hand under Bun 1.3 and gave
-the same answers at the same cost. **workerd is not viable and this package does not try**: the bundle
-is far past a Worker's script-size limit, and the in-process host cannot
-evaluate a module from a string there anyway. A client running on workerd that
-wants checked source should check it somewhere it can and start the result — the
-seam already allows that, because `check` is the compiler as well as the
-checker.
+The suite runs under `node`, `jsdom`, and workerd in CI. The workerd arm uses
+the same `nodejs_compat` and `2026-05-01` compatibility date as the Cloudflare
+host and checks passing and failing source against a real grant declaration.
+Bun is not a CI runner here, but the checker was run by hand under Bun 1.3 and
+gave the same answers at the same cost.
+
+On workerd the checker compiles source in the tenant Worker; the separate
+Cloudflare host still starts the returned JavaScript in a Dynamic Worker. The
+compiler's size is paid as a separate lazy chunk and its evaluation is paid on
+the first actual check, not when the tenant Worker starts.
 
 `typescript` is a **regular dependency**, not a peer. The declarations the model
 is shown and the diagnostics it is given are this package's contract, and both
@@ -331,6 +356,8 @@ lying about that. Only this package depends on it; core does not, and must not.
 | The whole agent loop against this checker, end to end                                                   | `tests/composer.test.ts`                                 |
 | `ui.md` D2 — a view is checked against its plugin's named exports                                       | `tests/views.test.ts`                                    |
 | The exports of one module, with the type of each                                                        | `tests/views.test.ts`                                    |
+| Import/factory stay cheap; the first check evaluates TypeScript                                         | `tests/loading.test.ts`                                  |
+| TypeScript evaluates and checks source under workerd                                                    | `tests/workerd/checker.test.ts`                          |
 
 ## What was decided here
 

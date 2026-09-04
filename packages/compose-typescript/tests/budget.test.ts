@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import { rolldown } from 'rolldown'
 import { createTypeScriptChecker } from '../src/index'
 import { toolsStub } from './helpers/entry'
-import type { SourceCheckResult } from '@tanstack/compose'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -64,22 +63,22 @@ describe('what the checker costs', () => {
       .join('')
     const bytes = gzipSync(Buffer.from(code, 'utf8'), { level: 9 }).byteLength
 
-    // Recorded in DESIGN.md and README.md; a Worker script limit is far below
-    // this, which is why workerd is not a target for this package.
+    // Recorded in DESIGN.md and README.md. In a Worker this stays a separate
+    // lazy chunk, so startup evaluates it only when the first check needs it.
     console.log(
       `checker bundle: ${(bytes / 1024 / 1024).toFixed(2)} MB min+gzip`,
     )
     expect(bytes).toBeLessThanOrEqual(1.5 * 1024 * 1024)
   }, 120_000)
 
-  it('checks a ~30-line plugin in under 40 ms once warm', () => {
+  it('checks a ~30-line plugin in under 40 ms once warm', async () => {
     expect(thirtyLines.split('\n').length).toBeGreaterThanOrEqual(28)
     const checker = createTypeScriptChecker()
 
     const cold = Date.now()
-    expect(
-      (checker.check(request(thirtyLines)) as SourceCheckResult).code,
-    ).toBeTypeOf('string')
+    expect((await checker.check(request(thirtyLines))).code).toBeTypeOf(
+      'string',
+    )
     const coldMs = Date.now() - cold
 
     // Each edit is a fresh source in the same declaration environment, which is
@@ -94,7 +93,7 @@ describe('what the checker costs', () => {
         .replaceAll('seen.', `seen${index}.`)
         .replaceAll('seen)', `seen${index})`)
       const started = performance.now()
-      const result = checker.check(request(source)) as SourceCheckResult
+      const result = await checker.check(request(source))
       timings.push(performance.now() - started)
       expect(result.diagnostics).toBeUndefined()
     }

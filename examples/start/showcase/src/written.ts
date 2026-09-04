@@ -5,11 +5,11 @@ import type { ShowcaseApp } from './apps'
 import type { ShowcaseFixture } from './fixtures'
 
 /** Turn a source/view pair into the two ordinary entries the client runs. */
-export function entriesForWritten(
+export async function entriesForWritten(
   client: Client,
   fixture: ShowcaseFixture,
   app: ShowcaseApp,
-): Array<PluginEntry> {
+): Promise<Array<PluginEntry>> {
   const server: PluginEntry = {
     id: fixture.id,
     source: fixture.source,
@@ -21,7 +21,7 @@ export function entriesForWritten(
     name: stub.name,
     declarations: stub.declarations,
   }))
-  const exported = client.checker?.exports?.({
+  const exported = await client.checker?.exports?.({
     source: fixture.source,
     grants,
   })
@@ -44,7 +44,7 @@ export async function addWritten(
   const ids = new Set([fixture.id, viewIdOf(fixture.id)])
   await client.setPluginList([
     ...client.pluginList.state.filter((entry) => !ids.has(entry.id)),
-    ...entriesForWritten(client, fixture, app),
+    ...(await entriesForWritten(client, fixture, app)),
   ])
 }
 
