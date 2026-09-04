@@ -101,7 +101,7 @@ const loopOptions = optionsSchema<
 export const loopPlugin = createPlugin({
   name: 'loop',
   deps: [sessionKey, toolsKey, promptKey, modelKey],
-  provides: [agentKey],
+  provides: [agentKey, requestAction, toolCallAction],
   validator: loopOptions,
   setup(instance, options) {
     const session = instance.context.get(sessionKey)

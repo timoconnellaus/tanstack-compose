@@ -19,7 +19,7 @@ describe('A. Lifecycle and cleanup', () => {
 
     const owner = createPlugin({
       name: 'owner',
-      provides: [valueKey],
+      provides: [valueKey, runAction],
       setup(instance) {
         instance.provide(valueKey, { label: 'from owner' })
         instance.on(pingEvent, (message) => heard.push(message))

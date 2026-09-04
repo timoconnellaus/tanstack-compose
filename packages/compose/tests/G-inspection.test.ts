@@ -66,7 +66,7 @@ describe('G. Inspection', () => {
   it('the resource tree of an instance labels every held registration', async () => {
     const parent = createPlugin({
       name: 'parent',
-      provides: [configKey],
+      provides: [configKey, queryAction],
       setup(instance) {
         instance.provide(configKey, { url: 'https://example.test' })
         instance.defineAction(queryAction, () => 1)

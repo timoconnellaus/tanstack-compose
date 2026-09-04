@@ -7,6 +7,7 @@ import {
 } from '../src/index'
 
 const greet = createAction<string, string>('greet')
+const unused = createAction<void, void>('unused')
 const noticed = createEvent<{ what: string }>('noticed')
 const drained = createEvent<{ what: string }>('drained', { awaited: true })
 
@@ -14,6 +15,7 @@ const seen: Array<string> = []
 
 const owner = createPlugin({
   name: 'owner',
+  provides: [greet],
   setup(instance) {
     instance.defineAction(greet, (input) => {
       seen.push(input)
@@ -23,6 +25,25 @@ const owner = createPlugin({
 })
 
 describe('E. Middleware and events', () => {
+  it('keeps only the newest reports up to the configured error limit', () => {
+    const failed = createEvent<number>('failed')
+    const client = createClient({ errorLimit: 3 })
+    client.on(failed, (number) => {
+      throw new Error(String(number))
+    })
+
+    client.emit(failed, 1)
+    client.emit(failed, 2)
+    client.emit(failed, 3)
+    client.emit(failed, 4)
+
+    expect(client.errors.state.map((report) => String(report.error))).toEqual([
+      'Error: 2',
+      'Error: 3',
+      'Error: 4',
+    ])
+  })
+
   it('middleware can rewrite the input, rewrite the result, or stop the action', async () => {
     seen.length = 0
     const rewriteInput = createPlugin({
@@ -116,9 +137,10 @@ describe('E. Middleware and events', () => {
     const heard: Array<string> = []
     const emitter = createPlugin({
       name: 'emitter',
+      provides: [unused],
       setup(instance) {
         instance.cleanup(() => {})
-        instance.defineAction(createAction<void, void>('unused'), () => {})
+        instance.defineAction(unused, () => {})
         instance.on(noticed, () => heard.push('emitter heard itself'))
       },
     })
