@@ -4,6 +4,9 @@
   "main": "./dev/worker.ts",
   "compatibility_date": "2026-05-01",
   "worker_loaders": [{ "binding": "LOADER" }],
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "compose-cloudflare-test-files" },
+  ],
   "durable_objects": {
     "bindings": [{ "name": "FACET_TEST", "class_name": "FacetTestObject" }],
   },

@@ -1,6 +1,6 @@
-# Showcase S1, S2, Upgrade and Pair — design
+# Showcase pages 1–8 — design
 
-This is slices 6–7 and implements pages 1–3 of
+This is slices 6–9 and implements pages 1–8 of
 [`docs/acceptance/examples.md`](../../../docs/acceptance/examples.md). The
 product shell and pages are ordinary React code. Only the explicitly declared
 actions, slots, context keys and grants are changeable by plugin source
@@ -161,6 +161,28 @@ Product errors cross separately from host diagnostics. Base action middleware,
 the view `server` grant, and DO `press()` return the written handler's message
 to alerts/download behavior and retain the diagnostic wrapper on `cause`. The
 hostile status panel is an operator surface and may show the host diagnostic.
+
+## Pages 4–6
+
+Digest starts the table base plus one scheduled source entry. It reads rows,
+calls `ai.text`, stores `{ text, at }`, schedules its named `digest` export, and
+publishes the latest value as a view fill in `notifications`.
+Browser tests inject a deterministic echo responder and deployment uses Workers
+AI.
+
+Currency starts the table base and grants one named HTTP service. The in-repo
+handler requires the server-attached credential and returns fixed rates. The
+successful fixture renders a converted column; the bank fixture catches `no
+service named "bank" is granted` and renders that exact message in
+notifications.
+
+Two tenants renders two independently keyed tenant panels from the same base.
+Browser mode gives each panel a fresh grant host; deployment addresses the DO
+named `${tenant}:${app.id}`. Both use the same source and storage key, proving
+isolation comes from client/object identity rather than different definitions.
+One anonymous root cookie derives opaque `:left` and `:right` tenant ids; each
+panel carries its id through its snapshot, edit transport, and follower URL so
+the two side-by-side `ComposeStart` trees never select the same object.
 
 ## Decisions where the criteria are silent
 

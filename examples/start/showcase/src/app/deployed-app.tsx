@@ -20,24 +20,40 @@ import type { ReactNode } from 'react'
 export function DeployedApp(properties: {
   app: ShowcaseApp
   snapshot: ComposeSnapshot
+  tenant?: string
   children: ReactNode
 }): ReactNode {
   const transport = useMemo<ComposeTransport>(
     () => ({
       edit: (operation) =>
-        editCompose({ data: { app: properties.app.id, operation } }),
+        editCompose({
+          data: {
+            app: properties.app.id,
+            tenant: properties.tenant,
+            operation,
+          },
+        }),
       revert: (generation) =>
         revertCompose({
-          data: { app: properties.app.id, generation },
+          data: {
+            app: properties.app.id,
+            tenant: properties.tenant,
+            generation,
+          },
         }),
       dispatch: (request) =>
-        dispatchCompose({ data: { app: properties.app.id, request } }),
+        dispatchCompose({
+          data: { app: properties.app.id, tenant: properties.tenant, request },
+        }),
       press: (request) =>
-        pressCompose({ data: { app: properties.app.id, request } }),
+        pressCompose({
+          data: { app: properties.app.id, tenant: properties.tenant, request },
+        }),
       callSource: (request) =>
         callComposeSource({
           data: {
             app: properties.app.id,
+            tenant: properties.tenant,
             request: {
               ...request,
               input: request.input as ComposeValue | undefined,
@@ -45,14 +61,14 @@ export function DeployedApp(properties: {
           },
         }),
     }),
-    [properties.app.id],
+    [properties.app.id, properties.tenant],
   )
   return (
     <ComposeStart
-      key={properties.app.id}
+      key={`${properties.app.id}:${properties.tenant ?? 'cookie'}`}
       snapshot={properties.snapshot}
       transport={transport}
-      follow={`/api/compose/follow?app=${properties.app.id}`}
+      follow={`/api/compose/follow?app=${properties.app.id}${properties.tenant === undefined ? '' : `&tenant=${encodeURIComponent(properties.tenant)}`}`}
     >
       <AppFrame app={properties.app}>{properties.children}</AppFrame>
     </ComposeStart>

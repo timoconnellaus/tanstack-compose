@@ -14,7 +14,10 @@ export default defineConfig({
     }),
     cloudflareTest({
       wrangler: { configPath: './wrangler.test.jsonc' },
-      additionalExports: { ComposeStubLoopback: 'WorkerEntrypoint' },
+      additionalExports: {
+        ComposeStubLoopback: 'WorkerEntrypoint',
+        CurrencyService: 'WorkerEntrypoint',
+      },
     }),
   ],
   resolve: { alias: workspaceSourceAlias },

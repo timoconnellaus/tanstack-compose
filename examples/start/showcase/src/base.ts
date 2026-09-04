@@ -93,6 +93,8 @@ export const notifications = createSlot('notifications')
 /** Optional content beside a page. */
 export const pageSide = createSlot('page.side')
 
+/** Currency amounts contributed beside the base invoice table. */
+export const currencyColumn = createSlot('table.currency')
 interface IdentityObservation {
   claimedInstanceId: string
   actualInstanceId: string
@@ -479,7 +481,13 @@ export const base = defineBase({
     itemCreate: itemCreateAction,
     tableExport: tableExportAction,
   },
-  slots: { tableActions, todoActions, notifications, pageSide },
+  slots: {
+    tableActions,
+    todoActions,
+    notifications,
+    pageSide,
+    currencyColumn,
+  },
   grants: {
     data: dataStub,
     actions: actionsStub,

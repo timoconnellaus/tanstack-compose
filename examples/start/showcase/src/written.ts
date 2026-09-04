@@ -13,6 +13,7 @@ export async function entriesForWritten(
   const server: PluginEntry = {
     id: fixture.id,
     source: fixture.source,
+    options: fixture.options,
     stubs: fixture.stubs,
   }
   if (fixture.view === undefined || fixture.view === '') return [server]
@@ -65,7 +66,10 @@ export function serializedEntriesForWritten(
   const server: SerializedEntry = {
     id: fixture.id,
     plugin: { source: fixture.source },
-    stubs: fixture.stubs.map((stub) => stub.name),
+    options: fixture.options,
+    stubs: [
+      ...(fixture.serializedStubs ?? fixture.stubs.map((stub) => stub.name)),
+    ],
     host: 'cloudflare',
   }
   if (fixture.view === undefined || fixture.view === '') return [server]

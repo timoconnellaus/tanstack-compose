@@ -39,9 +39,17 @@
       "import": "./dist/base.js",
       "require": "./dist/base.cjs"
     },
+    "./catalog": {
+      "import": "./dist/catalog.js",
+      "require": "./dist/catalog.cjs"
+    },
     "./generations": {
       "import": "./dist/generations.js",
       "require": "./dist/generations.cjs"
+    },
+    "./grants": {
+      "import": "./dist/grants/index.js",
+      "require": "./dist/grants/index.cjs"
     },
     "./package.json": "./package.json"
   },

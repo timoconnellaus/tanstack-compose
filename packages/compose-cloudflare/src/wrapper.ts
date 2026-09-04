@@ -54,22 +54,21 @@ const stubMethods = ${JSON.stringify(stubMethods)}
 /** One capability object, built from the loopbacks and nothing else. */
 function stubsFrom(env) {
   const stubs = Object.create(null)
+  const call = async (name, input) => {
+    const answer = await env[name].stubCall(input)
+    if (!answer.ok) throw new Error(answer.message)
+    return answer.value
+  }
   for (const name of stubNames) {
-    const loopback = env[name]
-    const call = async (input) => {
-      const answer = await loopback.stubCall(input)
-      if (!answer.ok) throw new Error(answer.message)
-      return answer.value
-    }
     const methods = stubMethods[name]
     if (methods) {
       const shaped = Object.create(null)
       for (const method of methods) {
-        shaped[method] = (...args) => call({ method, args })
+        shaped[method] = (...args) => call(name, { method, args })
       }
       stubs[name] = Object.freeze(shaped)
     } else {
-      stubs[name] = call
+      stubs[name] = (input) => call(name, input)
     }
   }
   return Object.freeze(stubs)
@@ -215,56 +214,55 @@ const key = (value) => {
 
 function stubsFrom(ctx, env) {
   const stubs = Object.create(null)
+  const call = async (name, input) => {
+    const answer = await env[name].stubCall(input)
+    if (!answer.ok) throw new Error(answer.message)
+    return answer.value
+  }
   for (const name of stubNames) {
-    if (name === 'storage' || name === 'schedule') continue
-    const loopback = env[name]
-    const call = async (input) => {
-      const answer = await loopback.stubCall(input)
-      if (!answer.ok) throw new Error(answer.message)
-      return answer.value
-    }
+    if (name === 'storage') continue
     const methods = stubMethods[name]
     if (methods) {
       const shaped = Object.create(null)
       for (const method of methods) {
-        shaped[method] = (...args) => call({ method, args })
+        shaped[method] = (...args) => call(name, { method, args })
       }
       stubs[name] = Object.freeze(shaped)
     } else {
-      stubs[name] = call
+      stubs[name] = (input) => call(name, input)
     }
   }
   if (stubNames.includes('storage')) {
     stubs.storage = Object.freeze({
-      get: (name) => ctx.storage.get(dataPrefix + key(name)),
-      set: (name, value) => ctx.storage.put(dataPrefix + key(name), value),
-      delete: (name) => ctx.storage.delete(dataPrefix + key(name)),
+      get: async (name) => {
+        const input = await call('storage', { method: 'get', args: [name] })
+        return ctx.storage.get(dataPrefix + key(input.args[0]))
+      },
+      set: async (name, value) => {
+        const input = await call('storage', {
+          method: 'set',
+          args: [name, value],
+        })
+        return ctx.storage.put(dataPrefix + key(input.args[0]), input.args[1])
+      },
+      delete: async (name) => {
+        const input = await call('storage', { method: 'delete', args: [name] })
+        return ctx.storage.delete(dataPrefix + key(input.args[0]))
+      },
       list: async (prefix = '') => {
-        const values = await ctx.storage.list({ prefix: dataPrefix + key(prefix) })
+        const input = await call('storage', {
+          method: 'list',
+          args: [prefix],
+        })
+        const values = await ctx.storage.list({
+          prefix: dataPrefix + key(input.args[0] ?? ''),
+        })
         const result = {}
         for (const [name, value] of values) {
           result[name.slice(dataPrefix.length)] = value
         }
         return result
       },
-    })
-  }
-  if (stubNames.includes('schedule')) {
-    const loopback = env.schedule
-    const call = async (input) => {
-      const answer = await loopback.stubCall(input)
-      if (!answer.ok) throw new Error(answer.message)
-      return answer.value
-    }
-    stubs.schedule = Object.freeze({
-      every: (ms, handler) => call({ method: 'every', ms, handler }),
-      at: (when, handler) =>
-        call({
-          method: 'at',
-          at: when instanceof Date ? when.getTime() : when,
-          handler,
-        }),
-      cancel: () => call({ method: 'cancel' }),
     })
   }
   return Object.freeze(stubs)

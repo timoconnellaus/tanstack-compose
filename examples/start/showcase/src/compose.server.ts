@@ -22,8 +22,13 @@ export const tenantId = (): string => {
 
 /** Resolve exactly one server client for this request's `(tenant, app)`. */
 export const tenantForApp = (id: AppId): ComposeDurableObject => {
+  return tenantFor(tenantId(), id)
+}
+
+/** Resolve one explicitly named showcase tenant/app client. */
+export const tenantFor = (tenant: string, id: AppId): ComposeDurableObject => {
   const bindings = env as unknown as ShowcaseEnv
-  const objectId = bindings.TENANT.idFromName(`${tenantId()}:${id}`)
+  const objectId = bindings.TENANT.idFromName(`${tenant}:${id}`)
   return bindings.TENANT.get(objectId) as unknown as ComposeDurableObject
 }
 
@@ -53,11 +58,14 @@ const tenantIdOf = (request: Request): string | undefined =>
 export async function followTenant(request: Request): Promise<Response> {
   const url = new URL(request.url)
   const app = url.searchParams.get('app')
-  const tenant = tenantIdOf(request)
+  const tenant = url.searchParams.get('tenant') ?? tenantIdOf(request)
   if (
     app !== 'table' &&
     app !== 'todo' &&
     app !== 'hostile' &&
+    app !== 'digest' &&
+    app !== 'currency' &&
+    app !== 'tenants' &&
     app !== 'upgrade' &&
     app !== 'pair'
   ) {

@@ -368,6 +368,25 @@ has no business depending on the agent layer to hand a Worker's own bindings to
 whatever is running in it. `tests/credentials.test.ts` reads a var declared in
 `wrangler.jsonc`, which is how a bound secret reaches a Worker in production too.
 
+## Named grant providers
+
+Both hosts accept the base's HTTP service policy plus optional Workers AI and
+R2 bindings; the served application uses `createFacetHost`. The generated
+wrapper turns the standard grant names into their declared object APIs, but
+each operation traverses its loopback and therefore `stubCallAction` before a
+binding is used. HTTP policy maps a service name to one origin and an optional
+`{ header, value }` credential. A path may not change the origin, and the
+configured header overrides source-supplied headers. AI runs
+`@cf/zai-org/glm-5.3-flash` and returns the answer's text, whether the model
+answers `{ response }` or, as glm-5.3-flash does, OpenAI-shaped `choices`.
+
+Files use R2 with `${entryId}/` prepended in the host. `get` materializes the
+body as an `ArrayBuffer`; `list` follows every cursor page. Removing an entry
+deletes every object under its prefix, while stopping or rewriting retains
+them. A setup failure removes partial files alongside the failed facet state.
+Facet storage and parent-object scheduling otherwise keep the slice 2 semantics
+unchanged.
+
 ## Local and CI
 
 One vitest project, `@cloudflare/vitest-pool-workers` over `wrangler.jsonc`,

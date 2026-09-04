@@ -48,6 +48,8 @@ export function defineGrant<
   const TMethods extends GrantMethods,
 >(definition: {
   name: TName
+  /** Optional low-level declaration text for grants used outside a generated base. */
+  declarations?: string
   deps?: ReadonlyArray<AnyContextKey>
   provides?: ReadonlyArray<AnyContextKey>
   methods: TMethods & MethodsEndingInContext<TMethods>
@@ -58,9 +60,9 @@ export function defineGrant<
   >
   const stub = createStub<GrantMethodCall, unknown>({
     name: definition.name,
-    // Product declarations are generated from `~methods`; the empty string
-    // keeps the low-level hand-authored declaration seam available elsewhere.
-    declarations: '',
+    // Product declarations are generated from `~methods`. Reusable grants may
+    // still carry low-level text when they are granted outside a typed base.
+    declarations: definition.declarations ?? '',
     deps: definition.deps,
     provides: definition.provides,
     handler: ({ input, ...context }) => {
@@ -70,7 +72,10 @@ export function defineGrant<
           `"${definition.name}" has no method "${String(input.method)}"`,
         )
       }
-      return method(...(Array.isArray(input.args) ? input.args : []), context)
+      const args = Array.isArray(input.args) ? [...input.args] : []
+      const authoredArity = Math.max(0, method.length - 1)
+      while (args.length < authoredArity) args.push(undefined)
+      return method(...args, context)
     },
   })
   return Object.assign(stub, {

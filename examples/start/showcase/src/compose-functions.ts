@@ -15,6 +15,9 @@ export const parseAppId = (value: unknown): AppId => {
     value === 'table' ||
     value === 'todo' ||
     value === 'hostile' ||
+    value === 'digest' ||
+    value === 'currency' ||
+    value === 'tenants' ||
     value === 'upgrade' ||
     value === 'pair'
   ) {
@@ -37,23 +40,45 @@ export const getComposeSnapshot = createServerFn()
     return server.tenantForApp(data).snapshot(boot)
   })
 
+/** Load page 6's two independently named tenant clients. */
+export const getTenantSnapshots = createServerFn().handler(async () => {
+  const server = await import('./compose.server')
+  const root = server.tenantId()
+  const left = `${root}:left`
+  const right = `${root}:right`
+  return {
+    left: {
+      tenant: left,
+      snapshot: await server.tenantFor(left, 'tenants').snapshot('tenants'),
+    },
+    right: {
+      tenant: right,
+      snapshot: await server.tenantFor(right, 'tenants').snapshot('tenants'),
+    },
+  }
+})
+
+interface AppTarget {
+  app: AppId
+  tenant?: string
+}
+
+const target = async ({ app, tenant }: AppTarget) => {
+  const server = await import('./compose.server')
+  return tenant === undefined
+    ? server.tenantForApp(parseAppId(app))
+    : server.tenantFor(tenant, parseAppId(app))
+}
+
 /** Apply one plugin-list edit and return the settled generation. */
 export const editCompose = createServerFn({ method: 'POST' })
-  .validator((value: { app: AppId; operation: ComposeEdit }) => value)
-  .handler(async ({ data }) =>
-    (await import('./compose.server'))
-      .tenantForApp(parseAppId(data.app))
-      .edit(data.operation),
-  )
+  .validator((value: AppTarget & { operation: ComposeEdit }) => value)
+  .handler(async ({ data }) => (await target(data)).edit(data.operation))
 
 /** Append and apply a copy of one earlier generation. */
 export const revertCompose = createServerFn({ method: 'POST' })
-  .validator((value: { app: AppId; generation: number }) => value)
-  .handler(async ({ data }) =>
-    (await import('./compose.server'))
-      .tenantForApp(parseAppId(data.app))
-      .revert(data.generation),
-  )
+  .validator((value: AppTarget & { generation: number }) => value)
+  .handler(async ({ data }) => (await target(data)).revert(data.generation))
 
 /** Set the Upgrade cookie and rebuild that tenant client against the base. */
 export const switchComposeBase = createServerFn({ method: 'POST' })
@@ -67,22 +92,16 @@ export const switchComposeBase = createServerFn({ method: 'POST' })
 
 /** Dispatch one named ordinary base action in the authoritative client. */
 export const dispatchCompose = createServerFn({ method: 'POST' })
-  .validator((value: { app: AppId; request: ComposeDispatch }) => value)
+  .validator((value: AppTarget & { request: ComposeDispatch }) => value)
   .handler(async ({ data }): Promise<ComposeValue> => {
-    const { tenantForApp } = await import('./compose.server')
-    return (await tenantForApp(parseAppId(data.app)).dispatch(
-      data.request,
-    )) as ComposeValue
+    return (await (await target(data)).dispatch(data.request)) as ComposeValue
   })
 
 /** Press a handler owned by one of the snapshot's fills. */
 export const pressCompose = createServerFn({ method: 'POST' })
-  .validator((value: { app: AppId; request: ComposePress }) => value)
+  .validator((value: AppTarget & { request: ComposePress }) => value)
   .handler(async ({ data }): Promise<ComposeValue> => {
-    const { tenantForApp } = await import('./compose.server')
-    return (await tenantForApp(parseAppId(data.app)).press(
-      data.request,
-    )) as ComposeValue
+    return (await (await target(data)).press(data.request)) as ComposeValue
   })
 
 /** Call a hostile diagnostic export; it is not used by product fills. */
@@ -91,12 +110,10 @@ export const callComposeSource = createServerFn({ method: 'POST' })
     (value: unknown) =>
       value as {
         app: AppId
+        tenant?: string
         request: { id: string; handler: string; input?: ComposeValue }
       },
   )
   .handler(async ({ data }): Promise<ComposeValue> => {
-    const { tenantForApp } = await import('./compose.server')
-    return (await tenantForApp(parseAppId(data.app)).callSource(
-      data.request,
-    )) as ComposeValue
+    return (await (await target(data)).callSource(data.request)) as ComposeValue
   })

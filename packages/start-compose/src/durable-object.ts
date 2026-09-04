@@ -1,4 +1,5 @@
 import { createClient, sourceErrorOf } from '@tanstack/compose'
+import { resolvePluginList } from '@tanstack/compose/catalog'
 import {
   appendGeneration,
   lastKnownGood,
@@ -359,13 +360,10 @@ export function createComposeDurableObject<TEnv>(
             enabled: entry.enabled,
           }
           if ('catalog' in entry.plugin) {
-            const plugin = options.catalog[entry.plugin.catalog]
-            if (!plugin) {
-              throw new Error(
-                `@tanstack/start-compose: the plugin catalog has no "${entry.plugin.catalog}"`,
-              )
-            }
-            return { ...common, plugin }
+            return resolvePluginList([entry], {
+              plugins: options.catalog,
+              stubs: options.grants,
+            })[0]!
           }
           const stubs = options.resolveStubs
             ? await options.resolveStubs(entry, context)

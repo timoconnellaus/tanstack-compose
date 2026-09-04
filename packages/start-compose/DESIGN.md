@@ -50,7 +50,9 @@ Its entries' only
 durable form is `{ id, plugin: { catalog } | { source }, options, enabled,
 stubs: [names], host }`. Plugin objects and grant functions never enter
 storage. On eviction, initialization reads the head's list, resolves it against the
-current catalogs, and starts a new client. A functional initial list needs the
+current catalog through `@tanstack/compose/catalog`, and starts a new client.
+An unknown plugin name becomes an ordinary error instance rather than
+preventing the list from loading. A functional initial list needs the
 app id only for the first `snapshot(appId)`; after persistence, the object id
 already isolates the app and no app discriminator is stored or accepted by
 edits.

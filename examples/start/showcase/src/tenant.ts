@@ -1,5 +1,12 @@
 import { DurableObject } from 'cloudflare:workers'
 import { createFacetHost } from '@tanstack/compose-cloudflare'
+import {
+  aiStub,
+  filesStub,
+  httpStub,
+  scheduleStub,
+  storageStub,
+} from '@tanstack/compose/grants'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
 import declarationsV1 from 'compose:declarations'
 import declarationsV2 from 'compose:declarations-v2'
@@ -23,18 +30,32 @@ import {
   todoPlugin,
 } from './base'
 import { dataV2Stub } from './base-v2'
-import { appById, hostileApp, tableApp, todoApp } from './apps'
-import type { SerializedEntry } from '@tanstack/start-compose'
+import {
+  appById,
+  currencyApp,
+  digestApp,
+  hostileApp,
+  tableApp,
+  tenantsApp,
+  todoApp,
+  upgradeApp,
+  pairApp,
+} from './apps'
+import type { SerializedPluginEntry } from '@tanstack/compose/catalog'
 
 /** Bindings held by the Start Worker and each tenant/app Durable Object. */
 export interface ShowcaseEnv {
   LOADER: WorkerLoader
   TENANT: DurableObjectNamespace
+  AI?: Ai
+  FILES: R2Bucket
+  CURRENCY: Fetcher
+  CURRENCY_CREDENTIAL: string
 }
 
 class TenantBase extends DurableObject<ShowcaseEnv> {}
 
-const initialEntries = (appId: string): Array<SerializedEntry> => {
+const initialEntries = (appId: string): Array<SerializedPluginEntry> => {
   const app = appById(appId.split(':')[0]!)
   return app.plugins.map((entry) => {
     if (!entry.plugin) throw new Error('showcase: base entries are catalogued')
@@ -49,14 +70,24 @@ const initialEntries = (appId: string): Array<SerializedEntry> => {
 }
 
 const grants = {
+  ai: aiStub,
   actions: actionsStub,
   data: dataStub,
   deps: depsStub,
   exports: exportsStub,
+  files: filesStub,
+  http: httpStub,
+  schedule: scheduleStub,
+  storage: storageStub,
   server: createServerStub(),
   'table.slots': createSlotsStub({ slots: tableApp.viewSlots }),
   'todo.slots': createSlotsStub({ slots: todoApp.viewSlots }),
   'hostile.slots': createSlotsStub({ slots: hostileApp.viewSlots }),
+  'digest.slots': createSlotsStub({ slots: digestApp.viewSlots }),
+  'currency.slots': createSlotsStub({ slots: currencyApp.viewSlots }),
+  'tenants.slots': createSlotsStub({ slots: tenantsApp.viewSlots }),
+  'upgrade.slots': createSlotsStub({ slots: upgradeApp.viewSlots }),
+  'pair.slots': createSlotsStub({ slots: pairApp.viewSlots }),
 }
 
 /**
@@ -93,8 +124,9 @@ const resolveStubs: NonNullable<
   const exported = await context.checker?.exports?.({
     source: server.plugin.source,
     grants: server.stubs.flatMap((name) => {
+      if (!Object.hasOwn(context.grants, name)) return []
       const grant = context.grants[name]
-      return grant ? [{ name, declarations: grant.declarations }] : []
+      return [{ name, declarations: grant.declarations }]
     }),
   })
   return grantView(viewStubs, {
@@ -133,6 +165,18 @@ export const ShowcaseTenant = createComposeDurableObject<ShowcaseEnv>({
       ctx,
       self,
       loader: env.LOADER,
+      services: {
+        currency: {
+          origin: 'https://currency.showcase.internal',
+          credential: {
+            header: 'authorization',
+            value: env.CURRENCY_CREDENTIAL,
+          },
+        },
+      },
+      serviceBindings: { currency: env.CURRENCY },
+      ai: env.AI,
+      files: env.FILES,
       compatibilityDate: '2026-05-01',
       callTimeoutMs: 250,
       limits: { cpuMs: 1000 },

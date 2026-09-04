@@ -45,6 +45,35 @@ const sourceEntry = (id: string, source: string, stubs: Array<string>) => ({
 })
 
 describe('createComposeDurableObject', () => {
+  it('loads an unknown catalog plugin as an error beside healthy entries', async () => {
+    const state = fakeState()
+    const Tenant = createComposeDurableObject({
+      base: FakeDurableObject,
+      self: () => ({}) as DurableObjectStub,
+      initialPluginList: [
+        ...baseEntries,
+        { id: 'missing', plugin: { catalog: 'removed' }, stubs: [] },
+      ],
+      catalog: { slots: slotsPlugin, views: viewsPlugin },
+      grants: {},
+      baseVersion: 'v1',
+      createHost: () => ({
+        ...inProcessHost,
+        alarm: () => Promise.resolve(),
+        schedule: () => Promise.resolve(),
+      }),
+    })
+    const object = new Tenant(state.ctx, {})
+
+    const snapshot = await object.snapshot()
+    expect(
+      snapshot.instances.find((entry) => entry.id === 'missing'),
+    ).toMatchObject({
+      status: 'error',
+      error: { message: 'no plugin named "removed" in the catalog' },
+    })
+  })
+
   it('persists edits, snapshots fills, presses their owner and unwraps source errors', async () => {
     const state = fakeState()
     const alarm = vi.fn()
