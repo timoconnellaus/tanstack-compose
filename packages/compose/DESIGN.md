@@ -21,8 +21,8 @@ createAction<TInput = void, TResult = void>(name: string): ActionDefinition<TInp
 
 createPlugin<TDeps, TProvides, TValidator>(definition: {
   name: string
-  deps?: TDeps                 // context keys this plugin needs before it can start
-  provides?: TProvides         // context keys it may provide
+  deps?: TDeps                 // context keys and owned actions needed before start
+  provides?: TProvides         // context keys it may provide and actions it owns
   validator?: TValidator       // Standard Schema; validates and defaults options
   setup: (instance: Instance<TDeps, TProvides>, options: Options) => void | Cleanup | Promise<void | Cleanup>
 }): Plugin<...>
@@ -32,6 +32,7 @@ createClient(options?: {
   plugins?: Array<PluginEntry>
   checker?: SourceChecker
   onError?: (report: ClientErrorReport) => void
+  errorLimit?: number          // retained reports; default 200
 }): Client
 ```
 
@@ -87,19 +88,20 @@ interface Instance<TDeps, TProvides> {
   readonly client: Client // F5 — a plugin can edit the list it belongs to
   readonly signal: AbortSignal // aborted when this activation ends
   readonly context: {
-    get<K extends TDeps[number]>(key: K): ValueOf<K> // H1 — activation snapshot, never undefined
+    get<K extends ContextKeysOf<TDeps>>(key: K): ValueOf<K> // H1 — activation snapshot, never undefined
     peek<T>(key: ContextKey<T>): T | undefined // B4 — any key, may be absent
   }
-  provide<K extends TProvides[number]>(key: K, value: ValueOf<K>): void
+  get<A extends ActionsOf<TDeps>>(action: A): ActionCall<A>
+  provide<K extends ContextKeysOf<TProvides>>(key: K, value: ValueOf<K>): void
   cleanup(fn: Cleanup, label?: string): void
   on<P, A>(event: EventDefinition<P, A>, listener: Listener<P>): Cleanup
   emit<P, A>(
     event: EventDefinition<P, A>,
     payload: P,
   ): A extends true ? Promise<void> : void
-  defineAction<I, R>(
-    action: ActionDefinition<I, R>,
-    handler: (input: I) => R | Promise<R>,
+  defineAction<A extends ActionsOf<TProvides>>(
+    action: A,
+    handler: (input: InputOf<A>) => ResultOf<A> | Promise<ResultOf<A>>,
   ): void
   use<I, R>(
     action: ActionDefinition<I, R>,
@@ -115,9 +117,12 @@ Two built-in actions are exported so tooling can wrap them (ADR-0003, D3):
 
 ### Choices made where the criteria are silent
 
-- **`provides` is declared.** A plugin may only `provide` a key listed in its
-  `provides`. Without a declaration the client cannot know what a `pending`
-  instance would provide, and B6 (name the cycle) is unimplementable.
+- **`provides` is declared.** A plugin may only `provide` a context key or
+  `defineAction` for an action listed in its `provides`. Declaring an action is
+  what makes the plugin its owner for dependency ordering; registering
+  middleware for the action does not establish ownership or an edge. Without
+  declarations the client cannot know what a `pending` instance would make
+  available, and B6 (name the cycle) is unimplementable.
 - **Options need a validator.** With no `validator` a plugin's options are
   `undefined`; typed options come from the Standard Schema, not a type argument.
   This keeps D1 unconditional — every options value that exists was validated.
@@ -164,11 +169,20 @@ Public `status` is exactly the glossary's four values. A fifth, internal `phase`
 - A `removed` instance's record is dropped; re-enabling an entry (F2) builds a
   fresh instance with fresh options and fresh resources.
 
-## Deps, pending and re-activation
+## Dependencies, pending and re-activation
 
-- `published: Map<ContextKey, unknown>` holds only values provided by `active`
-  instances. `claims: Map<ContextKey, InstanceRecord>` holds every key claimed by
-  a `provide` call, published or not; a second claim throws (B5).
+- `published: Map<Dependency, unknown>` holds only context values and action
+  callables provided by `active` instances. `claims: Map<Dependency,
+InstanceRecord>` holds every context key claimed by `provide` and action
+  claimed by `defineAction`, published or not; a second claim throws (B5 and
+  action ownership's equivalent).
+- An action listed in `deps` is satisfied only while the plugin declaring that
+  action in `provides` is active. `instance.get(action)` reads the activation's
+  captured callable, typed from `deps`; the callable dispatches through the
+  current middleware chain. This gives actions the same waiting,
+  dependent-before-owner cleanup, re-activation, inspection and cycle behavior
+  as context keys. Merely calling `use(action, middleware)` adds a resource but
+  no dependency edge.
 - **Settle pass** — a fixpoint loop, bounded by the instance count, run inside the
   serialised queue:
   1. Any `active` instance whose deps are no longer all published is deactivated
@@ -233,7 +247,11 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
 
 ## Plugin-list reconciliation
 
-- The list is `Store<Array<PluginEntry>>`, entries `{ id, plugin, options?, enabled? }` (F1).
+- The list is `Store<Array<PluginEntry>>` (F1). `PluginEntry` is the union of a
+  `PluginObjectEntry`, which requires `plugin` and excludes `source` and `host`,
+  and a `PluginSourceEntry`, which requires `source` and may name `host` and
+  `stubs`; both share `id`, `options` and `enabled`. Runtime validation still
+  rejects untyped input that carries neither or both.
 - Any write to the store — by an edit helper or directly — schedules a pass.
   Passes run one at a time on a promise queue, so edits made while a pass is
   running are applied by the next one and never interleave with it (F4). Edits
@@ -282,8 +300,10 @@ a middleware rewrote it, rewrote the result, or stopped the call (E1).
 - `resources(id)` returns the instance's labelled resource nodes (G2).
 - Both are published inside one `batch()` at the end of every pass, so a
   subscriber re-renders once per pass with a consistent view and never polls (G3).
-- `errors` collects `{ scope, instanceId?, error }` for cleanup failures, listener
-  failures and reconcile failures.
+- `errors` collects `{ scope, instanceId?, error }` for cleanup failures,
+  listener failures and reconcile failures. It retains the newest `errorLimit`
+  reports in occurrence order (default 200); `0` retains none. `errorLimit`
+  must be a non-negative integer.
 
 ## Hosts and plugin source
 

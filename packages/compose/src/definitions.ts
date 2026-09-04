@@ -105,6 +105,9 @@ export interface ActionDefinition<TInput, TResult> {
 /** Any action definition, whatever it takes and returns. */
 export type AnyAction = ActionDefinition<any, any>
 
+/** A context key or action that can participate in the dependency graph. */
+export type AnyDependency = AnyContextKey | AnyAction
+
 /** The input an action takes. */
 export type InputOf<TAction> =
   TAction extends ActionDefinition<infer TInput, any> ? TInput : never
@@ -112,6 +115,11 @@ export type InputOf<TAction> =
 /** The result an action produces. */
 export type ResultOf<TAction> =
   TAction extends ActionDefinition<any, infer TResult> ? TResult : never
+
+/** The callable obtained for an action declared in a plugin's deps. */
+export type ActionCall<TAction extends AnyAction> = (
+  input: InputOf<TAction>,
+) => Promise<ResultOf<TAction>>
 
 /**
  * A function wrapped around an action. It may change the input, change the
@@ -149,13 +157,15 @@ export type Cleanup = () => void | Promise<void>
 export type Status = 'pending' | 'active' | 'error' | 'removed'
 
 /** The typed view of context a plugin reads through. */
-export interface ContextView<TDeps extends ReadonlyArray<AnyContextKey>> {
+export interface ContextView<TDeps extends ReadonlyArray<AnyDependency>> {
   /**
    * Read a declared dep. Typed from the plugin's `deps`, so reading an
    * undeclared key is a type error (H1). The value is snapshotted before this
    * activation starts, so it remains present after a live dep is withdrawn.
    */
-  get: <TKey extends TDeps[number]>(key: TKey) => ValueOf<TKey>
+  get: <TKey extends Extract<TDeps[number], AnyContextKey>>(
+    key: TKey,
+  ) => ValueOf<TKey>
   /**
    * Read any key, declared or not, returning `undefined` when it is not
    * currently provided by an `active` instance (B4).
@@ -168,8 +178,8 @@ export interface ContextView<TDeps extends ReadonlyArray<AnyContextKey>> {
  * is owned by the instance and undone when the instance is removed.
  */
 export interface Instance<
-  TDeps extends ReadonlyArray<AnyContextKey> = ReadonlyArray<AnyContextKey>,
-  TProvides extends ReadonlyArray<AnyContextKey> = ReadonlyArray<AnyContextKey>,
+  TDeps extends ReadonlyArray<AnyDependency> = ReadonlyArray<AnyDependency>,
+  TProvides extends ReadonlyArray<AnyDependency> = ReadonlyArray<AnyDependency>,
 > {
   /** The id of this instance: the plugin entry's id. */
   readonly id: string
@@ -182,8 +192,12 @@ export interface Instance<
   readonly signal: AbortSignal
   /** Read context. */
   readonly context: ContextView<TDeps>
+  /** Get the typed callable for an action declared in this plugin's deps. */
+  get: <TAction extends Extract<TDeps[number], AnyAction>>(
+    action: TAction,
+  ) => ActionCall<TAction>
   /** Put a value into context under one of the plugin's declared `provides` keys. */
-  provide: <TKey extends TProvides[number]>(
+  provide: <TKey extends Extract<TProvides[number], AnyContextKey>>(
     key: TKey,
     value: ValueOf<TKey>,
   ) => void
@@ -200,9 +214,9 @@ export interface Instance<
     payload: TPayload,
   ) => TAwaited extends true ? Promise<void> : void
   /** Own an action: register the handler that runs when nothing intercepts it. */
-  defineAction: <TInput, TResult>(
-    action: ActionDefinition<TInput, TResult>,
-    handler: ActionHandler<TInput, TResult>,
+  defineAction: <TAction extends Extract<TProvides[number], AnyAction>>(
+    action: TAction,
+    handler: ActionHandler<InputOf<TAction>, ResultOf<TAction>>,
   ) => void
   /** Wrap an action with middleware for the lifetime of this instance. */
   use: <TInput, TResult>(
@@ -221,8 +235,8 @@ export interface Instance<
 export interface Plugin<
   TOptionsInput = undefined,
   TOptions = undefined,
-  TDeps extends ReadonlyArray<AnyContextKey> = ReadonlyArray<AnyContextKey>,
-  TProvides extends ReadonlyArray<AnyContextKey> = ReadonlyArray<AnyContextKey>,
+  TDeps extends ReadonlyArray<AnyDependency> = ReadonlyArray<AnyDependency>,
+  TProvides extends ReadonlyArray<AnyDependency> = ReadonlyArray<AnyDependency>,
 > {
   /** Structural tag. Identity checks never use `instanceof` (I2). */
   readonly type: 'compose/plugin'
@@ -264,15 +278,15 @@ export type OptionsInputOf<TPlugin> =
  * ```
  */
 export function createPlugin<
-  const TDeps extends ReadonlyArray<AnyContextKey> = [],
-  const TProvides extends ReadonlyArray<AnyContextKey> = [],
+  const TDeps extends ReadonlyArray<AnyDependency> = [],
+  const TProvides extends ReadonlyArray<AnyDependency> = [],
   TValidator extends StandardSchemaV1<any, any> | undefined = undefined,
 >(definition: {
   /** The plugin's name, shown in inspection and error messages. */
   name: string
-  /** Context keys that must be provided before an instance can start. */
+  /** Context keys and actions that must be available before an instance can start. */
   deps?: TDeps
-  /** Context keys instances of this plugin may provide. */
+  /** Context keys instances may provide and actions they may own. */
   provides?: TProvides
   /** A Standard Schema that validates and defaults the options (D1). */
   validator?: TValidator
@@ -302,24 +316,42 @@ export function createPlugin<
  * present: a row either names a plugin or carries plugin source for a host to
  * start.
  */
-export interface PluginEntry<TPlugin extends AnyPlugin = AnyPlugin> {
+interface PluginEntryBase<TOptions> {
   /** Stable identity of this row; reconciliation matches on it. */
   id: string
-  plugin?: TPlugin
+  /** Options for the instance. */
+  options?: TOptions
+  /** `false` is equivalent to the row not being there (F2). Defaults to `true`. */
+  enabled?: boolean
+}
+
+/** A plugin-list row that starts an imported plugin object. */
+export interface PluginObjectEntry<
+  TPlugin extends AnyPlugin = AnyPlugin,
+> extends PluginEntryBase<OptionsInputOf<TPlugin>> {
+  plugin: TPlugin
+  source?: never
+  host?: never
+  stubs?: never
+}
+
+/** A plugin-list row that starts source code through a host. */
+export interface PluginSourceEntry extends PluginEntryBase<unknown> {
+  plugin?: never
   /**
    * Plugin source: an ES module whose default export is the setup function and
    * whose other named exports are the handlers the client may call.
    */
-  source?: string
+  source: string
   /** The host to start `source` in. Omitted means the in-process host. */
   host?: string
   /** The stubs this entry is granted; the only authority its source receives. */
   stubs?: ReadonlyArray<AnyStubGrant>
-  /** Options for the instance, validated by the plugin's validator. */
-  options?: OptionsInputOf<TPlugin>
-  /** `false` is equivalent to the row not being there (F2). Defaults to `true`. */
-  enabled?: boolean
 }
+
+/** One row of the plugin list, discriminated by `plugin` or `source`. */
+export type PluginEntry<TPlugin extends AnyPlugin = AnyPlugin> =
+  PluginObjectEntry<TPlugin> | PluginSourceEntry
 
 /** What inspection reports for one instance (G1). */
 export interface InstanceSnapshot {

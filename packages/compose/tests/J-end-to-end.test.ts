@@ -63,7 +63,7 @@ const timerPlugin = createPlugin({
 const toolsPlugin = createPlugin({
   name: 'tools',
   deps: [loggerKey, timerKey],
-  provides: [toolsKey],
+  provides: [toolsKey, callTool],
   setup(instance) {
     const registered: Array<string> = []
     const logger = instance.context.get(loggerKey)
@@ -105,6 +105,7 @@ const rewriterPlugin = createPlugin({
 
 const selfEditingPlugin = createPlugin({
   name: 'composer',
+  provides: [editList],
   setup(instance) {
     instance.defineAction(editList, async (step) => {
       if (step === 'disable-timer')
@@ -114,7 +115,7 @@ const selfEditingPlugin = createPlugin({
       if (step === 'swap-logger') {
         await instance.client.setPluginList(
           instance.client.pluginList.state.map((entry) =>
-            entry.id === 'logger'
+            entry.id === 'logger' && entry.source === undefined
               ? { ...entry, plugin: makeLogger('buffer') }
               : entry,
           ),
