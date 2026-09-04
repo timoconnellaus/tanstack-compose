@@ -181,14 +181,14 @@ describe('what an edit does to the rest of the agent', () => {
     agent.send('add a greeter and a notice')
     await agent.idle()
     // Turn one ran against the world it opened with.
-    expect(steps[0]?.system).toBe('')
+    expect(steps[0]?.system).not.toContain('Be brief.')
     expect(steps[0]?.tools).not.toContain('greet')
     expect(steps[1]?.tools).not.toContain('greet')
 
     agent.send('now greet me')
     await agent.idle()
     // Turn two opened against the world the edits left behind.
-    expect(steps[2]?.system).toBe('Be brief.')
+    expect(steps[2]?.system).toContain('Be brief.')
     expect(steps[2]?.tools).toContain('greet')
 
     const greeting = session

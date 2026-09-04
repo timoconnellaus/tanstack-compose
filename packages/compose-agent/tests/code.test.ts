@@ -107,12 +107,12 @@ describe('the plugins the agent writes', () => {
         readable: true,
       },
     ])
-    expect(systems[0]).toBe('')
+    expect(systems[0]).not.toContain('Shout when asked.')
 
     agent.send('now shout hello')
     await agent.idle()
 
-    expect(systems[2]).toBe('Shout when asked.')
+    expect(systems[2]).toContain('Shout when asked.')
     const outcome = session
       .snapshot()
       .find((entry) => entry.kind === 'tool-result' && entry.name === 'shout')

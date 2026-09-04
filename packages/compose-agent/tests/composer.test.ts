@@ -2,6 +2,7 @@ import { createPlugin, reconcileAction } from '@tanstack/compose'
 import { describe, expect, it } from 'vitest'
 import {
   jsonSchemaValidator,
+  promptKey,
   scriptedModelPlugin,
   toolCallAction,
 } from '../src/index'
@@ -162,6 +163,21 @@ describe("the composer's tools", () => {
     expect(row.options).toEqual({ text: 'hi' })
     expect(row.optionsSchema?.properties?.text).toEqual({ type: 'string' })
     expect(result.catalogOptions?.banner).toBe(row.optionsSchema)
+  })
+
+  it('tells the model how the plugin list works, with the protected ids and catalog live', async () => {
+    const { client } = await buildComposer({
+      catalog: { greeter: greeterPlugin },
+      protected: ['loop'],
+      script: [done],
+    })
+
+    const text = client.getContext(promptKey)!.assemble()
+    expect(text).toContain('plugin list')
+    expect(text).toContain('Protected entries')
+    expect(text).toContain('loop')
+    expect(text).toContain('The catalog offers: greeter.')
+    expect(text).toContain('from the next turn')
   })
 
   it('refuses options for a plugin that declares none', async () => {

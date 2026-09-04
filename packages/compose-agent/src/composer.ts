@@ -4,7 +4,7 @@ import {
   stubDeclarations,
 } from '@tanstack/compose'
 import { jsonSchemaValidator, schemaOf } from './json-schema'
-import { modelKey, toolsKey } from './keys'
+import { modelKey, promptKey, toolsKey } from './keys'
 import { createTool } from './tools'
 import { grantView, pluginIdOf, viewIdOf } from './views'
 import type {
@@ -322,12 +322,13 @@ const args = <TArgs>(schema: JsonSchema) => ({
  */
 export const composerPlugin = createPlugin({
   name: 'composer',
-  deps: [toolsKey, modelKey],
+  deps: [toolsKey, modelKey, promptKey],
   validator: composerOptions,
   setup(instance, options) {
     const client: Client = instance.client
     const registry = instance.context.get(toolsKey)
     const models = instance.context.get(modelKey)
+    const prompt = instance.context.get(promptKey)
 
     /** Entries the agent wrote as source; only these can be read or rewritten. */
     const written = new Set<string>()
@@ -1071,5 +1072,36 @@ export const composerPlugin = createPlugin({
     for (const tool of tools) {
       instance.cleanup(registry.register(tool), `tool(${tool.name})`)
     }
+
+    // The model learns the plugin system from one prompt section, not from
+    // nine tool descriptions read in isolation. The text is live, so the
+    // protected entries and the catalog names in it are current every step.
+    instance.cleanup(
+      prompt.register({
+        name: 'composer',
+        order: 10,
+        text: () => composerSection(options),
+      }),
+      'prompt(composer)',
+    )
   },
 })
+
+/** What the model is told about editing its own plugin list. */
+const composerSection = (options: ComposerOptions): string => {
+  const protectedIds = options.protected
+  const catalog = Object.keys(options.catalog)
+  return [
+    'You run as a plugin list: a list of entries, each an id and a plugin, and you can edit that list with the plugin tools. Everything you are made of, including the tools you hold, comes from entries in it.',
+    'Each entry is enabled or disabled and has a status: active when it runs, pending when a context key it depends on is not provided by any active entry, error when it failed to start. Disabling an entry stops it and everything that depended on it becomes pending; enabling it again brings them back. Every edit reports the entries it touched and any it left pending or in error.',
+    "Some entries take options. list_plugins shows each entry's current options and, when known, a JSON schema of what it takes; set_plugin_options replaces the whole options object and restarts that entry. An entry with no options schema and no validator takes none.",
+    'The plugin catalog holds pre-built plugins you may add by name with add_plugin, under a new entry id; list_plugins names them and their options. You may also write a plugin from source with write_plugin, read it back with read_plugin, and remove entries you added or wrote with remove_plugin.',
+    protectedIds.length === 0
+      ? 'No entry is protected.'
+      : `Protected entries cannot be enabled, disabled, reconfigured or removed: ${protectedIds.join(', ')}.`,
+    catalog.length === 0
+      ? 'The catalog is empty.'
+      : `The catalog offers: ${catalog.join(', ')}.`,
+    'An edit changes the plugin list at once: what an entry puts on a page or provides to other entries changes immediately. Your own tools and prompt are the ones this turn opened with, so a tool or prompt section an edit adds or removes takes effect from the next turn. Use list_plugins before an edit when you are not sure what is running.',
+  ].join(' ')
+}
