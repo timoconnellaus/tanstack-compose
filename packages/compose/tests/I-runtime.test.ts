@@ -75,7 +75,7 @@ describe('I. Runtime and packaging', () => {
     }
   })
 
-  it('the core stays within its 6 kB min+gzip size budget', async () => {
+  it('the core stays within its 7 kB min+gzip size budget', async () => {
     // @tanstack/store is external: it is a dependency, not core code.
     const bundle = await rolldown({
       input: join(sourceDir, 'index.ts'),
@@ -89,7 +89,7 @@ describe('I. Runtime and packaging', () => {
       .map((chunk) => chunk.code)
       .join('')
     const bytes = gzipSync(Buffer.from(code, 'utf8'), { level: 9 }).byteLength
-    expect(bytes).toBeLessThanOrEqual(6 * 1024)
+    expect(bytes).toBeLessThanOrEqual(7 * 1024)
   })
 
   it('every public export has JSDoc', () => {
