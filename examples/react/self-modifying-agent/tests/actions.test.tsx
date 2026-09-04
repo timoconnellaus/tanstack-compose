@@ -1,4 +1,4 @@
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey } from '@tanstack/compose-example-agent-runtime'
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
 import {

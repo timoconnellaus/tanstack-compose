@@ -1,11 +1,14 @@
 import { createPlugin } from '@tanstack/compose'
-import { modelKey, sessionKey } from '@tanstack/compose-agent'
+import { modelKey, sessionKey } from '@tanstack/compose-example-agent-runtime'
 import { ComposeProvider, Slot } from '@tanstack/react-compose'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { createAppClient } from '../../src/client'
 import { rootSlot } from '../../src/slots'
 import type { Client, PluginEntry } from '@tanstack/compose'
-import type { ModelChunk, SessionLog } from '@tanstack/compose-agent'
+import type {
+  ModelChunk,
+  SessionLog,
+} from '@tanstack/compose-example-agent-runtime'
 import type { AppClientOptions } from '../../src/client'
 
 /**
@@ -48,7 +51,7 @@ export async function startApp(
 ): Promise<StartedApp> {
   const client = createAppClient(options)
   await client.settled()
-  await act(async () => {
+  await act(() => {
     render(
       <ComposeProvider client={client}>
         <Slot of={rootSlot} />
@@ -66,7 +69,7 @@ export async function startApp(
 
 /** Click something and let whatever it started settle. */
 export async function press(element: HTMLElement): Promise<void> {
-  await act(async () => {
+  await act(() => {
     fireEvent.click(element)
   })
 }
@@ -79,7 +82,7 @@ export async function pressInPanel(id: string, label: string): Promise<void> {
 
 /** Type into the input box and press Send. */
 export async function sendMessage(text: string): Promise<void> {
-  await act(async () => {
+  await act(() => {
     fireEvent.change(screen.getByLabelText('Message'), {
       target: { value: text },
     })

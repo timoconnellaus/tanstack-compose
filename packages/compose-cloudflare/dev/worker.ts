@@ -21,18 +21,9 @@
  */
 import { createClient, createStub } from '@tanstack/compose'
 import {
-  agentKey,
-  loopPlugin,
-  modelsPlugin,
-  promptPlugin,
-  sessionKey,
-  sessionPlugin,
-  toolsPlugin,
-} from '@tanstack/compose-agent'
-import {
   createCloudflareHost,
+  createWorkersAiModel,
   handleChatCompletions,
-  workersAiModelPlugin,
 } from '../src/index'
 
 export { ComposeStubLoopback } from '../src/index'
@@ -55,31 +46,23 @@ interface Env {
   AI: Ai
 }
 
-/** One turn of an agent whose model is the binding this Worker was given. */
+/** Exercise the host-level provider without embedding an agent runtime here. */
 const ask = async (env: Env, text: string): Promise<Response> => {
-  const client = createClient({
-    plugins: [
-      { id: 'session', plugin: sessionPlugin },
-      { id: 'tools', plugin: toolsPlugin },
-      { id: 'prompt', plugin: promptPlugin },
-      { id: 'models', plugin: modelsPlugin },
-      {
-        id: 'model',
-        plugin: workersAiModelPlugin,
-        options: { binding: env.AI },
-      },
-      { id: 'loop', plugin: loopPlugin },
-    ],
-  })
-  await client.settled()
-
-  const agent = client.getContext(agentKey)!
-  const session = client.getContext(sessionKey)!
-  agent.send(text)
-  await agent.idle()
-  const answer = session.messages().at(-1)
-  await client.destroy()
-
+  const model = createWorkersAiModel({ binding: env.AI })
+  let answer = ''
+  for await (const chunk of model.stream(
+    {
+      turn: 1,
+      step: 1,
+      system: '',
+      messages: [{ role: 'user', content: text }],
+      tools: [],
+      options: {},
+    },
+    new AbortController().signal,
+  )) {
+    if (chunk.kind === 'text') answer += chunk.text
+  }
   return Response.json({ answer })
 }
 

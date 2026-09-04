@@ -3,7 +3,7 @@
  *
  * The **model provider** in `workers-ai.ts` is what a client running *on* the
  * Worker uses. A client running in the browser cannot hold a binding, so it runs
- * `@tanstack/compose-agent-openai` pointed at its own origin, and this is the
+ * `@tanstack/compose-example-agent-runtime` pointed at its own origin, and this is the
  * route that answers: it takes the request that provider sends and returns the
  * chunk stream that provider parses, with the binding — and therefore the whole
  * of the account's authority — staying on the server. No **credential** crosses

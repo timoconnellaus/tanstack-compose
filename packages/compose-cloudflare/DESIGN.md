@@ -348,26 +348,6 @@ What it does not reach:
 - **Type inference.** `tests/H-types.test-d.ts` is about what a builder infers,
   which is a client-side question a host has no part in.
 
-## Credentials from bindings
-
-A Worker has no process environment: its vars and its secrets arrive as
-properties of the `env` object handed to `fetch`. `bindingCredentials(env)` is
-the **credential source** for that — one function, `get(name)`, answering from
-the bindings and from nothing else. A binding that is not a string is not a
-credential and reads as `undefined`, so a Worker Loader or a KV namespace can
-never be mistaken for one.
-
-`env` is captured in the closure the source returns. Nothing enumerates it,
-nothing publishes it, and the agent layer's credentials plugin puts only
-`get(name)` and `has(name)` into context — so a secret bound to the Worker
-reaches the plugin that named it and no store, session entry or tool result.
-
-The `CredentialSource` interface is declared here rather than imported. It is one
-method, the agent layer's plugin takes it structurally, and a **host** package
-has no business depending on the agent layer to hand a Worker's own bindings to
-whatever is running in it. `tests/credentials.test.ts` reads a var declared in
-`wrangler.jsonc`, which is how a bound secret reaches a Worker in production too.
-
 ## Named grant providers
 
 Both hosts accept the base's HTTP service policy plus optional Workers AI and
@@ -414,24 +394,23 @@ proof. `tests/facet-parity.test.ts` is the third parity arm.
 ## Workers AI
 
 The **host** above is one half of what this package is for. The other is a
-**model provider**: a Worker that already holds an `AI` binding can run an agent
-against a real model with no **credential** anywhere — not in the plugin list,
-not in an environment variable, not in the page. A binding is authority the
-platform hands the Worker, and E5's rule is about secrets, so there is nothing
-here for a provider to name and nothing for `inspect()` to leak.
+structural **model provider**: a Worker that already holds an `AI` binding can
+stream model output with no credential anywhere. A binding is authority the
+platform hands the Worker. Registration into a model registry belongs to the
+example or application, so this package has no dependency on an agent loop.
 
 Two things ship, because a browser cannot hold a binding:
 
 | Export                  | Who uses it                                        |
 | ----------------------- | -------------------------------------------------- |
-| `workersAiModelPlugin`  | a client running in the Worker                     |
+| `createWorkersAiModel`  | an application or example runtime in the Worker    |
 | `handleChatCompletions` | a route that client's browser counterpart talks to |
 
 ### Input
 
 One step becomes one `binding.run(model, inputs, { signal })`. `inputs` is
-`{ messages, tools, stream: true }` plus whatever the plugin's `options` and the
-loop's `modelOptions` carry, the request's own winning.
+`{ messages, tools, stream: true }` plus the provider's `options` and the
+request's own options, the request's values winning.
 
 Messages are the ones the **session** derived (B2), in the shape a
 text-generation model reads: the assembled **prompt sections** as one `system`
@@ -442,15 +421,10 @@ Tools go over in the `{ type: 'function', function: { … } }` form — Workers 
 documents both that and a flat `{ name, description, parameters }`, and the one
 that matches the tool registry's own shape is the one with less to go wrong.
 
-**The default model is `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.** The loop
+**The default model is `@cf/zai-org/glm-5.3-flash`.** An agent loop
 needs two things of a model — streaming, so E1 has chunks to append, and function
-calling, so a **tool** can be called at all — and this is a current model with
-both, on the free allocation
-([model card](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/)).
-Its `max_tokens` defaults to 256, which is short for an agent; pass more through
-`options`. It has no `tool_choice`, so a tool cannot be forced on it; the
-frontier models that support one take it through the same path, since request
-options are passed through untouched.
+calling, so a **tool** can be called at all. Provider and request options are
+passed through untouched.
 
 ### Output, and assembling a tool call
 
@@ -465,7 +439,7 @@ model uses is the model's business and not the agent's. (Cloudflare's own
 provider handles the same pair, which is the best evidence there is:
 [`workers-ai-provider/src/streaming.ts`](https://github.com/cloudflare/ai/blob/main/packages/workers-ai-provider/src/streaming.ts).)
 
-Text is yielded as it arrives, so the session records it chunk by chunk (E1).
+Text is yielded as it arrives, so a caller can record it chunk by chunk (E1).
 **Tool calls are yielded after the stream ends**, because a chat-completions
 delta splits one call across frames: the id and name arrive in one, then the
 arguments in as many pieces as the model felt like. So calls are keyed by their
@@ -495,11 +469,10 @@ the count of cancelled bodies, which is the only way to tell the two apart.
 ### Why a route exists
 
 The browser POC has a client in the page, and a page cannot be given a binding
-without being given the account. So the page runs
-`@tanstack/compose-agent-openai` — the provider that already exists — pointed at
-its own origin with no key, and `handleChatCompletions` answers out of the
-binding on the server side. Nothing about the agent in the page knows Workers AI
-exists.
+without being given the account. Its example-local OpenAI-compatible provider
+points at the same origin with no key, and `handleChatCompletions` answers out
+of the binding on the server side. Nothing about the agent in the page knows
+Workers AI exists.
 
 It is deliberately the smallest thing that is honestly the protocol: it takes the
 body that provider sends, forwards the messages and tools to the binding

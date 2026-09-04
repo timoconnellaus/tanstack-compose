@@ -1,7 +1,7 @@
 /**
  * The one piece both the **model provider** and the proxy need: reading the
  * server-sent-event frames a Workers AI streaming response is made of, and
- * turning one frame's payload into something the agent layer understands.
+ * turning one frame's payload into the provider-neutral streamed shape.
  *
  * Workers AI answers a streaming text-generation request with an SSE body whose
  * `data:` payloads are the model's own JSON, terminated by `[DONE]`. Two shapes
@@ -12,7 +12,11 @@
  * - the chat-completions shape, `{ "choices": [{ "delta": { … } }] }`
  */
 
-import type { ToolCall } from '@tanstack/compose-agent'
+interface ToolCall {
+  id: string
+  name: string
+  args: unknown
+}
 
 /** A tool call being built out of frames that each carry a piece of it. */
 export interface PartialCall {

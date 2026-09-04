@@ -1,199 +1,57 @@
-import { createClient } from '@tanstack/compose'
-import {
-  agentKey,
-  createTool,
-  loopPlugin,
-  modelKey,
-  modelsPlugin,
-  promptPlugin,
-  promptSectionPlugin,
-  sessionKey,
-  sessionPlugin,
-  toolsPlugin,
-} from '@tanstack/compose-agent'
 import { describe, expect, it } from 'vitest'
-import { defaultWorkersAiModel, workersAiModelPlugin } from '../src/index'
+import { createWorkersAiModel, defaultWorkersAiModel } from '../src'
 import { chatAnswer, fakeAi, frame, nativeAnswer } from './helpers/ai'
-import type { StandardSchemaV1 } from '@tanstack/compose'
-import type { SessionEntry } from '@tanstack/compose-agent'
-import type { WorkersAiBinding } from '../src/index'
+import type { ModelChunk, ModelRequest } from '../src'
 
-const anyArgs: StandardSchemaV1<unknown, Record<string, unknown>> = {
-  '~standard': {
-    version: 1,
-    vendor: 'compose-cloudflare-tests',
-    validate: (value: unknown) => ({
-      value: (value ?? {}) as Record<string, unknown>,
-    }),
-  },
+const request: ModelRequest = {
+  turn: 1,
+  step: 1,
+  system: 'Answer briefly.',
+  messages: [{ role: 'user', content: 'find cats' }],
+  tools: [
+    {
+      name: 'search',
+      description: 'Search the index',
+      parameters: { type: 'object' },
+    },
+  ],
+  options: {},
 }
 
-const search = createTool({
-  name: 'search',
-  description: 'Search the index',
-  validator: anyArgs,
-  parameters: {
-    type: 'object',
-    properties: { query: { type: 'string' } },
-    required: ['query'],
-  },
-  execute: ({ query }) => `found ${String(query)}`,
-})
-
-/** An agent whose only model is the binding it is given. */
-const agentOn = async (
-  binding: WorkersAiBinding,
-  options: Record<string, unknown> = {},
-) => {
-  const client = createClient({
-    plugins: [
-      { id: 'session', plugin: sessionPlugin },
-      { id: 'tools', plugin: toolsPlugin, options: { tools: [search] } },
-      { id: 'prompt', plugin: promptPlugin },
-      {
-        id: 'tone',
-        plugin: promptSectionPlugin,
-        options: { sections: [{ name: 'tone', text: 'Answer briefly.' }] },
-      },
-      { id: 'models', plugin: modelsPlugin },
-      {
-        id: 'model',
-        plugin: workersAiModelPlugin,
-        options: { binding, ...options } as never,
-      },
-      { id: 'loop', plugin: loopPlugin },
-    ],
-  })
-  await client.settled()
-  return {
-    client,
-    agent: client.getContext(agentKey)!,
-    session: client.getContext(sessionKey)!,
+const collect = async (
+  model: ReturnType<typeof createWorkersAiModel>,
+): Promise<Array<ModelChunk>> => {
+  const chunks: Array<ModelChunk> = []
+  for await (const chunk of model.stream(
+    request,
+    new AbortController().signal,
+  )) {
+    chunks.push(chunk)
   }
+  return chunks
 }
 
-/** Wait until the session holds an entry of a kind, so a test can act mid-turn. */
-const until = async (
-  entries: () => Array<SessionEntry>,
-  kind: SessionEntry['kind'],
-): Promise<void> => {
-  for (let tries = 0; tries < 200; tries += 1) {
-    if (entries().some((entry) => entry.kind === kind)) return
-    await new Promise((resolve) => setTimeout(resolve, 5))
-  }
-  throw new Error(`no ${kind} entry arrived`)
-}
-
-describe('a model provider over a Workers AI binding', () => {
-  it('streams the answer into the session chunk by chunk and appends the assistant entry', async () => {
-    const ai = fakeAi([{ frames: nativeAnswer(['Hello', ' there']) }])
-    const { client, agent, session } = await agentOn(ai.binding)
-
-    agent.send('hello')
-    await agent.idle()
-
+describe('the Workers AI model provider', () => {
+  it('streams native and OpenAI-shaped answer text', async () => {
+    const native = fakeAi([{ frames: nativeAnswer(['Hello', ' there']) }])
     expect(
-      session
-        .snapshot()
-        .filter((entry) => entry.kind === 'chunk')
-        .map((entry) => entry.text),
-    ).toEqual(['Hello', ' there'])
-    expect(session.messages()).toEqual([
-      { role: 'user', content: 'hello' },
-      { role: 'assistant', content: 'Hello there', toolCalls: [] },
+      await collect(createWorkersAiModel({ binding: native.binding })),
+    ).toEqual([
+      { kind: 'text', text: 'Hello' },
+      { kind: 'text', text: ' there' },
     ])
+    expect(native.calls[0]).toMatchObject({ model: defaultWorkersAiModel })
 
-    // The step went to the default model, with the prompt, the messages and the
-    // registered tools, and asked for a stream.
-    const call = ai.calls[0]!
-    expect(call.model).toBe(defaultWorkersAiModel)
-    expect(call.inputs.stream).toBe(true)
-    expect(call.inputs.messages[0]).toEqual({
-      role: 'system',
-      content: 'Answer briefly.',
-    })
-    expect(call.inputs.messages.at(-1)).toEqual({
-      role: 'user',
-      content: 'hello',
-    })
-    expect(call.inputs.tools[0].function.name).toBe('search')
-
-    await client.destroy()
-  })
-
-  it('reads an answer framed as chat-completions deltas as readily as the native one', async () => {
-    const ai = fakeAi([{ frames: chatAnswer(['Same', ' answer']) }])
-    const { client, agent, session } = await agentOn(ai.binding, {
-      model: '@cf/openai/gpt-oss-120b',
-      name: 'gpt-oss',
-    })
-
-    agent.send('hello')
-    await agent.idle()
-
-    expect(session.messages().at(-1)).toEqual({
-      role: 'assistant',
-      content: 'Same answer',
-      toolCalls: [],
-    })
-    expect(ai.calls[0]!.model).toBe('@cf/openai/gpt-oss-120b')
-
-    await client.destroy()
-  })
-
-  it('runs the tool the model called and sends its result back in the next step', async () => {
-    const ai = fakeAi([
-      {
-        frames: nativeAnswer(
-          ['Looking'],
-          [{ name: 'search', arguments: { query: 'cats' } }],
-        ),
-      },
-      { frames: nativeAnswer(['Found them.']) },
-    ])
-    const { client, agent, session } = await agentOn(ai.binding)
-
-    agent.send('find cats')
-    await agent.idle()
-
+    const chat = fakeAi([{ frames: chatAnswer(['Same', ' answer']) }])
     expect(
-      session
-        .snapshot()
-        .filter((entry) => entry.kind === 'tool-result')
-        .map((entry) => entry.outcome),
-    ).toEqual([{ ok: true, value: 'found cats' }])
-
-    // The second step is the point of the round trip: the model reads the
-    // answer to the call it made.
-    expect(ai.calls).toHaveLength(2)
-    expect(ai.calls[1]!.inputs.messages.slice(-2)).toEqual([
-      {
-        role: 'assistant',
-        content: 'Looking',
-        tool_calls: [
-          {
-            id: 'call-1',
-            type: 'function',
-            function: { name: 'search', arguments: '{"query":"cats"}' },
-          },
-        ],
-      },
-      {
-        role: 'tool',
-        name: 'search',
-        tool_call_id: 'call-1',
-        content: 'found cats',
-      },
+      await collect(createWorkersAiModel({ binding: chat.binding })),
+    ).toEqual([
+      { kind: 'text', text: 'Same' },
+      { kind: 'text', text: ' answer' },
     ])
-    expect(session.messages().at(-1)).toMatchObject({
-      role: 'assistant',
-      content: 'Found them.',
-    })
-
-    await client.destroy()
   })
 
-  it('assembles a tool call whose name and arguments arrive in pieces', async () => {
+  it('assembles a function call whose arguments arrive in pieces', async () => {
     const ai = fakeAi([
       {
         frames: [
@@ -206,19 +64,8 @@ describe('a model provider over a Workers AI binding', () => {
                     {
                       index: 0,
                       id: 'call_abc',
-                      function: { name: 'search', arguments: '' },
+                      function: { name: 'search', arguments: '{"query":' },
                     },
-                  ],
-                },
-              },
-            ],
-          }),
-          frame({
-            choices: [
-              {
-                delta: {
-                  tool_calls: [
-                    { index: 0, function: { arguments: '{"query":' } },
                   ],
                 },
               },
@@ -238,152 +85,55 @@ describe('a model provider over a Workers AI binding', () => {
           frame('[DONE]'),
         ],
       },
-      { frames: nativeAnswer(['Found them.']) },
     ])
-    const { client, agent, session } = await agentOn(ai.binding)
-
-    agent.send('find cats')
-    await agent.idle()
-
     expect(
-      session.snapshot().filter((entry) => entry.kind === 'tool-call'),
-    ).toMatchObject([
-      { call: { id: 'call_abc', name: 'search', args: { query: 'cats' } } },
-    ])
-
-    await client.destroy()
-  })
-
-  it('ends the step with an error entry when the stream fails part-way', async () => {
-    const ai = fakeAi([
+      await collect(createWorkersAiModel({ binding: ai.binding })),
+    ).toEqual([
+      { kind: 'text', text: 'Looking' },
       {
-        frames: [
-          frame({ response: 'partial' }),
-          frame({ error: { message: 'the upstream model is overloaded' } }),
-        ],
+        kind: 'tool-call',
+        call: { id: 'call_abc', name: 'search', args: { query: 'cats' } },
       },
     ])
-    const { client, agent, session } = await agentOn(ai.binding)
-
-    agent.send('hello')
-    await agent.idle()
-
-    const entries = session.snapshot()
-    expect(entries.filter((entry) => entry.kind === 'error')).toMatchObject([
-      { scope: 'model', message: /the upstream model is overloaded/ },
-    ])
-    // What did arrive is kept: the turn closes with what the model managed (E1).
-    expect(entries.at(-1)).toMatchObject({
-      kind: 'turn-closed',
-      reason: 'error',
-    })
-    expect(session.messages().at(-1)).toMatchObject({
-      role: 'assistant',
-      content: 'partial',
-    })
-
-    await client.destroy()
   })
 
-  it('stops the stream when the turn is cancelled, and takes the next turn as usual', async () => {
-    const ai = fakeAi([
-      // The first answer never ends on its own; only a cancellation ends it.
-      { frames: [frame({ response: 'thinking' })], hold: true },
-      { frames: nativeAnswer(['Second answer.']) },
-    ])
-    const { client, agent, session } = await agentOn(ai.binding)
-
-    agent.send('hello')
-    await until(() => session.snapshot(), 'chunk')
-    await agent.cancel()
-
-    expect(ai.cancelled()).toBe(1)
-    expect(session.snapshot().at(-1)).toMatchObject({
-      kind: 'turn-closed',
-      reason: 'cancelled',
-    })
-
-    // The agent is not spent: the next turn runs against the same provider.
-    agent.send('again')
-    await agent.idle()
-    expect(session.messages().at(-1)).toMatchObject({
-      role: 'assistant',
-      content: 'Second answer.',
-    })
-
-    await client.destroy()
-  })
-
-  it('ends the step in error when the model goes quiet for longer than stallMs', async () => {
+  it('gives up on a model that goes quiet for longer than stallMs', async () => {
     const ai = fakeAi([
       { frames: [frame({ response: 'thinking' })], hold: true },
     ])
-    const { client, agent, session } = await agentOn(ai.binding, {
-      stallMs: 50,
-    })
-
-    agent.send('hello')
-    await agent.idle()
-
-    expect(
-      session
-        .snapshot()
-        .some(
-          (entry) =>
-            entry.kind === 'error' &&
-            entry.message.includes('the model sent nothing for 50 ms'),
-        ),
-    ).toBe(true)
+    await expect(
+      collect(createWorkersAiModel({ binding: ai.binding, stallMs: 50 })),
+    ).rejects.toThrow('the model sent nothing for 50 ms')
     expect(ai.cancelled()).toBe(1)
-
-    await client.destroy()
   })
 
-  it('registers into the model registry and unregisters with its plugin', async () => {
-    const ai = fakeAi([])
-    const client = createClient({
-      plugins: [
-        { id: 'models', plugin: modelsPlugin },
-        {
-          id: 'model',
-          plugin: workersAiModelPlugin,
-          options: { binding: ai.binding, name: 'workers-ai' } as never,
-        },
-      ],
-    })
-    await client.settled()
-
-    const registry = client.getContext(modelKey)!
-    expect(registry.list().map((each) => each.name)).toEqual(['workers-ai'])
-
-    // The key stays; only the provider goes (E2).
-    await client.removePlugin('model')
-    expect(client.getContext(modelKey)).toBe(registry)
-    expect(registry.current()).toBeUndefined()
-
-    await client.destroy()
-  })
-
-  it('ends in error when its options name no binding that can run', async () => {
-    const client = createClient({
-      plugins: [
-        { id: 'models', plugin: modelsPlugin },
-        {
-          id: 'model',
-          plugin: workersAiModelPlugin,
-          options: { binding: { run: 'not a function' } } as never,
-        },
-      ],
-    })
-    await client.settled()
-
-    const instance = client.inspect().find((each) => each.id === 'model')!
-    expect(instance.status).toBe('error')
-    expect(String((instance.error as Error).message)).toMatch(
-      /Workers AI binding is required/,
+  it('forwards prompt, tools and provider settings', async () => {
+    const ai = fakeAi([{ frames: nativeAnswer(['done']) }])
+    await collect(
+      createWorkersAiModel({
+        binding: ai.binding,
+        options: { temperature: 0.25 },
+      }),
     )
-    expect(client.getContext(modelKey)!.list()).toEqual([])
+    expect(ai.calls[0]?.inputs).toMatchObject({
+      messages: [
+        { role: 'system', content: 'Answer briefly.' },
+        { role: 'user', content: 'find cats' },
+      ],
+      temperature: 0.25,
+      tools: [{ function: { name: 'search' } }],
+    })
+  })
 
-    await client.destroy()
+  it('reports binding and streamed model failures', async () => {
+    expect(() =>
+      createWorkersAiModel({ binding: { run: 'not a function' } as never }),
+    ).toThrow(/binding with run\(\) is required/)
+    const ai = fakeAi([
+      { frames: [frame({ error: { message: 'model overloaded' } })] },
+    ])
+    await expect(
+      collect(createWorkersAiModel({ binding: ai.binding })),
+    ).rejects.toThrow(/model overloaded/)
   })
 })

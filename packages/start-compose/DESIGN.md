@@ -40,7 +40,9 @@ the injected `base` constructor (`DurableObject` from `cloudflare:workers` in a
 real app). The app supplies:
 
 - initial serializable entries, or a function of the app id;
-- a catalog mapping persisted names to trusted plugin objects;
+- a catalog mapping persisted names to trusted plugin objects, or a per-object
+  factory over the object state and environment when a trusted plugin must
+  close over a binding;
 - a grant catalog mapping persisted names to stub values;
 - an optional action catalog for the ordinary base actions the shell dispatches;
 - the host constructor and checker.
@@ -119,6 +121,17 @@ Instance-store and fill-store changes queue publication. Changes arriving
 while a publication is in progress queue another pass instead of being lost.
 During an `edit`, intermediate reconciliation notifications are held; the
 returned snapshot is produced only after `client.setPluginList()` settles.
+
+An application may attach one structured-clone-safe `state` value to each
+whole snapshot and subscribe stores that should publish it. This keeps
+application state such as a streamed session on the same reconvergent channel
+without teaching this package its domain shape.
+
+An edit originating inside the server client still crosses the same durable
+boundary. The object wraps `reconcileAction`, serializes the proposed list
+against its resolved catalog and grants, appends the pending generation before
+reconciliation, and records its outcome after settlement. Public `edit()`
+temporarily marks its own reconcile so the wrapper does not append twice.
 
 `follow()` accepts a hibernatable WebSocket and immediately sends the current
 whole snapshot. `ComposeStart` opens it only after hydration, ignores an older

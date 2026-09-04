@@ -59,12 +59,9 @@ importers:
       '@tanstack/compose':
         specifier: ^0.1.0
         version: link:../../../packages/compose
-      '@tanstack/compose-agent':
-        specifier: ^0.1.0
-        version: link:../../../packages/compose-agent
-      '@tanstack/compose-agent-openai':
-        specifier: ^0.1.0
-        version: link:../../../packages/compose-agent-openai
+      '@tanstack/compose-example-agent-runtime':
+        specifier: workspace:*
+        version: link:../../shared/agent
       '@tanstack/compose-typescript':
         specifier: ^0.1.0
         version: link:../../../packages/compose-typescript
@@ -111,6 +108,113 @@ importers:
       vitest:
         specifier: ^4.1.4
         version: 4.1.11(@types/node@25.9.5)(@vitest/coverage-istanbul@4.1.11)(jsdom@29.1.1)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+
+  examples/shared/agent:
+    dependencies:
+      '@tanstack/compose':
+        specifier: workspace:*
+        version: link:../../../packages/compose
+      '@tanstack/compose-cloudflare':
+        specifier: workspace:*
+        version: link:../../../packages/compose-cloudflare
+      '@tanstack/compose-tools':
+        specifier: workspace:*
+        version: link:../../../packages/compose-tools
+      '@tanstack/react-compose':
+        specifier: workspace:*
+        version: link:../../../packages/react-compose
+      '@tanstack/store':
+        specifier: ^0.11.1
+        version: 0.11.1
+    devDependencies:
+      '@tanstack/compose-typescript':
+        specifier: workspace:*
+        version: link:../../../packages/compose-typescript
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.9.5
+      jsdom:
+        specifier: ^29.0.2
+        version: 29.1.1
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.11(@types/node@25.9.5)(@vitest/coverage-istanbul@4.1.11)(jsdom@29.1.1)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+
+  examples/start/agent:
+    dependencies:
+      '@tanstack/compose':
+        specifier: workspace:*
+        version: link:../../../packages/compose
+      '@tanstack/compose-cloudflare':
+        specifier: workspace:*
+        version: link:../../../packages/compose-cloudflare
+      '@tanstack/compose-example-agent-runtime':
+        specifier: workspace:*
+        version: link:../../shared/agent
+      '@tanstack/compose-tools':
+        specifier: workspace:*
+        version: link:../../../packages/compose-tools
+      '@tanstack/compose-typescript':
+        specifier: workspace:*
+        version: link:../../../packages/compose-typescript
+      '@tanstack/react-compose':
+        specifier: workspace:*
+        version: link:../../../packages/react-compose
+      '@tanstack/react-router':
+        specifier: ^1.170.32
+        version: 1.170.32(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tanstack/react-start':
+        specifier: ^1.168.49
+        version: 1.168.49(esbuild@0.28.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rolldown@1.2.6)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      '@tanstack/start-compose':
+        specifier: workspace:*
+        version: link:../../../packages/start-compose
+      react:
+        specifier: ^19.2.5
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.5
+        version: 19.2.8(react@19.2.8)
+      react-markdown:
+        specifier: ^10.1.0
+        version: 10.1.0(@types/react@19.2.18)(react@19.2.8)
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+    devDependencies:
+      '@cloudflare/vite-plugin':
+        specifier: 1.54.4
+        version: 1.54.4(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.129.0(@cloudflare/workers-types@5.20260830.1))
+      '@cloudflare/vitest-pool-workers':
+        specifier: ^0.22.0
+        version: 0.22.0(@cloudflare/workers-types@5.20260830.1)(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11)
+      '@cloudflare/workers-types':
+        specifier: ^5.20260830.1
+        version: 5.20260830.1
+      '@testing-library/react':
+        specifier: ^16.3.3
+        version: 16.3.3(@testing-library/dom@10.4.1)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.5(@types/react@19.2.18)
+      '@vitejs/plugin-react':
+        specifier: ^6.0.1
+        version: 6.1.1(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      jsdom:
+        specifier: ^29.0.2
+        version: 29.1.1
+      vite:
+        specifier: ^8.0.8
+        version: 8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.11(@types/node@25.9.5)(@vitest/coverage-istanbul@4.1.11)(jsdom@29.1.1)(vite@8.2.2(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
+      wrangler:
+        specifier: ^4.129.0
+        version: 4.129.0(@cloudflare/workers-types@5.20260830.1)
 
   examples/start/showcase:
     dependencies:
@@ -198,39 +302,11 @@ importers:
         specifier: ^1.2.6
         version: 1.2.6
 
-  packages/compose-agent:
-    dependencies:
-      '@tanstack/compose':
-        specifier: workspace:*
-        version: link:../compose
-      '@tanstack/react-compose':
-        specifier: workspace:*
-        version: link:../react-compose
-      '@tanstack/store':
-        specifier: ^0.11.1
-        version: 0.11.1
-    devDependencies:
-      '@cloudflare/vitest-pool-workers':
-        specifier: ^0.22.0
-        version: 0.22.0(@cloudflare/workers-types@5.20260830.1)(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11)
-
-  packages/compose-agent-openai:
-    dependencies:
-      '@tanstack/compose':
-        specifier: workspace:*
-        version: link:../compose
-      '@tanstack/compose-agent':
-        specifier: workspace:*
-        version: link:../compose-agent
-
   packages/compose-cloudflare:
     dependencies:
       '@tanstack/compose':
         specifier: workspace:*
         version: link:../compose
-      '@tanstack/compose-agent':
-        specifier: workspace:*
-        version: link:../compose-agent
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
@@ -238,9 +314,6 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^5.20260830.1
         version: 5.20260830.1
-      '@tanstack/compose-agent-openai':
-        specifier: workspace:*
-        version: link:../compose-agent-openai
 
   packages/compose-devtools:
     dependencies:
@@ -282,6 +355,12 @@ importers:
         specifier: ^19.2.5
         version: 19.2.8(react@19.2.8)
 
+  packages/compose-tools:
+    dependencies:
+      '@tanstack/compose':
+        specifier: workspace:*
+        version: link:../compose
+
   packages/compose-typescript:
     dependencies:
       '@tanstack/compose':
@@ -294,9 +373,6 @@ importers:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
         version: 0.22.0(@cloudflare/workers-types@5.20260830.1)(@vitest/runner@4.1.11)(@vitest/snapshot@4.1.11)(vitest@4.1.11)
-      '@tanstack/compose-agent':
-        specifier: workspace:*
-        version: link:../compose-agent
       rolldown:
         specifier: ^1.2.6
         version: 1.2.6

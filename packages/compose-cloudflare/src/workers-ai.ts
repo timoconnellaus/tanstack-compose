@@ -1,12 +1,10 @@
 /**
- * A **model provider** over a Cloudflare Workers AI binding. It holds no
+ * A framework-neutral **model provider** over a Cloudflare Workers AI binding. It holds no
  * **credential**: a binding is authority the platform hands the Worker, not a
  * secret in the plugin list, so an agent running on Cloudflare gets a real model
  * with nothing to configure and nothing to leak (E1, E2, E5).
  */
 
-import { createPlugin } from '@tanstack/compose'
-import { modelKey } from '@tanstack/compose-agent'
 import {
   aiFrames,
   assembleToolCalls,
@@ -15,14 +13,53 @@ import {
   textOf,
   withinStall,
 } from './frames'
-import type { StandardSchemaV1 } from '@tanstack/compose'
-import type {
-  Message,
-  ModelChunk,
-  ModelProvider,
-  ModelRequest,
-} from '@tanstack/compose-agent'
 import type { PartialCall } from './frames'
+
+/** One tool call in the provider-neutral request and response shape. */
+export interface ModelToolCall {
+  id: string
+  name: string
+  args: unknown
+}
+
+/** One conversation message accepted by the Workers AI provider. */
+export type ModelMessage =
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; toolCalls: Array<ModelToolCall> }
+  | {
+      role: 'tool'
+      callId: string
+      name: string
+      content: string
+      isError: boolean
+    }
+
+/** One request from any agent runtime to this host-level provider. */
+export interface ModelRequest {
+  turn: number
+  step: number
+  system: string
+  messages: Array<ModelMessage>
+  tools: Array<{
+    name: string
+    description: string
+    parameters: Record<string, unknown>
+  }>
+  options: Record<string, unknown>
+}
+
+/** One streamed provider response item. */
+export type ModelChunk =
+  { kind: 'text'; text: string } | { kind: 'tool-call'; call: ModelToolCall }
+
+/** The structural provider returned for an example runtime to register. */
+export interface WorkersAiModel {
+  readonly name: string
+  stream: (
+    request: ModelRequest,
+    signal: AbortSignal,
+  ) => AsyncIterable<ModelChunk>
+}
 
 /**
  * The Workers AI binding, by the shape this package uses rather than by name,
@@ -65,7 +102,7 @@ export interface WorkersAiOptions {
  * that supports both function calling and streaming, which is the pair the loop
  * needs. Name another in `model` to run another.
  */
-export const defaultWorkersAiModel = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+export const defaultWorkersAiModel = '@cf/zai-org/glm-5.3-flash'
 
 interface ResolvedOptions {
   binding: WorkersAiBinding
@@ -75,56 +112,32 @@ interface ResolvedOptions {
   stallMs: number
 }
 
-const workersAiOptions: StandardSchemaV1<WorkersAiOptions, ResolvedOptions> = {
-  '~standard': {
-    version: 1,
-    vendor: 'compose-cloudflare',
-    validate: (value: unknown) => {
-      const options = value as Partial<WorkersAiOptions> | undefined
-      if (typeof options?.binding?.run !== 'function') {
-        return {
-          issues: [
-            {
-              message:
-                'a Workers AI binding is required — pass `env.AI`, which must have a `run` method',
-              path: ['binding'],
-            },
-          ],
-        }
-      }
-      const model = options.model ?? defaultWorkersAiModel
-      const stallMs = options.stallMs ?? 30_000
-      if (
-        typeof stallMs !== 'number' ||
-        !Number.isFinite(stallMs) ||
-        stallMs < 0
-      ) {
-        return {
-          issues: [
-            {
-              message: 'stallMs must be a number of milliseconds, 0 or more',
-              path: ['stallMs'],
-            },
-          ],
-        }
-      }
-      return {
-        value: {
-          binding: options.binding,
-          model,
-          name: options.name ?? model,
-          options: { ...options.options },
-          stallMs,
-        },
-      }
-    },
-  },
+const resolveOptions = (options: WorkersAiOptions): ResolvedOptions => {
+  if (typeof options.binding.run !== 'function') {
+    throw new Error(
+      '@tanstack/compose-cloudflare: a Workers AI binding with run() is required',
+    )
+  }
+  const model = options.model ?? defaultWorkersAiModel
+  const stallMs = options.stallMs ?? 30_000
+  if (typeof stallMs !== 'number' || !Number.isFinite(stallMs) || stallMs < 0) {
+    throw new Error(
+      '@tanstack/compose-cloudflare: stallMs must be a number of milliseconds, 0 or more',
+    )
+  }
+  return {
+    binding: options.binding,
+    model,
+    name: options.name ?? model,
+    options: { ...options.options },
+    stallMs,
+  }
 }
 
 /** Our messages in the shape a text-generation model reads. */
 const toAiMessages = (
   system: string,
-  messages: ReadonlyArray<Message>,
+  messages: ReadonlyArray<ModelMessage>,
 ): Array<Record<string, unknown>> => {
   const wire: Array<Record<string, unknown>> = []
   if (system !== '') wire.push({ role: 'system', content: system })
@@ -219,34 +232,22 @@ async function* streamRun(
 }
 
 /**
- * A **model provider** backed by a Workers AI binding. It registers into the
- * model registry and unregisters through its cleanup, so it is added, removed or
- * selected without the loop or any other plugin restarting (E2).
+ * Build a **model provider** backed by a Workers AI binding. Registration in a
+ * model registry is the caller's concern, keeping that agent runtime out of
+ * this host package.
  *
  * @example
  * ```ts
- * const client = createClient({
- *   plugins: [
- *     // …session, tools, prompt, models…
- *     { id: 'model', plugin: workersAiModelPlugin, options: { binding: env.AI } },
- *     { id: 'loop', plugin: loopPlugin },
- *   ],
- * })
+ * const provider = createWorkersAiModel({ binding: env.AI })
+ * modelRegistry.register(provider)
  * ```
  */
-export const workersAiModelPlugin = createPlugin({
-  name: 'workers-ai-model',
-  deps: [modelKey],
-  validator: workersAiOptions,
-  setup(instance, options) {
-    const provider: ModelProvider = {
-      name: options.name,
-      stream: (request: ModelRequest, signal: AbortSignal) =>
-        streamRun(options, request, signal),
-    }
-    instance.cleanup(
-      instance.context.get(modelKey).register(provider),
-      `provider(${options.name})`,
-    )
-  },
-})
+export const createWorkersAiModel = (
+  options: WorkersAiOptions,
+): WorkersAiModel => {
+  const resolved = resolveOptions(options)
+  return {
+    name: resolved.name,
+    stream: (request, signal) => streamRun(resolved, request, signal),
+  }
+}

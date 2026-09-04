@@ -86,6 +86,10 @@ _Avoid_: schema (when meaning the runtime check), config class
 
 ### Agent
 
+These terms describe the example-local agent runtime under `examples/shared/agent`.
+Compose itself exposes only the framework-neutral composer definitions in
+`@tanstack/compose-tools`; a conversation loop is not part of the library.
+
 **Agent**:
 A client whose plugins together run a conversation loop: it takes input, requests a model, runs the tools the model calls, and repeats until nothing is owed.
 _Avoid_: assistant, bot, harness, driver
@@ -107,7 +111,9 @@ The context key for the model registry: the current model provider, which turns 
 _Avoid_: LLM, adapter, backend, driver
 
 **Model provider**:
-A plugin that registers one vendor or endpoint into the model registry.
+An implementation that turns a request into streamed model output. An
+example-local plugin may register it into the model registry; host packages may
+provide the implementation without depending on an agent loop.
 _Avoid_: adapter, connector, integration
 
 **Credential**:

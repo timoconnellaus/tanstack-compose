@@ -1,4 +1,4 @@
-import { inProcessHost } from '@tanstack/compose'
+import { createAction, createPlugin, inProcessHost } from '@tanstack/compose'
 import {
   createServerStub,
   createSlotsStub,
@@ -45,6 +45,72 @@ const sourceEntry = (id: string, source: string, stubs: Array<string>) => ({
 })
 
 describe('createComposeDurableObject', () => {
+  it('persists an in-object edit and carries application state in snapshots', async () => {
+    const state = fakeState()
+    const addEntry = createAction<{ id: string }, void>('add-entry')
+    const added = createPlugin({ name: 'added', setup() {} })
+    const editor = createPlugin({
+      name: 'editor',
+      provides: [addEntry],
+      setup(instance) {
+        instance.defineAction(addEntry, async ({ id }) => {
+          await instance.client.setPluginList([
+            ...instance.client.pluginList.state,
+            { id, plugin: added },
+          ])
+        })
+      },
+    })
+    const seenEnvironments: Array<object> = []
+    const env = { tenant: 'one' }
+    const Tenant = createComposeDurableObject({
+      base: FakeDurableObject,
+      self: () => ({}) as DurableObjectStub,
+      initialPluginList: [
+        ...baseEntries,
+        { id: 'editor', plugin: { catalog: 'editor' }, stubs: [] },
+      ],
+      catalog: ({ env: given }) => {
+        seenEnvironments.push(given)
+        return { slots: slotsPlugin, views: viewsPlugin, editor, added }
+      },
+      grants: {},
+      actions: { 'add-entry': addEntry },
+      baseVersion: 'v1',
+      snapshotState: (client) => ({ entries: client.pluginList.state.length }),
+      createHost: () => ({
+        ...inProcessHost,
+        alarm: () => Promise.resolve(),
+        schedule: () => Promise.resolve(),
+      }),
+    })
+    const object = new Tenant(state.ctx, env)
+
+    expect(await object.snapshot()).toMatchObject({
+      generation: 0,
+      state: { entries: 3 },
+    })
+    await object.dispatch({ action: 'add-entry', input: { id: 'from-agent' } })
+    const edited = await object.snapshot()
+    expect(edited.instances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'from-agent', status: 'active' }),
+      ]),
+    )
+    expect(edited).toMatchObject({
+      generation: 1,
+      outcome: 'good',
+      state: { entries: 4 },
+      pluginList: expect.arrayContaining([
+        expect.objectContaining({ id: 'from-agent' }),
+      ]),
+    })
+    expect(seenEnvironments).toEqual([env])
+    expect(
+      state.values.get('compose:generations') as Array<unknown>,
+    ).toHaveLength(2)
+  })
+
   it('loads an unknown catalog plugin as an error beside healthy entries', async () => {
     const state = fakeState()
     const Tenant = createComposeDurableObject({

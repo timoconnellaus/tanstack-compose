@@ -12,8 +12,7 @@
   },
   "dependencies": {
     "@tanstack/compose": "^0.1.0",
-    "@tanstack/compose-agent": "^0.1.0",
-    "@tanstack/compose-agent-openai": "^0.1.0",
+    "@tanstack/compose-example-agent-runtime": "workspace:*",
     "@tanstack/compose-typescript": "^0.1.0",
     "@tanstack/react-compose": "^0.1.0",
     "@tanstack/store": "^0.11.1",

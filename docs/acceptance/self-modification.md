@@ -20,7 +20,7 @@ are covered by the test suite. Terms are as defined in
 - **B2** The plugin that provides the self-modification tools is itself protected by construction, so the agent can always undo an edit it made.
 - **B3** The agent adds pre-built plugins only from the plugin catalog, by name, with options validated by that plugin's validator; an unknown name or invalid options return an error result and change nothing.
 - **B4** Which entries are protected, what the catalog contains, which stubs a written plugin receives and which host it runs in are decided by the operator when assembling the client, not by anything the model can call.
-- **B5** A model provider entry is protected in the reference assembly, and the composer's documentation says why: reconfiguring a provider's endpoint would send its credential elsewhere. A test shows `set_plugin_options` on a provider entry is refused and the endpoint unchanged.
+- **B5** A model provider entry is protected in the reference assembly, and the composer's documentation says why: reconfiguring a provider's endpoint would send its credential elsewhere. A test shows `configure_plugin` on a provider entry is refused and the endpoint unchanged.
 
 ## C. Consequences are visible and recoverable
 
@@ -44,3 +44,23 @@ are covered by the test suite. Terms are as defined in
 ## E. End-to-end
 
 - **E1** One test runs a conversation against the scripted provider in which the model: lists the plugins, disables one that a tool depends on, sees the dependent go `pending`, re-enables it, adds a plugin from the catalog, uses a tool that plugin provides in the next step, writes a plugin as source with a type error, reads the diagnostics, rewrites it so it throws on setup, reads the error, rewrites it again, uses the tool it registers in the next step, attempts to disable a protected entry and is refused, and removes the plugin it wrote; the test asserts the session log, the final plugin list, and that the client holds no leaked resources.
+
+## Criterion → test
+
+Paths are from the repository root.
+
+| Criterion               | Test file                                                                                                                                                 |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1                      | `examples/shared/agent/tests/composer.test.ts` and `code.test.ts`                                                                                         |
+| A2–A4                   | `examples/shared/agent/tests/composer.test.ts`                                                                                                            |
+| B1–B2                   | `examples/shared/agent/tests/limits.test.ts`                                                                                                              |
+| B3                      | `examples/shared/agent/tests/limits.test.ts` and `packages/compose-tools/tests/composer.test.ts`                                                          |
+| B4                      | `examples/shared/agent/tests/limits.test.ts` and `packages/compose-tools/tests/composer.test.ts`                                                          |
+| B5                      | `examples/shared/agent/tests/credentials.test.ts`                                                                                                         |
+| C1–C4                   | `examples/shared/agent/tests/consequences.test.ts`                                                                                                        |
+| D1–D6                   | `examples/shared/agent/tests/code.test.ts`                                                                                                                |
+| D7–D8                   | `examples/shared/agent/tests/code.test.ts`, `typescript-composer.test.ts`, `typescript-views.test.ts` and `packages/compose-tools/tests/composer.test.ts` |
+| D9                      | `examples/shared/agent/tests/code.test.ts`                                                                                                                |
+| View-grant consequences | `examples/shared/agent/tests/views.test.ts`                                                                                                               |
+| Dynamic Worker host     | `examples/start/agent/tests-workerd/cloudflare-agent.test.ts`                                                                                             |
+| E1                      | `examples/shared/agent/tests/self-editing.test.ts` and `typescript-composer.test.ts`                                                                      |

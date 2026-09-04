@@ -1,4 +1,4 @@
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey } from '@tanstack/compose-example-agent-runtime'
 import { cleanup, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
 import {
@@ -8,7 +8,10 @@ import {
 } from '../src/written'
 import { press, sendMessage, startApp } from './helpers/app'
 import type { Client } from '@tanstack/compose'
-import type { ComposerResult, ScriptedResponse } from '@tanstack/compose-agent'
+import type {
+  ComposerResult,
+  ScriptedResponse,
+} from '@tanstack/compose-example-agent-runtime'
 import type { StartedApp } from './helpers/app'
 
 let app: StartedApp | undefined
@@ -20,13 +23,16 @@ afterEach(async () => {
 })
 
 /** One `write_plugin` turn: the call, then the sentence that closes the turn. */
-const writes = (view: string): Array<ScriptedResponse> => [
+const writes = (source: string): Array<ScriptedResponse> => [
   {
     chunks: ['Writing it now.'],
     toolCalls: [
       {
         name: 'write_plugin',
-        args: { id: 'summariser', source: summariserSource, view },
+        args: {
+          id: 'summariser',
+          source: source === '' ? summariserSource : source,
+        },
       },
     ],
   },
@@ -34,8 +40,8 @@ const writes = (view: string): Array<ScriptedResponse> => [
 ]
 
 /** The result of the last composer tool the model called. */
-const lastResult = (app: StartedApp): ComposerResult | undefined =>
-  app.session
+const lastResult = (started: StartedApp): ComposerResult | undefined =>
+  started.session
     .snapshot()
     .filter((entry) => entry.kind === 'tool-result')
     .map((entry) => (entry as { outcome: { value?: unknown } }).outcome.value)
@@ -133,13 +139,9 @@ describe('a plugin the model writes with a view', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Summarise' })).toBeNull(),
     )
-    // Both halves went: the plugin and its view are one pair.
+    // The one source entry owned both the tool and the fill.
     const ids = app.client.pluginList.state.map((entry) => entry.id)
     expect(ids).not.toContain('summariser')
-    expect(ids).not.toContain('summariser.view')
-    expect(app.client.inspect().map((one) => one.id)).not.toContain(
-      'summariser.view',
-    )
     // The tool it registered went with it, so the model cannot call it again.
     expect(
       await app.client.getContext(agentKey)!.invoke('summarise', { text: 'x' }),
@@ -167,7 +169,7 @@ describe('a plugin the model writes with a view', () => {
     await waitFor(() => expect(lastResult(app!)?.ok).toBe(false))
     const result = lastResult(app)
     expect(result?.diagnostics?.[0]?.message).toContain(
-      `Type '"summarize"' is not assignable to type '"summarise"'`,
+      `'handlerName' does not exist`,
     )
     // Neither half was written, so there is no button and no half-built plugin.
     expect(result?.entries).toEqual([])
@@ -178,7 +180,7 @@ describe('a plugin the model writes with a view', () => {
   })
 
   test('cannot fill a slot the operator did not grant it', async () => {
-    const elsewhere = summariserView.replace(
+    const elsewhere = summariserSource.replace(
       "slot: 'chat.input.actions'",
       "slot: 'root'",
     )

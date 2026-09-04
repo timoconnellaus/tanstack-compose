@@ -1,4 +1,4 @@
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey } from '@tanstack/compose-example-agent-runtime'
 import {
   act,
   cleanup,
@@ -49,7 +49,7 @@ describe('the working indicator', () => {
   test('says what its options say', async () => {
     app = await startApp({ model: slowModel })
     const agent = app.client.getContext(agentKey)!
-    await agent.invoke('set_plugin_options', {
+    await agent.invoke('configure_plugin', {
       id: 'working-indicator',
       options: { text: 'OK ALREADY!' },
     })
@@ -118,7 +118,7 @@ describe('which key sends', () => {
     await agent.idle()
 
     await pressInPanel('send-on-enter', 'Disable')
-    await agent.invoke('add_plugin', {
+    await agent.invoke('add_from_catalog', {
       id: 'send-on-ctrl-enter',
       name: 'send-on-ctrl-enter',
     })

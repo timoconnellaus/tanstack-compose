@@ -1,5 +1,5 @@
 import { createSlot } from '@tanstack/react-compose'
-import type { SessionEntry } from '@tanstack/compose-agent'
+import type { SessionEntry } from '@tanstack/compose-example-agent-runtime'
 
 /** A tool outcome entry paired with the call that produced it. */
 export type ToolResultEntry = Extract<

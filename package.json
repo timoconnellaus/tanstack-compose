@@ -56,10 +56,9 @@
   },
   "overrides": {
     "@tanstack/compose": "workspace:*",
-    "@tanstack/compose-agent": "workspace:*",
-    "@tanstack/compose-agent-openai": "workspace:*",
     "@tanstack/compose-cloudflare": "workspace:*",
     "@tanstack/compose-devtools": "workspace:*",
+    "@tanstack/compose-tools": "workspace:*",
     "@tanstack/compose-typescript": "workspace:*",
     "@tanstack/react-compose": "workspace:*",
     "@tanstack/start-compose": "workspace:*"

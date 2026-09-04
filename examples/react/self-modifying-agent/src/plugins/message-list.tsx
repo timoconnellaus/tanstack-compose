@@ -1,5 +1,5 @@
 import { createPlugin } from '@tanstack/compose'
-import { sessionKey } from '@tanstack/compose-agent'
+import { sessionKey } from '@tanstack/compose-example-agent-runtime'
 import { Slot, slotsKey, useStore } from '@tanstack/react-compose'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { chatListTrailerSlot, chatMainSlot, chatMessageSlot } from '../slots'

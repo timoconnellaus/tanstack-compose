@@ -1,5 +1,5 @@
 import { createPlugin } from '@tanstack/compose'
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey } from '@tanstack/compose-example-agent-runtime'
 import { Slot, slotsKey, useStore } from '@tanstack/react-compose'
 import { useRef, useState } from 'react'
 import { sendAction } from '../actions'

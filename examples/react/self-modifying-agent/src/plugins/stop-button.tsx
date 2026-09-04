@@ -1,5 +1,5 @@
 import { createPlugin } from '@tanstack/compose'
-import { agentKey } from '@tanstack/compose-agent'
+import { agentKey } from '@tanstack/compose-example-agent-runtime'
 import { slotsKey, useStore } from '@tanstack/react-compose'
 import { cancelAction } from '../actions'
 import { chatInputActionsSlot } from '../slots'

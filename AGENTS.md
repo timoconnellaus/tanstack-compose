@@ -45,5 +45,5 @@ Run the package-scoped variants (`pnpm --filter @tanstack/compose test:lib`) whi
 
 - pnpm workspace + nx; TypeScript strict; vitest; eslint via `@tanstack/eslint-config`; prettier; tsdown builds with strict publint.
 - Tests live in `packages/<name>/tests/`; group them by the area of behaviour they cover.
-- Package names: `@tanstack/compose`, `@tanstack/react-compose`, `@tanstack/compose-devtools`, `@tanstack/compose-agent`. Examples live under `examples/<framework>/<name>`.
+- Package names: `@tanstack/compose`, `@tanstack/compose-tools`, `@tanstack/react-compose`, `@tanstack/compose-devtools`. Examples live under `examples/<framework>/<name>`; agent loops are example code.
 - Commits: conventional-commit prefixes (`feat`, `fix`, `chore`, `docs`, `test`), one slice or one concern per commit.
