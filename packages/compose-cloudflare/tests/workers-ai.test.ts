@@ -314,6 +314,31 @@ describe('a model provider over a Workers AI binding', () => {
     await client.destroy()
   })
 
+  it('ends the step in error when the model goes quiet for longer than stallMs', async () => {
+    const ai = fakeAi([
+      { frames: [frame({ response: 'thinking' })], hold: true },
+    ])
+    const { client, agent, session } = await agentOn(ai.binding, {
+      stallMs: 50,
+    })
+
+    agent.send('hello')
+    await agent.idle()
+
+    expect(
+      session
+        .snapshot()
+        .some(
+          (entry) =>
+            entry.kind === 'error' &&
+            entry.message.includes('the model sent nothing for 50 ms'),
+        ),
+    ).toBe(true)
+    expect(ai.cancelled()).toBe(1)
+
+    await client.destroy()
+  })
+
   it('registers into the model registry and unregisters with its plugin', async () => {
     const ai = fakeAi([])
     const client = createClient({

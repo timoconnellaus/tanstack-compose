@@ -22,7 +22,7 @@ interface RecordedCall {
  */
 export const mockEndpoint = (
   answer:
-    | { sse: string; sliceAt?: number }
+    | { sse: string; sliceAt?: number; hold?: boolean }
     | { status: number; body: string }
     | { failWith: Error },
 ) => {
@@ -50,7 +50,8 @@ export const mockEndpoint = (
         for (let at = 0; at < answer.sse.length; at += size) {
           controller.enqueue(encoder.encode(answer.sse.slice(at, at + size)))
         }
-        controller.close()
+        // A held stream never ends on its own: only the reader's timer does.
+        if (!answer.hold) controller.close()
       },
     })
     return Promise.resolve(

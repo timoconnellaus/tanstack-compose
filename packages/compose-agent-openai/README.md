@@ -53,6 +53,12 @@ agent.send('what is on the shelf?')
 await agent.idle()
 ```
 
+The options are `model`, `baseUrl`, `credential`, `headers`, `name` and `stallMs`.
+`stallMs` (default 30 000) is how long the endpoint may go quiet, before its
+headers or between chunks, before the step ends in error; `0` waits forever. A
+proxy that loses its upstream otherwise leaves a turn spinning with no way out
+but Stop.
+
 ## Options
 
 | Option       | Default                     | What it does                                                  |

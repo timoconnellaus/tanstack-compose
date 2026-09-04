@@ -59,6 +59,35 @@ interface ChatPart {
 const partOf = (frame: AiFrame): ChatPart | undefined =>
   frame.choices?.[0]?.delta ?? frame.choices?.[0]?.message
 
+/** The error a quiet model ends with. */
+const stalled = (stallMs: number): Error =>
+  new Error(
+    `@tanstack/compose-cloudflare: the model sent nothing for ${stallMs} ms`,
+  )
+
+/**
+ * Wait for one step of the answer, but not for longer than `stallMs` when that
+ * is above zero. A binding whose upstream has gone away otherwise holds the
+ * step open forever, and the turn with it.
+ */
+export const withinStall = async <T>(
+  work: Promise<T>,
+  stallMs: number,
+): Promise<T> => {
+  if (stallMs <= 0) return await work
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(stalled(stallMs)), stallMs)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Split a server-sent-event body into its `data:` payloads. The protocol frames
  * events with a blank line, so a read that stops mid-event is held back until
@@ -72,6 +101,7 @@ const partOf = (frame: AiFrame): ChatPart | undefined =>
 async function* sseEvents(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
+  stallMs = 0,
 ): AsyncGenerator<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -80,9 +110,11 @@ async function* sseEvents(
   let buffer = ''
   try {
     for (;;) {
-      const { done, value } = await reader.read()
+      const { done, value } = await withinStall(reader.read(), stallMs)
       if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      // Event boundaries are a blank line, whichever line ending the server
+      // uses; a CRLF stream would otherwise never split.
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
       let boundary = buffer.indexOf('\n\n')
       while (boundary !== -1) {
         const frame = buffer.slice(0, boundary)
@@ -111,11 +143,13 @@ async function* sseEvents(
 export async function* aiFrames(
   answer: unknown,
   signal?: AbortSignal,
+  stallMs = 0,
 ): AsyncGenerator<AiFrame> {
   if (answer instanceof ReadableStream) {
     for await (const data of sseEvents(
       answer as ReadableStream<Uint8Array>,
       signal,
+      stallMs,
     )) {
       if (data === '' || data === '[DONE]') continue
       yield JSON.parse(data) as AiFrame
@@ -140,9 +174,13 @@ export const errorOf = (frame: AiFrame): string | undefined => {
 
 /** The text this frame adds, in whichever shape it arrived. */
 export const textOf = (frame: AiFrame): string => {
-  const native = typeof frame.response === 'string' ? frame.response : ''
-  const chat = partOf(frame)?.content
-  return native + (typeof chat === 'string' ? chat : '')
+  // Workers AI sends both shapes in one frame for some models: the chat delta
+  // and the native `response` carry the same text. Read one, never both.
+  const part = partOf(frame)
+  if (part !== undefined) {
+    return typeof part.content === 'string' ? part.content : ''
+  }
+  return typeof frame.response === 'string' ? frame.response : ''
 }
 
 /**

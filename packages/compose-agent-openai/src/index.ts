@@ -41,6 +41,13 @@ export interface OpenAiOptions {
   headers?: Record<string, string>
   /** The provider's name, as it appears in inspection. Defaults to the model. */
   name?: string
+  /**
+   * How long the endpoint may go quiet, waiting for its headers or for the next
+   * byte of the stream, before the request is abandoned and the step ends in
+   * error. Defaults to 30 000 ms; `0` waits forever. A proxy that loses its
+   * upstream otherwise leaves a turn spinning with no way out but Stop.
+   */
+  stallMs?: number
 }
 
 interface ResolvedOptions {
@@ -49,6 +56,7 @@ interface ResolvedOptions {
   credential: string | null
   headers: Record<string, string>
   name: string
+  stallMs: number
 }
 
 /** The endpoint one request goes to, with the credential value it carries. */
@@ -67,8 +75,24 @@ const openaiOptions: StandardSchemaV1<OpenAiOptions, ResolvedOptions> = {
           issues: [{ message: 'a model name is required', path: ['model'] }],
         }
       }
+      const stallMs = options.stallMs ?? 30_000
+      if (
+        typeof stallMs !== 'number' ||
+        !Number.isFinite(stallMs) ||
+        stallMs < 0
+      ) {
+        return {
+          issues: [
+            {
+              message: 'stallMs must be a number of milliseconds, 0 or more',
+              path: ['stallMs'],
+            },
+          ],
+        }
+      }
       return {
         value: {
+          stallMs,
           model: options.model,
           baseUrl: (options.baseUrl ?? 'https://api.openai.com/v1').replace(
             /\/$/,
@@ -160,15 +184,25 @@ interface PartialCall {
  */
 async function* sseEvents(
   body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+  onChunk?: () => void,
 ): AsyncGenerator<string> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
+  // An aborted request must end the read too: a body that is still open when
+  // the signal fires would otherwise hold the step forever.
+  const stop = (): void => void reader.cancel().catch(() => {})
+  if (signal?.aborted) stop()
+  else signal?.addEventListener('abort', stop, { once: true })
   let buffer = ''
   try {
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      buffer += decoder.decode(value, { stream: true })
+      onChunk?.()
+      // Event boundaries are a blank line, whichever line ending the server
+      // uses; a CRLF stream would otherwise never split.
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
       let boundary = buffer.indexOf('\n\n')
       while (boundary !== -1) {
         const frame = buffer.slice(0, boundary)
@@ -180,16 +214,68 @@ async function* sseEvents(
       }
     }
   } finally {
+    signal?.removeEventListener('abort', stop)
     reader.releaseLock()
   }
 }
 
 /** Stream one chat completion, yielding text as it arrives and calls at the end. */
+/**
+ * A signal that fires when the turn is cancelled, and also when the endpoint has
+ * sent nothing for `stallMs`. `touch` re-arms the quiet timer on each chunk.
+ */
+const stallGuard = (signal: AbortSignal, stallMs: number) => {
+  const controller = new AbortController()
+  let stalled = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const arm = (): void => {
+    if (stallMs <= 0) return
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      stalled = true
+      controller.abort()
+    }, stallMs)
+  }
+  const forward = (): void => controller.abort()
+  if (signal.aborted) controller.abort()
+  else signal.addEventListener('abort', forward, { once: true })
+  arm()
+  return {
+    signal: controller.signal,
+    touch: arm,
+    stalled: () => stalled,
+    // The turn's signal stays linked after the stream ends, so a late cancel
+    // still reaches the endpoint's request; only the quiet timer is dropped.
+    release: (): void => clearTimeout(timer),
+  }
+}
+
 async function* streamCompletion(
   options: Endpoint,
   request: ModelRequest,
   signal: AbortSignal,
 ): AsyncGenerator<ModelChunk> {
+  const guard = stallGuard(signal, options.stallMs)
+  try {
+    yield* streamGuarded(options, request, guard)
+  } catch (error) {
+    if (guard.stalled()) {
+      throw new Error(
+        `@tanstack/compose-agent-openai: the endpoint sent nothing for ${options.stallMs} ms`,
+      )
+    }
+    throw error
+  } finally {
+    guard.release()
+  }
+}
+
+async function* streamGuarded(
+  options: Endpoint,
+  request: ModelRequest,
+  guard: ReturnType<typeof stallGuard>,
+): AsyncGenerator<ModelChunk> {
+  const signal = guard.signal
   const response = await fetch(`${options.baseUrl}/chat/completions`, {
     method: 'POST',
     signal,
@@ -217,7 +303,7 @@ async function* streamCompletion(
   }
 
   const partials = new Map<number, PartialCall>()
-  for await (const data of sseEvents(response.body)) {
+  for await (const data of sseEvents(response.body, signal, guard.touch)) {
     if (data === '' || data === '[DONE]') continue
     const event = JSON.parse(data) as {
       error?: { message?: string }
@@ -251,6 +337,9 @@ async function* streamCompletion(
         arguments: partial.arguments + (call.function?.arguments ?? ''),
       })
     }
+  }
+  if (signal.aborted) {
+    throw new DOMException('the request was aborted', 'AbortError')
   }
 
   for (const [index, partial] of [...partials.entries()].sort(

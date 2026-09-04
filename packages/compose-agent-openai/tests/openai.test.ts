@@ -312,6 +312,22 @@ describe('An OpenAI-compatible model provider', () => {
     await client.destroy()
   })
 
+  it('gives up on an endpoint that goes quiet for longer than stallMs', async () => {
+    const partial = fixture('text').split('data: [DONE]')[0]!
+    endpoint = mockEndpoint({ sse: partial, hold: true })
+    const { client, model } = await provider({
+      model: 'gpt-4o-mini',
+      stallMs: 50,
+    })
+
+    await expect(
+      collect(model.stream(request(), new AbortController().signal)),
+    ).rejects.toThrow('the endpoint sent nothing for 50 ms')
+    expect(endpoint.calls[0]!.signal!.aborted).toBe(true)
+
+    await client.destroy()
+  })
+
   it('registers into the model registry and unregisters with its plugin', async () => {
     endpoint = mockEndpoint({ sse: fixture('text') })
     const client = createClient({

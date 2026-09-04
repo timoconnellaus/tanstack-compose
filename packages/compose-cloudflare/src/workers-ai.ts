@@ -13,6 +13,7 @@ import {
   errorOf,
   foldToolCalls,
   textOf,
+  withinStall,
 } from './frames'
 import type { StandardSchemaV1 } from '@tanstack/compose'
 import type {
@@ -52,6 +53,11 @@ export interface WorkersAiOptions {
   name?: string
   /** Settings sent with every request, under the loop's own `modelOptions`. */
   options?: WorkersAiModelSettings
+  /**
+   * How long the binding may go quiet, before answering or between frames,
+   * before the step ends in error. Defaults to 30 000 ms; `0` waits forever.
+   */
+  stallMs?: number
 }
 
 /**
@@ -66,6 +72,7 @@ interface ResolvedOptions {
   model: string
   name: string
   options: Record<string, unknown>
+  stallMs: number
 }
 
 const workersAiOptions: StandardSchemaV1<WorkersAiOptions, ResolvedOptions> = {
@@ -86,12 +93,28 @@ const workersAiOptions: StandardSchemaV1<WorkersAiOptions, ResolvedOptions> = {
         }
       }
       const model = options.model ?? defaultWorkersAiModel
+      const stallMs = options.stallMs ?? 30_000
+      if (
+        typeof stallMs !== 'number' ||
+        !Number.isFinite(stallMs) ||
+        stallMs < 0
+      ) {
+        return {
+          issues: [
+            {
+              message: 'stallMs must be a number of milliseconds, 0 or more',
+              path: ['stallMs'],
+            },
+          ],
+        }
+      }
       return {
         value: {
           binding: options.binding,
           model,
           name: options.name ?? model,
           options: { ...options.options },
+          stallMs,
         },
       }
     },
@@ -172,14 +195,15 @@ async function* streamRun(
   request: ModelRequest,
   signal: AbortSignal,
 ): AsyncGenerator<ModelChunk> {
-  const answer = await options.binding.run(
-    options.model,
-    toAiInputs(options, request),
-    { signal },
+  const answer = await withinStall(
+    options.binding.run(options.model, toAiInputs(options, request), {
+      signal,
+    }),
+    options.stallMs,
   )
 
   const partials = new Map<number, PartialCall>()
-  for await (const frame of aiFrames(answer, signal)) {
+  for await (const frame of aiFrames(answer, signal, options.stallMs)) {
     const failure = errorOf(frame)
     if (failure !== undefined) {
       throw new Error(`@tanstack/compose-cloudflare: ${failure}`)

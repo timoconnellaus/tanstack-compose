@@ -229,8 +229,11 @@ import { openaiModelPlugin } from '@tanstack/compose-agent-openai'
 }
 ```
 
-`handleChatCompletions(request, binding, options?)` takes `{ model, cors }`.
-`model` is the model to run when the body names none. `cors` is off by default:
+`handleChatCompletions(request, binding, options?)` takes `{ model, cors, stallMs }`.
+`model` is the model to run when the body names none. `stallMs` (default 30 000)
+is how long the binding may go quiet before the request fails, so a proxy that
+loses its upstream cannot hold a turn open forever; `0` waits. `cors` is off by
+default:
 a page on the same origin needs none, and a route that hands itself to every
 origin is a route anyone can spend your inference through.
 
