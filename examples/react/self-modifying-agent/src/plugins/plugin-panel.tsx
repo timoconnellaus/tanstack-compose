@@ -6,6 +6,7 @@ import {
   useInstances,
   usePluginList,
 } from '@tanstack/react-compose'
+import { protectedIds } from '../client'
 import { chatSideSlot } from '../slots'
 import type { ReactNode } from 'react'
 
@@ -40,6 +41,20 @@ function PluginPanel(): ReactNode {
         {entries.map((entry) => {
           const status = statusOf(entry.id)
           const enabled = entry.enabled !== false
+          if (protectedIds.has(entry.id)) {
+            return (
+              <li key={entry.id} data-testid={`plugin-${entry.id}`}>
+                <span className="plugin-name">{entry.id}</span>
+                <span className={`status status-${status}`}>{status}</span>
+                <span
+                  className="protected"
+                  title="The agent's own parts cannot be disabled or removed from the panel"
+                >
+                  protected
+                </span>
+              </li>
+            )
+          }
           return (
             <li key={entry.id} data-testid={`plugin-${entry.id}`}>
               <span className="plugin-name">{entry.id}</span>
