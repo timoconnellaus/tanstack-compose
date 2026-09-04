@@ -1,6 +1,13 @@
 import { slotsPlugin, viewsPlugin } from '@tanstack/react-compose'
 import {
+  aiStub,
+  httpStub,
+  scheduleStub,
+  storageStub,
+} from '@tanstack/compose/grants'
+import {
   actionsStub,
+  currencyColumn,
   dataStub,
   notifications,
   pageSide,
@@ -19,7 +26,7 @@ import type { AnyStubGrant, PluginEntry } from '@tanstack/compose'
  * shared between apps but the base module they draw from.
  */
 export interface ShowcaseApp {
-  id: 'table' | 'todo' | 'hostile'
+  id: 'table' | 'todo' | 'hostile' | 'digest' | 'currency' | 'tenants'
   title: string
   eyebrow: string
   /** The trusted entries this app's client starts with. */
@@ -68,9 +75,49 @@ export const hostileApp: ShowcaseApp = {
   viewSlots: [tableActions.name, ...frameSlots],
 }
 
+export const digestApp: ShowcaseApp = {
+  id: 'digest',
+  title: 'Digest',
+  eyebrow: 'Page 4 · unattended work',
+  plugins: [...shell, { id: 'table', plugin: tablePlugin }],
+  grants: {
+    data: dataStub,
+    storage: storageStub,
+    schedule: scheduleStub,
+    ai: aiStub,
+    slots: slotsStub,
+  },
+  viewSlots: [tableActions.name, ...frameSlots],
+}
+
+export const currencyApp: ShowcaseApp = {
+  id: 'currency',
+  title: 'Currency',
+  eyebrow: 'Page 5 · named network service',
+  plugins: [...shell, { id: 'table', plugin: tablePlugin }],
+  grants: { data: dataStub, http: httpStub, slots: slotsStub },
+  viewSlots: [currencyColumn.name, ...frameSlots],
+}
+
+export const tenantsApp: ShowcaseApp = {
+  id: 'tenants',
+  title: 'Two tenants',
+  eyebrow: 'Page 6 · tenant isolation',
+  plugins: [...shell],
+  grants: { storage: storageStub, slots: slotsStub },
+  viewSlots: frameSlots,
+}
+
 /** Resolve the app id persisted beside one tenant's client. */
 export function appById(id: string): ShowcaseApp {
-  const app = [tableApp, todoApp, hostileApp].find((one) => one.id === id)
+  const app = [
+    tableApp,
+    todoApp,
+    hostileApp,
+    digestApp,
+    currencyApp,
+    tenantsApp,
+  ].find((one) => one.id === id)
   if (!app) throw new Error(`showcase: unknown app "${id}"`)
   return app
 }

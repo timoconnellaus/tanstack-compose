@@ -1,16 +1,21 @@
 import { env } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { exportCsvFixture } from '../src/fixtures'
-import { tableApp } from '../src/apps'
+import {
+  bankFixture,
+  currencyFixture,
+  exportCsvFixture,
+  tenantStorageFixture,
+} from '../src/fixtures'
+import { currencyApp, tableApp, tenantsApp } from '../src/apps'
 import { serializedEntriesForWritten } from '../src/written'
 import type { ComposeDurableObject } from '@tanstack/start-compose'
 import type { ShowcaseEnv } from '../src/tenant'
 
-const tenant = () =>
+const tenant = (name = 'integration:table') =>
   (() => {
     const namespace = (env as unknown as ShowcaseEnv).TENANT
     return namespace.get(
-      namespace.idFromName('integration:table'),
+      namespace.idFromName(name),
     ) as unknown as ComposeDurableObject
   })()
 
@@ -61,5 +66,50 @@ describe('the deployed table app', () => {
       'views',
       'table',
     ])
+  })
+
+  it('uses the currency service binding and contains the bank refusal', async () => {
+    const object = tenant('integration:currency')
+    await object.snapshot('currency')
+    for (const fixture of [currencyFixture, bankFixture]) {
+      for (const entry of serializedEntriesForWritten(fixture, currencyApp)) {
+        await object.edit({ type: 'write', entry })
+      }
+    }
+    const snapshot = await object.snapshot()
+    expect(snapshot.fills).toContainEqual(
+      expect.objectContaining({
+        slot: 'table.currency',
+        view: expect.objectContaining({ type: 'stack' }),
+      }),
+    )
+    expect(JSON.stringify(snapshot.fills)).toContain(
+      'no service named \\"bank\\" is granted',
+    )
+  })
+
+  it('keeps plugin lists and the same storage key isolated by Durable Object id', async () => {
+    const left = tenant('integration:left:tenants')
+    const right = tenant('integration:right:tenants')
+    await left.snapshot('tenants')
+    const rightBefore = await right.snapshot('tenants')
+    const [entry] = serializedEntriesForWritten(
+      { ...tenantStorageFixture, options: { value: 'left' } },
+      tenantsApp,
+    )
+    await left.edit({ type: 'write', entry })
+
+    expect(await right.snapshot()).toEqual(rightBefore)
+    const [rightEntry] = serializedEntriesForWritten(
+      { ...tenantStorageFixture, options: { value: 'right' } },
+      tenantsApp,
+    )
+    await right.edit({ type: 'write', entry: rightEntry })
+    expect(
+      await left.callSource({ id: tenantStorageFixture.id, handler: 'read' }),
+    ).toBe('left')
+    expect(
+      await right.callSource({ id: tenantStorageFixture.id, handler: 'read' }),
+    ).toBe('right')
   })
 })

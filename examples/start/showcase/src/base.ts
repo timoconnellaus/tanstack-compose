@@ -89,6 +89,9 @@ export const notifications = createSlot('notifications')
 /** Optional content beside a page. */
 export const pageSide = createSlot('page.side')
 
+/** Currency amounts contributed beside the base invoice table. */
+export const currencyColumn = createSlot('table.currency')
+
 const rowDeclaration = `
 interface TableRow {
   id: number

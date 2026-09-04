@@ -342,6 +342,19 @@ th {
   padding: 2rem;
 }
 
+.currency-grid,
+.tenant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.currency-grid [aria-label='Currency column'] {
+  padding: 1rem;
+  border-radius: 12px;
+  background: #f0eee5;
+}
+
 @media (max-width: 900px) {
   .site-header,
   .shell-grid {
@@ -356,7 +369,10 @@ th {
   }
 
   .page-heading,
-  .todo-form {
+  .todo-form,
+  .currency-grid,
+  .tenant-grid {
+    grid-template-columns: 1fr;
     align-items: stretch;
     flex-direction: column;
   }

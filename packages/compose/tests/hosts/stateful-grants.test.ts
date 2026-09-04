@@ -1,5 +1,10 @@
 import { describe, expect, test, vi } from 'vitest'
-import { createClient, createStub, scheduleStub, storageStub } from '../../src'
+import { createClient, createInProcessHost, createStub } from '../../src'
+import {
+  createInProcessGrants,
+  scheduleStub,
+  storageStub,
+} from '../../src/grants'
 
 // Keep the grant object in module scope where exported handlers can use it.
 const storedSource = (extra = '') => `
@@ -16,6 +21,9 @@ ${extra}
 describe('in-process stateful grants', () => {
   test('storage survives restart and source rewrite, then remove destroys it', async () => {
     const client = createClient({
+      hosts: {
+        'in-process': createInProcessHost({ grants: createInProcessGrants() }),
+      },
       plugins: [
         {
           id: 'stateful-test',
@@ -60,6 +68,9 @@ describe('in-process stateful grants', () => {
       handler: ({ input }) => fired(input),
     })
     const client = createClient({
+      hosts: {
+        'in-process': createInProcessHost({ grants: createInProcessGrants() }),
+      },
       plugins: [
         {
           id: 'scheduled-test',

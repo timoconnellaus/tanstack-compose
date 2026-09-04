@@ -4,6 +4,7 @@ export type {
   CloudflareLimits,
   FacetHost,
   FacetHostOptions,
+  TextAiBinding,
 } from './host'
 export { bindingCredentials } from './credentials'
 export type { CredentialSource } from './credentials'

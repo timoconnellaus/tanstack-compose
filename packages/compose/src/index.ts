@@ -16,11 +16,10 @@ export {
   createPlugin,
 } from './definitions'
 export {
+  createInProcessHost,
   createStub,
   inProcessHost,
-  scheduleStub,
   sourceErrorOf,
-  storageStub,
   stubCallAction,
   stubDeclarations,
 } from './host'
@@ -62,6 +61,9 @@ export type {
   Host,
   HostInstance,
   HostStartRequest,
+  InProcessGrant,
+  InProcessGrantContext,
+  InProcessGrantInstance,
   SourceCheckResult,
   SourceChecker,
   SourceDiagnostic,

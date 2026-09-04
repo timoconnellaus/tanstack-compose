@@ -447,13 +447,15 @@ property it can read and no field it can overwrite that changes the
 approves, logs or refuses per instance exactly as it does for any other action
 (ADR-0003), and it sees the id before the handler does.
 
-### Host-local stateful grants
+### Host-local grants
 
-Core exports `storageStub` and `scheduleStub`, including the `.d.ts` text a
-checker gives written source. Their `createStub` handlers deliberately throw
-`host required`: they declare host-local authority rather than a loopback to a
-client resource. The in-process host implements them as the oracle; a stateful
-remote host replaces them at its own boundary.
+The `@tanstack/compose/grants` subpath exports the five standard grant
+declarations and their in-process implementations. The kernel knows none of
+their names. `createInProcessHost({ grants })` accepts factories keyed by stub
+name; each factory creates the value placed in written source's `stubs` object
+and receives an `invoke` function which dispatches `stubCallAction` before
+performing host-local work. The default `inProcessHost` has no factories and
+continues to expose ordinary one-call stubs.
 
 In process, state is keyed by entry id outside an activation. `storage` is a
 `Map` of structured-cloned values with `get`, `set`, `delete`, and prefix
@@ -463,6 +465,33 @@ export with `{ scheduledAt }`. Stopping clears the live timer and call handle
 but retains its descriptor and values; a restart restores the call handle and
 re-arms it. Destroying clears both. Thus an options or source restart sees the
 same state, while remove followed by re-add starts empty.
+
+Stateful factories return separate `ready`, `stop`, `failed`, and `destroy`
+hooks. `ready` is why a retained schedule is not re-armed until source setup has
+succeeded; the other hooks preserve restart and removal semantics without
+putting state or grant names in core.
+
+`createInProcessGrants` is the behavioral oracle for the full standard set.
+`http` accepts a base-owned name-to-origin policy, overwrites its configured
+credential header after middleware approves the request, rejects a path whose
+resolved origin differs, and returns a structured-clone-safe response record
+rather than a `Response`. Its fetch function is injectable for deterministic
+tests and defaults to the runtime's real `fetch`. `ai` accepts a base-owned
+responder and defaults to echoing the prompt. `files` stores body bytes and an
+optional content type in a `Map` under `${entryId}/`; stopping retains objects
+and destroying removes the entire prefix. String, `Blob`, and `ArrayBuffer`
+bodies are normalized to `ArrayBuffer` so `get` has one portable shape.
+
+### Serializable plugin catalogs
+
+The `@tanstack/compose/catalog` subpath owns the wire-safe plugin-list shape and
+the identity-based serialize/resolve pair. Catalog plugins and stubs are named
+at rest; source remains source. Resolution never rejects the whole list for an
+unknown plugin name: it substitutes a small plugin whose setup throws `no
+plugin named "x" in the catalog`, so that entry reaches `error` through the
+ordinary lifecycle while its siblings still load. An unknown stub name is a
+resolution error because no executable source entry can truthfully represent
+authority it was not given.
 
 ### Termination
 
@@ -770,10 +799,6 @@ checker that proves it.
   `cloudflareTest` plugin). No criterion is only partially met.
 - **I3 — size** is a test in `tests/I-runtime.test.ts`: a rolldown bundle of
   `src/index.ts`, minified and gzipped, with `@tanstack/store` external. The
-  kernel, with the host contract and the in-process host in it, is currently
-  5.1 kB min+gzip against the unchanged 7 kB budget.
-
-**Size budget, 2026-09-04.** The core measured 6.25 kB min+gzip once the host contract gained `destroy`, actions joined
-the dependency graph, the errors store became bounded, and the in-process `storage`/`schedule` grants arrived. The
-budget is 7 kB for now; slice 8 moves every grant declaration and in-process implementation to the
-`@tanstack/compose/grants` subpath, which is not part of the kernel's budget, and the budget returns to 6 kB.
+  kernel, with the host contract and generic in-process host in it, is measured
+  against the 6 kB min+gzip budget. Grant and catalog subpaths are separate
+  entries and are not part of that measurement.

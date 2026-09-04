@@ -18,6 +18,8 @@ export type {
   SnapshotEntry,
 } from './snapshot'
 
+export type { SerializedPluginEntry } from '@tanstack/compose/catalog'
+
 export { createComposeDurableObject } from './durable-object'
 export type {
   ComposeDurableObject,

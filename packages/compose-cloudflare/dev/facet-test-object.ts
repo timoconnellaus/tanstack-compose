@@ -1,10 +1,18 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
   createClient,
+  createPlugin,
   createStub,
+  sourceErrorOf,
+  stubCallAction,
+} from '@tanstack/compose'
+import {
+  aiStub,
+  filesStub,
+  httpStub,
   scheduleStub,
   storageStub,
-} from '@tanstack/compose'
+} from '@tanstack/compose/grants'
 import { createFacetHost } from '../src/index'
 import type { Client, PluginEntry } from '@tanstack/compose'
 import type { FacetHost, StubAnswer, StubProps } from '../src/index'
@@ -12,6 +20,7 @@ import type { FacetHost, StubAnswer, StubProps } from '../src/index'
 interface Env {
   LOADER: WorkerLoader
   FACET_TEST: DurableObjectNamespace
+  FILES: R2Bucket
 }
 
 const storageSource = (step: number): string => `
@@ -37,6 +46,28 @@ export class FacetTestObject extends DurableObject<Env> {
       loader: this.env.LOADER,
       compatibilityDate: '2026-05-01',
       callTimeoutMs: 6000,
+      services: {
+        currency: {
+          origin: 'https://currency.test',
+          credential: { header: 'authorization', value: 'Bearer hidden' },
+        },
+      },
+      serviceBindings: {
+        currency: {
+          fetch(request: Request) {
+            return Promise.resolve(
+              Response.json({
+                authorized:
+                  request.headers.get('authorization') === 'Bearer hidden',
+              }),
+            )
+          },
+        } as Fetcher,
+      },
+      ai: {
+        run: () => Promise.resolve({ response: 'model answer' }),
+      },
+      files: this.env.FILES,
     })
     return this.#host
   }
@@ -203,6 +234,88 @@ export async function fire() { await api.note(label) }
       plugins: [entry('left'), entry('right')],
     })
     await this.#client.settled()
+  }
+
+  async standardGrants(): Promise<unknown> {
+    const entry: PluginEntry = {
+      id: 'standard-grants',
+      source: `
+let api
+export default ({ stubs }) => { api = stubs }
+export async function run() {
+  const response = await api.http.fetch('currency', '/rates')
+  const text = await api.ai.text({ prompt: 'hello' })
+  await api.files.put('note.txt', text, { contentType: 'text/plain' })
+  const file = await api.files.get('note.txt')
+  return {
+    response: JSON.parse(response.body),
+    text: new TextDecoder().decode(file.body),
+    contentType: file.contentType,
+    names: await api.files.list(),
+  }
+}
+export const names = () => api.files.list()
+`,
+      host: 'cloudflare',
+      stubs: [httpStub, aiStub, filesStub],
+    }
+    this.#client = createClient({
+      hosts: { cloudflare: this.#facetHost() },
+      plugins: [entry],
+    })
+    await this.#client.settled()
+    const value = await this.#client.callSource('standard-grants', 'run')
+    await this.#client.removePlugin('standard-grants')
+    await this.#client.addPlugin(entry)
+    const afterRemoval = await this.#client.callSource(
+      'standard-grants',
+      'names',
+    )
+    return { value, afterRemoval }
+  }
+
+  async httpMiddlewareIsolation(): Promise<unknown> {
+    const policy = createPlugin({
+      name: 'http-policy',
+      setup(instance) {
+        instance.use(stubCallAction, ({ input, next }) => {
+          if (input.instanceId === 'blocked' && input.stub === 'http') {
+            throw new Error('HTTP refused for blocked')
+          }
+          return next(input)
+        })
+      },
+    })
+    const source = `
+let http
+export default ({ stubs }) => { http = stubs.http }
+export const run = () => http.fetch('currency', '/rates')
+`
+    const entry = (id: string): PluginEntry => ({
+      id,
+      source,
+      host: 'cloudflare',
+      stubs: [httpStub],
+    })
+    this.#client = createClient({
+      hosts: { cloudflare: this.#facetHost() },
+      plugins: [
+        { id: 'http-policy', plugin: policy },
+        entry('blocked'),
+        entry('allowed'),
+      ],
+    })
+    await this.#client.settled()
+    let blocked = ''
+    try {
+      await this.#client.callSource('blocked', 'run')
+    } catch (error) {
+      blocked = sourceErrorOf(error)?.message ?? String(error)
+    }
+    const allowed = (await this.#client.callSource('allowed', 'run')) as {
+      status: number
+    }
+    return { blocked, allowed: allowed.status }
   }
 
   events(): Array<string> {

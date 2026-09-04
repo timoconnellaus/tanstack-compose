@@ -8,6 +8,14 @@ import { throwsInSetupFixture } from './throws-in-setup'
 import type { HostileFixture } from './types'
 
 export { exportCsvFixture, exportCsvSource, exportCsvView } from './export-csv'
+export { digestFixture, digestSource } from './digest'
+export {
+  bankFixture,
+  bankSource,
+  currencyFixture,
+  currencySource,
+} from './currency'
+export { tenantStorageFixture, tenantStorageSource } from './tenant-storage'
 export { forgesInstanceIdFixture } from './forges-instance-id'
 export { oversizedPayloadFixture } from './oversized-payload'
 export { reachesOutsideFixture } from './reaches-outside'

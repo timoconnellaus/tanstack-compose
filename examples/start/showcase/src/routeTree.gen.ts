@@ -10,14 +10,27 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CurrencyRouteImport } from './routes/currency'
+import { Route as DigestRouteImport } from './routes/digest'
 import { Route as HostileRouteImport } from './routes/hostile'
 import { Route as TableRouteImport } from './routes/table'
+import { Route as TenantsRouteImport } from './routes/tenants'
 import { Route as TodoRouteImport } from './routes/todo'
 import { Route as ApiComposeFollowRouteImport } from './routes/api.compose.follow'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CurrencyRoute = CurrencyRouteImport.update({
+  id: '/currency',
+  path: '/currency',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DigestRoute = DigestRouteImport.update({
+  id: '/digest',
+  path: '/digest',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HostileRoute = HostileRouteImport.update({
@@ -28,6 +41,11 @@ const HostileRoute = HostileRouteImport.update({
 const TableRoute = TableRouteImport.update({
   id: '/table',
   path: '/table',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TenantsRoute = TenantsRouteImport.update({
+  id: '/tenants',
+  path: '/tenants',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TodoRoute = TodoRouteImport.update({
@@ -43,38 +61,75 @@ const ApiComposeFollowRoute = ApiComposeFollowRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/currency': typeof CurrencyRoute
+  '/digest': typeof DigestRoute
   '/hostile': typeof HostileRoute
   '/table': typeof TableRoute
+  '/tenants': typeof TenantsRoute
   '/todo': typeof TodoRoute
   '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/currency': typeof CurrencyRoute
+  '/digest': typeof DigestRoute
   '/hostile': typeof HostileRoute
   '/table': typeof TableRoute
+  '/tenants': typeof TenantsRoute
   '/todo': typeof TodoRoute
   '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/currency': typeof CurrencyRoute
+  '/digest': typeof DigestRoute
   '/hostile': typeof HostileRoute
   '/table': typeof TableRoute
+  '/tenants': typeof TenantsRoute
   '/todo': typeof TodoRoute
   '/api/compose/follow': typeof ApiComposeFollowRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
+  fullPaths:
+    | '/'
+    | '/currency'
+    | '/digest'
+    | '/hostile'
+    | '/table'
+    | '/tenants'
+    | '/todo'
+    | '/api/compose/follow'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
-  id: '__root__' | '/' | '/hostile' | '/table' | '/todo' | '/api/compose/follow'
+  to:
+    | '/'
+    | '/currency'
+    | '/digest'
+    | '/hostile'
+    | '/table'
+    | '/tenants'
+    | '/todo'
+    | '/api/compose/follow'
+  id:
+    | '__root__'
+    | '/'
+    | '/currency'
+    | '/digest'
+    | '/hostile'
+    | '/table'
+    | '/tenants'
+    | '/todo'
+    | '/api/compose/follow'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CurrencyRoute: typeof CurrencyRoute
+  DigestRoute: typeof DigestRoute
   HostileRoute: typeof HostileRoute
   TableRoute: typeof TableRoute
+  TenantsRoute: typeof TenantsRoute
   TodoRoute: typeof TodoRoute
   ApiComposeFollowRoute: typeof ApiComposeFollowRoute
 }
@@ -86,6 +141,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/currency': {
+      id: '/currency'
+      path: '/currency'
+      fullPath: '/currency'
+      preLoaderRoute: typeof CurrencyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/digest': {
+      id: '/digest'
+      path: '/digest'
+      fullPath: '/digest'
+      preLoaderRoute: typeof DigestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/hostile': {
@@ -100,6 +169,13 @@ declare module '@tanstack/react-router' {
       path: '/table'
       fullPath: '/table'
       preLoaderRoute: typeof TableRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tenants': {
+      id: '/tenants'
+      path: '/tenants'
+      fullPath: '/tenants'
+      preLoaderRoute: typeof TenantsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/todo': {
@@ -121,8 +197,11 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CurrencyRoute: CurrencyRoute,
+  DigestRoute: DigestRoute,
   HostileRoute: HostileRoute,
   TableRoute: TableRoute,
+  TenantsRoute: TenantsRoute,
   TodoRoute: TodoRoute,
   ApiComposeFollowRoute: ApiComposeFollowRoute,
 }

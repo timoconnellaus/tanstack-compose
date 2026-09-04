@@ -18,6 +18,8 @@ const moduleSource = (name: string, module: string): string =>
  * Shared by the Vite and Vitest configs so the two never disagree.
  */
 export const workspaceSourceAlias: Record<string, string> = {
+  '@tanstack/compose/grants': moduleSource('compose', 'grants/index'),
+  '@tanstack/compose/catalog': moduleSource('compose', 'catalog'),
   '@tanstack/react-compose/view-runtime': moduleSource(
     'react-compose',
     'view-runtime',

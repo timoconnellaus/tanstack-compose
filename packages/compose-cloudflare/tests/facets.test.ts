@@ -10,6 +10,29 @@ const testObject = (name: string) =>
   ).FACET_TEST.getByName(name)
 
 describe('the Durable Object facet host', () => {
+  it('runs HTTP, AI and R2 files through their Cloudflare providers', async () => {
+    const object = testObject('standard-grants')
+    await expect(object.standardGrants()).resolves.toEqual({
+      value: {
+        response: { authorized: true },
+        text: 'model answer',
+        contentType: 'text/plain',
+        names: ['note.txt'],
+      },
+      afterRemoval: [],
+    })
+    await object.stopClient()
+  })
+
+  it('applies HTTP middleware to the calling instance only', async () => {
+    const object = testObject('http-middleware')
+    await expect(object.httpMiddlewareIsolation()).resolves.toEqual({
+      blocked: 'HTTP refused for blocked',
+      allowed: 200,
+    })
+    await object.stopClient()
+  })
+
   it('keeps storage over restarts and rewrites, then deletes it on removal', async () => {
     const object = testObject('storage-lifecycle')
 

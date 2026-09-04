@@ -50,13 +50,30 @@ const stubNames = ${JSON.stringify([...stubNames])}
 /** One capability object, built from the loopbacks and nothing else. */
 function stubsFrom(env) {
   const stubs = Object.create(null)
+  const call = async (name, input) => {
+    const answer = await env[name].stubCall(input)
+    if (!answer.ok) throw new Error(answer.message)
+    return answer.value
+  }
   for (const name of stubNames) {
-    const loopback = env[name]
-    stubs[name] = async (input) => {
-      const answer = await loopback.stubCall(input)
-      if (!answer.ok) throw new Error(answer.message)
-      return answer.value
-    }
+    if (['http', 'ai', 'files'].includes(name)) continue
+    stubs[name] = (input) => call(name, input)
+  }
+  if (stubNames.includes('http')) {
+    stubs.http = Object.freeze({
+      fetch: (service, path, init) => call('http', { service, path, init }),
+    })
+  }
+  if (stubNames.includes('ai')) {
+    stubs.ai = Object.freeze({ text: (input) => call('ai', input) })
+  }
+  if (stubNames.includes('files')) {
+    stubs.files = Object.freeze({
+      put: (key, body, options) => call('files', { method: 'put', key, body, options }),
+      get: (key) => call('files', { method: 'get', key }),
+      delete: (key) => call('files', { method: 'delete', key }),
+      list: (prefix = '') => call('files', { method: 'list', prefix }),
+    })
   }
   return Object.freeze(stubs)
 }
@@ -197,22 +214,32 @@ const key = (value) => {
 
 function stubsFrom(ctx, env) {
   const stubs = Object.create(null)
+  const call = async (name, input) => {
+    const answer = await env[name].stubCall(input)
+    if (!answer.ok) throw new Error(answer.message)
+    return answer.value
+  }
   for (const name of stubNames) {
-    if (name === 'storage' || name === 'schedule') continue
-    const loopback = env[name]
-    stubs[name] = async (input) => {
-      const answer = await loopback.stubCall(input)
-      if (!answer.ok) throw new Error(answer.message)
-      return answer.value
-    }
+    if (['storage', 'schedule', 'http', 'ai', 'files'].includes(name)) continue
+    stubs[name] = (input) => call(name, input)
   }
   if (stubNames.includes('storage')) {
     stubs.storage = Object.freeze({
-      get: (name) => ctx.storage.get(dataPrefix + key(name)),
-      set: (name, value) => ctx.storage.put(dataPrefix + key(name), value),
-      delete: (name) => ctx.storage.delete(dataPrefix + key(name)),
+      get: async (name) => {
+        const input = await call('storage', { method: 'get', key: name })
+        return ctx.storage.get(dataPrefix + key(input.key))
+      },
+      set: async (name, value) => {
+        const input = await call('storage', { method: 'set', key: name, value })
+        return ctx.storage.put(dataPrefix + key(input.key), input.value)
+      },
+      delete: async (name) => {
+        const input = await call('storage', { method: 'delete', key: name })
+        return ctx.storage.delete(dataPrefix + key(input.key))
+      },
       list: async (prefix = '') => {
-        const values = await ctx.storage.list({ prefix: dataPrefix + key(prefix) })
+        const input = await call('storage', { method: 'list', prefix })
+        const values = await ctx.storage.list({ prefix: dataPrefix + key(input.prefix) })
         const result = {}
         for (const [name, value] of values) {
           result[name.slice(dataPrefix.length)] = value
@@ -222,21 +249,33 @@ function stubsFrom(ctx, env) {
     })
   }
   if (stubNames.includes('schedule')) {
-    const loopback = env.schedule
-    const call = async (input) => {
-      const answer = await loopback.stubCall(input)
-      if (!answer.ok) throw new Error(answer.message)
-      return answer.value
-    }
     stubs.schedule = Object.freeze({
-      every: (ms, handler) => call({ method: 'every', ms, handler }),
+      every: (ms, handler) => call('schedule', { method: 'every', ms, handler }),
       at: (when, handler) =>
-        call({
+        call('schedule', {
           method: 'at',
           at: when instanceof Date ? when.getTime() : when,
           handler,
         }),
-      cancel: () => call({ method: 'cancel' }),
+      cancel: () => call('schedule', { method: 'cancel' }),
+    })
+  }
+  if (stubNames.includes('http')) {
+    stubs.http = Object.freeze({
+      fetch: (service, path, init) => call('http', { service, path, init }),
+    })
+  }
+  if (stubNames.includes('ai')) {
+    stubs.ai = Object.freeze({
+      text: (input) => call('ai', input),
+    })
+  }
+  if (stubNames.includes('files')) {
+    stubs.files = Object.freeze({
+      put: (key, body, options) => call('files', { method: 'put', key, body, options }),
+      get: (key) => call('files', { method: 'get', key }),
+      delete: (key) => call('files', { method: 'delete', key }),
+      list: (prefix = '') => call('files', { method: 'list', prefix }),
     })
   }
   return Object.freeze(stubs)

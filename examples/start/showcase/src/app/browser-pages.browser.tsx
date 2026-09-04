@@ -1,9 +1,20 @@
+import { useEffect, useState } from 'react'
+import {
+  currencyApp,
+  digestApp,
+  hostileApp,
+  tableApp,
+  tenantsApp,
+  todoApp,
+} from '../apps'
+import { createAppClient, getBrowserClient } from '../browser-clients'
 import { AppFrame } from './app-frame'
+import { CurrencyPage } from './currency-page'
+import { DigestPage } from './digest-page'
 import { HostilePage } from './hostile-page'
 import { TablePage } from './table-page'
+import { TenantPanel } from './tenants-page'
 import { TodoPage } from './todo-page'
-import { hostileApp, tableApp, todoApp } from '../apps'
-import { getBrowserClient } from '../browser-clients'
 import type { ReactNode } from 'react'
 
 /** S1's in-process Table app, loaded only by `vite --mode browser`. */
@@ -30,5 +41,46 @@ export function BrowserHostileApp(): ReactNode {
     <AppFrame app={hostileApp} client={getBrowserClient(hostileApp)}>
       <HostilePage />
     </AppFrame>
+  )
+}
+
+/** Browser-only in-process Digest app. */
+export function BrowserDigestApp(): ReactNode {
+  return (
+    <AppFrame app={digestApp} client={getBrowserClient(digestApp)}>
+      <DigestPage />
+    </AppFrame>
+  )
+}
+
+/** Browser-only in-process Currency app. */
+export function BrowserCurrencyApp(): ReactNode {
+  return (
+    <AppFrame app={currencyApp} client={getBrowserClient(currencyApp)}>
+      <CurrencyPage />
+    </AppFrame>
+  )
+}
+
+/** Browser-only page 6 with two independent in-process clients. */
+export function BrowserTenantsApp(): ReactNode {
+  const [left] = useState(() => createAppClient(tenantsApp))
+  const [right] = useState(() => createAppClient(tenantsApp))
+  useEffect(
+    () => () => {
+      void left.destroy()
+      void right.destroy()
+    },
+    [left, right],
+  )
+  return (
+    <div className="tenant-grid" data-testid="tenants-page">
+      <AppFrame app={tenantsApp} client={left}>
+        <TenantPanel label="A" value="alpha" />
+      </AppFrame>
+      <AppFrame app={tenantsApp} client={right}>
+        <TenantPanel label="B" value="bravo" />
+      </AppFrame>
+    </div>
   )
 }

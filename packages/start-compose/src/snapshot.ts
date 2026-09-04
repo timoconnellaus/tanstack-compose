@@ -3,33 +3,25 @@ import { createSlot, createViewRenderer } from '@tanstack/react-compose'
 import { Component, createElement } from 'react'
 import type { Cleanup, InstanceSnapshot } from '@tanstack/compose'
 import type {
+  SerializedPlugin,
+  SerializedPluginEntry,
+  SerializedValue,
+} from '@tanstack/compose/catalog'
+import type {
   SlotRegistry,
   ViewCallback,
   ViewNode,
 } from '@tanstack/react-compose'
 import type { ComponentType, ErrorInfo, ReactNode } from 'react'
 
-/** A plugin reference that can be persisted by a tenant Durable Object. */
-export type SerializedPlugin = { catalog: string } | { source: string }
+/** Backward-compatible name for core's serializable plugin-list entry. */
+export type SerializedEntry = SerializedPluginEntry
+
+/** Core's serializable plugin reference. */
+export type { SerializedPlugin }
 
 /** Data accepted by Start's serializer and every Compose host boundary. */
-export type ComposeValue =
-  | null
-  | boolean
-  | number
-  | string
-  | Array<ComposeValue>
-  | { [key: string]: ComposeValue | undefined }
-
-/** The minimal durable form of one plugin entry. */
-export interface SerializedEntry {
-  id: string
-  plugin: SerializedPlugin
-  options?: ComposeValue
-  enabled?: boolean
-  stubs: Array<string>
-  host?: string
-}
+export type ComposeValue = SerializedValue
 
 /** Browser-safe list entry; written source is represented, never disclosed. */
 export type SnapshotEntry = Omit<SerializedEntry, 'plugin'> & {

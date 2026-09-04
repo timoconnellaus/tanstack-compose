@@ -1,5 +1,7 @@
-import { createClient } from '@tanstack/compose'
+import { createClient, createInProcessHost } from '@tanstack/compose'
+import { createInProcessGrants } from '@tanstack/compose/grants'
 import { createTypeScriptChecker } from '@tanstack/compose-typescript'
+import { currencyHandler } from './services/currency-handler'
 import type { ShowcaseApp } from './apps'
 import type { Client } from '@tanstack/compose'
 
@@ -9,6 +11,26 @@ const clients = new Map<ShowcaseApp['id'], Client>()
 export function createAppClient(app: ShowcaseApp): Client {
   return createClient({
     checker: createTypeScriptChecker(),
+    hosts: {
+      'in-process': createInProcessHost({
+        grants: createInProcessGrants({
+          services: {
+            currency: {
+              origin: 'https://currency.showcase.test',
+              credential: {
+                header: 'authorization',
+                value: 'Bearer server-owned',
+              },
+            },
+          },
+          respond: ({ prompt }) => `Echo: ${prompt}`,
+          fetch: (input, init) =>
+            Promise.resolve(
+              currencyHandler(new Request(input, init), 'Bearer server-owned'),
+            ),
+        }),
+      }),
+    },
     plugins: [...app.plugins],
   })
 }

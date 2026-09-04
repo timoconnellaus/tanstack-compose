@@ -35,6 +35,14 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./catalog": {
+      "import": "./dist/catalog.js",
+      "require": "./dist/catalog.cjs"
+    },
+    "./grants": {
+      "import": "./dist/grants/index.js",
+      "require": "./dist/grants/index.cjs"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,

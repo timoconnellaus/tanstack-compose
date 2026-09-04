@@ -5,6 +5,20 @@
   "compatibility_date": "2026-05-01",
   "compatibility_flags": ["nodejs_compat"],
   "worker_loaders": [{ "binding": "LOADER" }],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "tanstack-compose-showcase-test-files",
+    },
+  ],
+  "services": [
+    {
+      "binding": "CURRENCY",
+      "service": "tanstack-compose-showcase-test",
+      "entrypoint": "CurrencyService",
+    },
+  ],
+  "vars": { "CURRENCY_CREDENTIAL": "Bearer showcase-test-service" },
   "durable_objects": {
     "bindings": [{ "name": "TENANT", "class_name": "ShowcaseTenant" }],
   },
