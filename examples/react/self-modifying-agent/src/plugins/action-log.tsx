@@ -22,7 +22,6 @@ export const actionLogPlugin = createPlugin({
   setup(instance) {
     const lines = new Store<Array<string>>([])
     const write = (line: string): void => {
-      // eslint-disable-next-line no-console
       console.log(`[action] ${line}`)
       lines.setState((previous) => [...previous.slice(-49), line])
     }
@@ -64,7 +63,6 @@ export const actionLogPlugin = createPlugin({
           <ol className="log">
             {written.map((line, at) => (
               // The log is append-only and never reordered.
-              // eslint-disable-next-line react/no-array-index-key
               <li key={at}>{line}</li>
             ))}
           </ol>

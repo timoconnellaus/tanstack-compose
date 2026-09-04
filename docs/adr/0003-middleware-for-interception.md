@@ -10,4 +10,4 @@ A plugin that wants to change what another plugin does registers middleware arou
 
 - Anything interceptable must be declared as an action by its owner; observation needs no such declaration.
 - Options updates and reconciliation are actions, so tooling can wrap them.
-- Events carry exactly one behavioural choice — fire-and-forget or awaited — expressed in their type.
+- Events carry exactly one behavioural choice, fire-and-forget or awaited, expressed in their type.

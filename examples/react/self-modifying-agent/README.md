@@ -76,8 +76,15 @@ They also run from the root, as part of `pnpm test:ci`.
   and it comes back in the same place. Do the same to `message-list`,
   `model-picker`, `action-log` — or to `page-frame`, which leaves a blank page
   and a client that is still running perfectly well.
-- **Ask the agent to put it back.** `stop-button` and `model-picker` are in the
-  **plugin catalog**, so the model can `add_plugin` either of them.
+- **Ask the agent to put it back.** `stop-button`, `model-picker`, `page-title`,
+  `markdown`, `working-indicator` and the two `send-on-*` entries are in the
+  **plugin catalog**, so the model can `add_plugin` any of them.
+- **Disable `markdown`.** The agent's replies fall back to plain paragraphs.
+  Markdown is a later fill of the same two keys of `chat.message`, and the
+  latest fill for a key wins; the message list is untouched either way.
+- **Swap Enter for Ctrl+Enter.** The input box binds no keys itself: it
+  publishes a key registry, and `send-on-enter` binds it. Disable that entry and
+  ask the agent to add `send-on-ctrl-enter`, and Enter is a new line.
 - **Try to disable `loop`.** It is a **protected entry**: the refusal appears in
   the conversation, because a person's edit and the model's edit take the same
   path.
@@ -121,7 +128,9 @@ so the model reads what you did as a plain fact at its next request.
 | `root`               | —            | page frame                                           |
 | `chat.main`          | page frame   | message list (0), input box (10)                     |
 | `chat.side`          | page frame   | plugin panel (0), model picker (10), action log (20) |
-| `chat.message`       | message list | one **keyed** fill per session entry kind            |
+| `page.title`         | page frame   | page title                                           |
+| `chat.message`       | message list | one **keyed** fill per session entry kind; markdown  |
+| `chat.list.trailer`  | message list | working indicator                                    |
 | `chat.input.actions` | input box    | stop button, and any **view** the agent writes       |
 
 `chat.message` is keyed by `entry.kind`, so replacing how one kind of entry reads

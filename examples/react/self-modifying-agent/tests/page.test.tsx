@@ -1,6 +1,7 @@
-import { cleanup, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, test } from 'vitest'
-import { pressInPanel, startApp } from './helpers/app'
+import { agentKey } from '@tanstack/compose-agent'
+import { press, pressInPanel, sendMessage, startApp } from './helpers/app'
 import type { StartedApp } from './helpers/app'
 
 let app: StartedApp | undefined
@@ -16,6 +17,7 @@ describe('the page as it starts', () => {
     app = await startApp()
 
     expect(screen.getByTestId('page-frame')).toBeDefined()
+    expect(screen.getByTestId('page-title')).toBeDefined()
     expect(screen.getByTestId('messages')).toBeDefined()
     expect(screen.getByTestId('input-box')).toBeDefined()
     expect(screen.getByTestId('stop-button')).toBeDefined()
@@ -34,12 +36,69 @@ describe('the page as it starts', () => {
   })
 })
 
+describe('the conversation', () => {
+  test('renders assistant text as Markdown', async () => {
+    app = await startApp({ script: [{ chunks: ['This is **bold**.'] }] })
+
+    await sendMessage('show me Markdown')
+    await app.client.getContext(agentKey)!.idle()
+
+    const strong = await screen.findByText('bold', { selector: 'strong' })
+    expect(strong.closest('.message-assistant')).not.toBeNull()
+  })
+
+  test('collapses a tool call and its result into one expandable row', async () => {
+    app = await startApp({
+      script: [
+        {
+          chunks: ['Checking.'],
+          toolCalls: [{ name: 'list_plugins', args: {} }],
+        },
+        { chunks: ['Done.'] },
+      ],
+    })
+
+    await sendMessage('what are you made of?')
+    await app.client.getContext(agentKey)!.idle()
+
+    const row = await screen.findByTestId('tool-call-call-1')
+    const toggle = row.querySelector('button')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(row.textContent).toContain('list_plugins')
+    expect(row.textContent).toContain('ok')
+    expect(row.querySelector('.tool-details')).toBeNull()
+
+    await press(toggle)
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(row.querySelector('.tool-details')?.textContent).toContain(
+      'Arguments',
+    )
+    expect(row.querySelector('.tool-details')?.textContent).toContain('Result')
+  })
+
+  test('stops following when the person scrolls up', async () => {
+    app = await startApp()
+    const messages = screen.getByTestId('messages')
+    Object.defineProperties(messages, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 800 },
+    })
+    messages.scrollTop = 100
+
+    fireEvent.scroll(messages)
+
+    expect(screen.getByRole('button', { name: 'Jump to latest' })).toBeDefined()
+  })
+})
+
 /**
  * One element at a time, through the panel, in a fresh client each time: the
  * element goes and what is left keeps working.
  */
 const shell: Array<{ id: string; gone: string; stays: string }> = [
   { id: 'page-frame', gone: 'page-frame', stays: 'page-frame' },
+  { id: 'page-title', gone: 'page-title', stays: 'page-frame' },
   { id: 'message-list', gone: 'messages', stays: 'input-box' },
   { id: 'input-box', gone: 'input-box', stays: 'messages' },
   { id: 'stop-button', gone: 'stop-button', stays: 'input-box' },

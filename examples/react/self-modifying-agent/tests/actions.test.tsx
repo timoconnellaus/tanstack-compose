@@ -18,8 +18,7 @@ afterEach(async () => {
   app = undefined
 })
 
-const stopButton = (): HTMLButtonElement =>
-  screen.getByTestId('stop-button') as HTMLButtonElement
+const stopButton = (): HTMLButtonElement => screen.getByTestId('stop-button')
 
 describe('the stop button', () => {
   test('is enabled only while a turn is running', async () => {

@@ -1,13 +1,13 @@
 import { createPlugin } from '@tanstack/compose'
 import { Slot, slotsKey } from '@tanstack/react-compose'
-import { chatMainSlot, chatSideSlot, rootSlot } from '../slots'
+import { chatMainSlot, chatSideSlot, pageTitleSlot, rootSlot } from '../slots'
 import type { ReactNode } from 'react'
 
 function PageFrame(): ReactNode {
   return (
     <div className="page" data-testid="page-frame">
       <header className="page-header">
-        <h1>Self-modifying agent</h1>
+        <Slot of={pageTitleSlot} />
         <p>Every element below is a plugin.</p>
       </header>
       <div className="columns">
@@ -32,6 +32,7 @@ export const pageFramePlugin = createPlugin({
   deps: [slotsKey],
   setup(instance) {
     const slots = instance.context.get(slotsKey)
+    instance.cleanup(slots.declare(pageTitleSlot), 'slot(page.title)')
     instance.cleanup(slots.declare(chatMainSlot), 'slot(chat.main)')
     instance.cleanup(slots.declare(chatSideSlot), 'slot(chat.side)')
     instance.cleanup(slots.fill(rootSlot, { render: PageFrame }), 'fill(root)')

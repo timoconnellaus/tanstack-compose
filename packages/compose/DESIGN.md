@@ -428,7 +428,7 @@ const toolsStub = createStub({
   hosted instance and are undone by ordinary kernel cleanup (A2), with no new
   ownership concept.
 - `call` calls back into the written plugin's named exports through its host, so
-  a capability can be genuinely two-way without a function ever crossing.
+  a capability can be two-way without a function ever crossing.
 
 **Caller identity (A6).** Every stub call is a dispatch of `stubCallAction`:
 

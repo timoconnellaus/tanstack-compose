@@ -1,4 +1,4 @@
-# Roadmap — peeling the onion
+# Roadmap: peeling the onion
 
 Each slice is self-contained with its own acceptance file and tests. A slice is
 done when its criteria pass and every earlier slice's criteria still pass. Work
