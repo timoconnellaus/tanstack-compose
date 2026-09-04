@@ -13,13 +13,21 @@
 
 export {
   ComposeProvider,
+  isClient,
   useClient,
   useClientErrors,
+  useComposeView,
   useContextKey,
   useInstances,
   usePluginList,
 } from './client'
-export type { ComposeProviderProps, UseContextKeyOptions } from './client'
+export type {
+  ComposeProviderProps,
+  ComposeView,
+  ComposeViewEntry,
+  ComposeViewStore,
+  UseContextKeyOptions,
+} from './client'
 
 export {
   createSlot,

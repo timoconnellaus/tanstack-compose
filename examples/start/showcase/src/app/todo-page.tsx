@@ -1,12 +1,12 @@
 import {
   Slot,
-  useClient,
+  useComposeView,
   useContextKey,
   useInstances,
   usePluginList,
   useStore,
 } from '@tanstack/react-compose'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createTodoStore,
   itemCreateAction,
@@ -16,8 +16,9 @@ import {
   todosKey,
 } from '../base'
 import { requireTitleFixture, sortByDueFixture } from '../fixtures'
-import { useAppOperations } from './app-frame'
+import { useComposeWriter } from './app-frame'
 import { useDeclareSlots } from './slots'
+import type { ActionDefinition } from '@tanstack/compose'
 import type { Todo } from '../base'
 import type { ReactNode } from 'react'
 
@@ -28,8 +29,22 @@ const messageOf = (error: unknown): string =>
 
 /** Page 2: wrap base actions without changing the page or base handlers. */
 export function TodoPage(): ReactNode {
-  const client = useClient()
-  const operations = useAppOperations()
+  const view = useComposeView()
+  const writer = useComposeWriter()
+  const dispatch = useCallback(
+    <TInput, TResult>(
+      action: ActionDefinition<TInput, TResult>,
+      input: TInput,
+    ): Promise<TResult> => {
+      if (!view.dispatch) {
+        return Promise.reject(
+          new Error('showcase: this ComposeView cannot dispatch'),
+        )
+      }
+      return view.dispatch(action, input)
+    },
+    [view],
+  )
   const remoteTodos = useContextKey(todosKey)
   const localTodos = useMemo(() => createTodoStore(), [])
   const todos = remoteTodos ?? localTodos
@@ -45,20 +60,20 @@ export function TodoPage(): ReactNode {
 
   useEffect(() => {
     let current = true
-    void client.dispatch(listSortAction, { items }).then((next) => {
+    void dispatch(listSortAction, { items }).then((next) => {
       if (current) setSorted(next)
     })
     return () => {
       current = false
     }
-  }, [client, instances, items])
+  }, [dispatch, instances, items])
 
   const addFixture = async (
     fixture: typeof sortByDueFixture | typeof requireTitleFixture,
   ): Promise<void> => {
     setProblem(undefined)
     try {
-      await operations.add(fixture)
+      await writer.add(fixture)
     } catch (error) {
       setProblem(messageOf(error))
     }
@@ -104,8 +119,8 @@ export function TodoPage(): ReactNode {
           void (async () => {
             const input = { title, ...(due === '' ? {} : { due }) }
             try {
-              await client.dispatch(itemValidateAction, input)
-              const created = await client.dispatch(itemCreateAction, input)
+              await dispatch(itemValidateAction, input)
+              const created = await dispatch(itemCreateAction, input)
               if (!remoteTodos) localTodos.add(created)
               setTitle('')
               setDue('')

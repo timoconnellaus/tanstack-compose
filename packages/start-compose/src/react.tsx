@@ -15,20 +15,13 @@ import {
 import { applySnapshot } from './snapshot'
 import type {
   ActionDefinition,
-  AnyPlugin,
   Cleanup,
-  Client,
   ClientErrorReport,
   ContextKey,
   ContextSnapshot,
-  EventDefinition,
   InstanceSnapshot,
-  Listener,
-  Middleware,
-  PluginEntry,
-  ResourceNode,
 } from '@tanstack/compose'
-import type { SlotRegistry } from '@tanstack/react-compose'
+import type { ComposeView, SlotRegistry } from '@tanstack/react-compose'
 import type { ReactNode } from 'react'
 import type {
   BrowserStatusReport,
@@ -65,7 +58,7 @@ export interface ComposeStartProps {
 interface SnapshotState {
   snapshot: Store<ComposeSnapshot>
   registry: SlotRegistry
-  client: Client
+  view: ComposeView
   apply: (snapshot: ComposeSnapshot) => void
   edit: (operation: ComposeEdit) => Promise<void>
   setStatusSender: (
@@ -75,28 +68,13 @@ interface SnapshotState {
 
 const SnapshotContext = createContext<SnapshotState | undefined>(undefined)
 
-const readonly = (): Promise<never> =>
-  Promise.reject(
-    new Error('@tanstack/start-compose: the browser client is a follower'),
-  )
-
-const entriesOf = (entries: Array<SnapshotEntry>): Array<PluginEntry> =>
-  entries.map((entry) => ({
-    id: entry.id,
-    source: '',
-    options: entry.options,
-    enabled: entry.enabled,
-  }))
-
 const createFollower = (
   initial: ComposeSnapshot,
   transport: ComposeTransport,
 ): SnapshotState => {
   const registry = createSlotRegistry()
   const snapshot = new Store(initial)
-  const pluginList = new Store<Array<PluginEntry>>(
-    entriesOf(initial.pluginList),
-  )
+  const pluginList = new Store<Array<SnapshotEntry>>(initial.pluginList)
   const instances = new Store<Array<InstanceSnapshot>>(initial.instances)
   const context = new Store<Array<ContextSnapshot>>([
     { key: slotsKey.name, providedBy: 'compose-start' },
@@ -106,6 +84,8 @@ const createFollower = (
   const statuses = new Map<string, BrowserViewStatus>()
   let statusGeneration = initial.generation
   let statusSender: ((report: BrowserStatusReport) => void) | undefined
+  const dispatch = transport.dispatch
+  const callSource = transport.callSource
   const report = (status: BrowserViewStatus): void => {
     statuses.set(status.id, status)
     statusSender?.({
@@ -114,64 +94,39 @@ const createFollower = (
     })
   }
 
-  const client: Client = {
-    checker: undefined,
+  const view: ComposeView = {
     pluginList,
     instances,
     context,
     errors,
-    setPluginList: readonly,
-    addPlugin: <TPlugin extends AnyPlugin>(_entry: PluginEntry<TPlugin>) =>
-      readonly(),
-    removePlugin: readonly,
-    setEnabled: readonly,
-    setOptions: readonly,
-    settled: () => Promise.resolve(),
-    destroy: () => Promise.resolve(),
-    dispatch: <TInput, TResult>(
-      action: ActionDefinition<TInput, TResult>,
-      input: TInput,
-    ) =>
-      transport.dispatch
-        ? (transport.dispatch({
-            action: action.name,
-            input: input as ComposeValue,
-          }) as Promise<TResult>)
-        : readonly(),
-    emit: (<TPayload, TAwaited extends boolean>(
-      _event: EventDefinition<TPayload, TAwaited>,
-      _payload: TPayload,
-    ) => undefined) as Client['emit'],
-    on:
-      <TPayload, TAwaited extends boolean>(
-        _event: EventDefinition<TPayload, TAwaited>,
-        _listener: Listener<TPayload>,
-      ): Cleanup =>
-      () =>
-        undefined,
-    use:
-      <TInput, TResult>(
-        _action: ActionDefinition<TInput, TResult>,
-        _middleware: Middleware<TInput, TResult>,
-        _options?: { first?: boolean },
-      ): Cleanup =>
-      () =>
-        undefined,
+    ...(dispatch
+      ? {
+          dispatch: <TInput, TResult>(
+            action: ActionDefinition<TInput, TResult>,
+            input: TInput,
+          ) =>
+            dispatch({
+              action: action.name,
+              input: input as ComposeValue,
+            }) as Promise<TResult>,
+        }
+      : {}),
     inspect: () => instances.state,
-    resources: (_instanceId: string): ResourceNode | undefined => undefined,
     getContext: <TValue,>(key: ContextKey<TValue>): TValue | undefined =>
       values.get(key) as TValue | undefined,
-    callSource: (id, handler, input) =>
-      transport.callSource
-        ? transport.callSource({ id, handler, input })
-        : readonly(),
+    ...(callSource
+      ? {
+          callSource: (id: string, handler: string, input?: unknown) =>
+            callSource({ id, handler, input }),
+        }
+      : {}),
   }
 
   let removeFills: Cleanup = () => undefined
   const state: SnapshotState = {
     snapshot,
     registry,
-    client,
+    view,
     apply(next) {
       if (next.generation < snapshot.state.generation) return
       statusGeneration = next.generation
@@ -179,7 +134,7 @@ const createFollower = (
       batch(() => {
         removeFills()
         removeFills = applySnapshot(registry, next, transport.press, report)
-        pluginList.setState(() => entriesOf(next.pluginList))
+        pluginList.setState(() => next.pluginList)
         instances.setState(() => next.instances)
         snapshot.setState(() => next)
       })
@@ -275,7 +230,7 @@ export function ComposeStart(properties: ComposeStartProps): ReactNode {
 
   return (
     <SnapshotContext.Provider value={state.current}>
-      <ComposeProvider client={state.current.client}>
+      <ComposeProvider client={state.current.view}>
         {properties.children}
       </ComposeProvider>
     </SnapshotContext.Provider>
