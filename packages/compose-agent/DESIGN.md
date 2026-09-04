@@ -196,6 +196,7 @@ result. The returned entries are handed to a fresh `sessionPlugin` through its
 | `scriptedModelPlugin` | —            | `modelKey`                                        | `{ name?: string; script: Array<ScriptedResponse> }` |
 | `toolsetPlugin`       | —            | `toolsKey`                                        | `{ tools: Array<AnyTool> }`                          |
 | `promptSectionPlugin` | —            | `promptKey`                                       | `{ sections: Array<PromptSection> }`                 |
+| `composerPlugin`      | —            | `toolsKey`, `modelKey`, `promptKey`               | see §The composer                                    |
 
 The four registries are the stable half; `scriptedModelPlugin`, `toolsetPlugin`
 and `promptSectionPlugin` are the contributing half, each registering into a
@@ -613,9 +614,12 @@ except §D7–D9, which belong to the source checker — client infrastructure w
 an implementation in its own package. The host contract and the in-process
 host are the kernel's ([`compose/DESIGN.md` §Hosts and plugin source](../compose/DESIGN.md)).
 
-The **composer** is one more plugin. It depends on `toolsKey` and `modelKey`,
-registers nine tools into the tool registry, and edits the **plugin list**
-through `instance.client`. It is not privileged: remove its entry and the agent
+The **composer** is one more plugin. It depends on `toolsKey`, `modelKey` and
+`promptKey`, registers nine tools into the tool registry and one **prompt
+section** explaining the plugin system (entries, statuses, options, the catalog,
+the protected ids, and that an edit lands next turn), and edits the **plugin
+list** through `instance.client`. The section's text is a function, so the
+protected ids and catalog names in it are current every step. It is not privileged: remove its entry and the agent
 loses the ability to edit itself, exactly as removing `toolsetPlugin` loses a
 tool set.
 

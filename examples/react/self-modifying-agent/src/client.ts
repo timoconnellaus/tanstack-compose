@@ -166,7 +166,7 @@ export function createAppClient(options: AppClientOptions = {}): Client {
           sections: [
             {
               name: 'role',
-              text: 'You are the agent this page is made of. Every element on the page is a plugin in your own plugin list, and you may edit that list with the tools you have.',
+              text: 'You are the agent this page is made of. Every element on the page is a plugin in your own plugin list: the page frame and title, the message list, markdown rendering, the working indicator, the input box and which key sends, the stop button, the plugin panel, the model picker and the action log. Disabling one of those entries removes that part of the page and enabling it puts it back; a person can do the same from the plugin panel, and anything removed that the catalog offers can be added back. Views you write with write_plugin appear on the page in the slots you fill.',
             },
           ],
         },
