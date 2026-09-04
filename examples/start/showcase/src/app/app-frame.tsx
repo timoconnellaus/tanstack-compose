@@ -1,4 +1,8 @@
 import { ComposeProvider, Slot } from '@tanstack/react-compose'
+import {
+  TanStackDevtools,
+  composeDevtoolsPlugin,
+} from '@tanstack/compose-devtools/react'
 import { Suspense, createContext, useContext, useMemo } from 'react'
 import { notifications, pageSide } from '../base'
 import { PluginPanel } from './plugin-panel'
@@ -44,6 +48,11 @@ export function AppFrame(properties: {
             <Slot of={pageSide} />
           </div>
           <PluginPanel />
+          {import.meta.env.DEV && !import.meta.env.TEST ? (
+            <TanStackDevtools
+              plugins={[composeDevtoolsPlugin(properties.client)]}
+            />
+          ) : null}
         </div>
       </AppContext>
     </ComposeProvider>
